@@ -20,6 +20,7 @@
 ### Task 1: Establish Application Directory Boundaries
 
 **Files:**
+
 - Create: `backend/README.md`
 - Create: `frontend/`
 - Move: `.oxfmtrc.json` to `frontend/.oxfmtrc.json`
@@ -35,6 +36,7 @@
 - Modify: `.gitignore`
 
 **Interfaces:**
+
 - Consumes: the existing frontend package and root mise toolchain.
 - Produces: independently owned `frontend/` and `backend/` application boundaries.
 
@@ -95,6 +97,7 @@ Expected: application paths appear under `frontend/`; each generated frontend pa
 ### Task 2: Restore and Verify the Frontend from Its New Root
 
 **Files:**
+
 - Verify: `frontend/package.json`
 - Verify: `frontend/pnpm-lock.yaml`
 - Verify: `frontend/src/`
@@ -102,6 +105,7 @@ Expected: application paths appear under `frontend/`; each generated frontend pa
 - Verify: `mise.lock`
 
 **Interfaces:**
+
 - Consumes: the `frontend/` package boundary produced by Task 1.
 - Produces: a reproducible frontend package that passes the same quality and build gates from its new directory.
 
