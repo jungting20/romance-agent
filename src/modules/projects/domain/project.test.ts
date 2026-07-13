@@ -51,10 +51,6 @@ describe("Project", () => {
       updatedAt: "2026-07-13T00:00:00.000Z",
     };
 
-    expect(sortProjectsByRecent([older, newer]).map(({ id }) => id)).toEqual([
-      "newer",
-      "older",
-    ]);
+    expect(sortProjectsByRecent([older, newer]).map(({ id }) => id)).toEqual(["newer", "older"]);
   });
 });
-

@@ -16,4 +16,3 @@
 4. Build the library, trope selection, project setup, and workspace UI.
 5. Add assistant interactions and integration tests.
 6. Run format, lint, typecheck, tests, build, and browser acceptance checks.
-

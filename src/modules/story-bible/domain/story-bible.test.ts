@@ -17,9 +17,7 @@ describe("StoryBible", () => {
   });
 
   test("returns only context related to the active scene", async () => {
-    const { createInitialStoryBible, selectSceneContext } = await import(
-      "./story-bible"
-    );
+    const { createInitialStoryBible, selectSceneContext } = await import("./story-bible");
     const bible = createInitialStoryBible("project-1", ["서윤", "도현"]);
 
     const context = selectSceneContext(bible, {
@@ -31,4 +29,3 @@ describe("StoryBible", () => {
     expect(context.worldEntries).toHaveLength(1);
   });
 });
-

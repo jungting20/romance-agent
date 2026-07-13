@@ -44,9 +44,7 @@ export function createInitialStoryBible(
           ? "상대에게 흔들리지 않고 자신의 선택을 지키고 싶다."
           : "과거의 오해를 풀고 다시 신뢰받고 싶다.",
       hiddenFeeling:
-        index === 0
-          ? "여전히 상대의 진심을 확인하고 싶다."
-          : "이번에는 먼저 놓치고 싶지 않다.",
+        index === 0 ? "여전히 상대의 진심을 확인하고 싶다." : "이번에는 먼저 놓치고 싶지 않다.",
     })),
     worldEntries: [
       {
@@ -65,12 +63,7 @@ export function selectSceneContext(
   reference: SceneContextReference,
 ): SceneContext {
   return {
-    characters: bible.characters.filter(({ id }) =>
-      reference.characterIds.includes(id),
-    ),
-    worldEntries: bible.worldEntries.filter(({ id }) =>
-      reference.worldEntryIds.includes(id),
-    ),
+    characters: bible.characters.filter(({ id }) => reference.characterIds.includes(id)),
+    worldEntries: bible.worldEntries.filter(({ id }) => reference.worldEntryIds.includes(id)),
   };
 }
-

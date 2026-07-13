@@ -40,10 +40,7 @@ export function createInitialManuscript(projectId: string): Manuscript {
         title: "비가 그친 뒤의 정원",
         chapterNumber: 1,
         content: OPENING_SCENE,
-        relatedCharacterIds: [
-          `${projectId}-character-1`,
-          `${projectId}-character-2`,
-        ],
+        relatedCharacterIds: [`${projectId}-character-1`, `${projectId}-character-2`],
         relatedWorldEntryIds: [`${projectId}-world-1`],
       },
     ],
@@ -67,11 +64,7 @@ export function updateSceneContent(
   };
 }
 
-export function insertText(
-  content: string,
-  cursorPosition: number,
-  insertion: string,
-): string {
+export function insertText(content: string, cursorPosition: number, insertion: string): string {
   if (cursorPosition < 0 || cursorPosition > content.length) {
     throw new Error("커서 위치가 올바르지 않습니다.");
   }
@@ -79,19 +72,10 @@ export function insertText(
   return `${content.slice(0, cursorPosition)}${insertion}${content.slice(cursorPosition)}`;
 }
 
-export function replaceTextRange(
-  content: string,
-  range: TextRange,
-  replacement: string,
-): string {
-  if (
-    range.start < 0 ||
-    range.end < range.start ||
-    range.end > content.length
-  ) {
+export function replaceTextRange(content: string, range: TextRange, replacement: string): string {
+  if (range.start < 0 || range.end < range.start || range.end > content.length) {
     throw new Error("선택한 원고 범위가 올바르지 않습니다.");
   }
 
   return `${content.slice(0, range.start)}${replacement}${content.slice(range.end)}`;
 }
-

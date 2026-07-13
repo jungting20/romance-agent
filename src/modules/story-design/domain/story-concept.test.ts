@@ -57,4 +57,3 @@ describe("Story design", () => {
     ).toThrow("두 주인공의 이름을 모두 입력해 주세요.");
   });
 });
-

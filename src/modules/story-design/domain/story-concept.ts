@@ -63,14 +63,9 @@ export function getTropeTemplate(tropeId: string): TropeTemplate {
   return trope;
 }
 
-export function createStoryConcept(
-  input: CreateStoryConceptInput,
-): StoryConcept {
+export function createStoryConcept(input: CreateStoryConceptInput): StoryConcept {
   getTropeTemplate(input.tropeId);
-  const protagonistNames = input.protagonistNames.map((name) => name.trim()) as [
-    string,
-    string,
-  ];
+  const protagonistNames = input.protagonistNames.map((name) => name.trim()) as [string, string];
 
   if (protagonistNames.some((name) => !name)) {
     throw new Error("두 주인공의 이름을 모두 입력해 주세요.");
@@ -82,4 +77,3 @@ export function createStoryConcept(
     protagonistNames,
   };
 }
-

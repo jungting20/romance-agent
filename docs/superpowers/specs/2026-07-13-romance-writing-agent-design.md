@@ -20,4 +20,3 @@ Bounded contexts are projects, story design, story bible, manuscript, and writin
 ## Technology
 
 Use mise-pinned Node 24.18.0 and pnpm 11.4.0, TypeScript 7, Vite 8.1, React, React Router, Tailwind CSS v4, and shadcn/ui. Use Oxlint with tsgolint for type-aware linting, Oxfmt for formatting, and Vitest with Testing Library for automated checks.
-

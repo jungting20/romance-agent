@@ -25,8 +25,5 @@ export function createProject(input: CreateProjectInput): Project {
 }
 
 export function sortProjectsByRecent(projects: Project[]): Project[] {
-  return [...projects].sort((left, right) =>
-    right.updatedAt.localeCompare(left.updatedAt),
-  );
+  return [...projects].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
-

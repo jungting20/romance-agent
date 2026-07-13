@@ -58,4 +58,3 @@ describe("Writing assistant", () => {
     expect(suggestion.content).toContain("일관성");
   });
 });
-

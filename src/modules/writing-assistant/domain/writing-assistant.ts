@@ -1,8 +1,4 @@
-export type WritingAction =
-  | "continue"
-  | "refine"
-  | "dialogue"
-  | "consistency";
+export type WritingAction = "continue" | "refine" | "dialogue" | "consistency";
 
 export interface WritingRequest {
   action: WritingAction;
@@ -19,9 +15,7 @@ export interface Suggestion {
   content: string;
 }
 
-export function createWritingSuggestion(
-  request: WritingRequest,
-): Suggestion {
+export function createWritingSuggestion(request: WritingRequest): Suggestion {
   const [first = "주인공", second = "상대"] = request.characterNames;
 
   switch (request.action) {
