@@ -15,13 +15,13 @@ Projects
 
 ## 도메인 목록
 
-| 도메인 | 소유하는 책임 | 계약 문서 |
-| --- | --- | --- |
-| Projects | 프로젝트 식별과 목록 메타데이터 | [projects.md](./projects.md) |
-| Story Design | 트로프와 초기 이야기 콘셉트 | [story-design.md](./story-design.md) |
-| Story Bible | 인물과 세계관의 기준 정보 | [story-bible.md](./story-bible.md) |
-| Manuscript | 장면과 원고 텍스트 | [manuscript.md](./manuscript.md) |
-| Writing Assistant | 명시적 집필 요청과 제안 | [writing-assistant.md](./writing-assistant.md) |
+| 도메인            | 소유하는 책임                   | 계약 문서                                      |
+| ----------------- | ------------------------------- | ---------------------------------------------- |
+| Projects          | 프로젝트 식별과 목록 메타데이터 | [projects.md](./projects.md)                   |
+| Story Design      | 트로프와 초기 이야기 콘셉트     | [story-design.md](./story-design.md)           |
+| Story Bible       | 인물과 세계관의 기준 정보       | [story-bible.md](./story-bible.md)             |
+| Manuscript        | 장면과 원고 텍스트              | [manuscript.md](./manuscript.md)               |
+| Writing Assistant | 명시적 집필 요청과 제안         | [writing-assistant.md](./writing-assistant.md) |
 
 ## 도메인 간 유스케이스
 
