@@ -1,10 +1,10 @@
-# Domain Contract Documentation Design
+# 도메인 계약 문서화 설계
 
-## Goal
+## 목표
 
-Create a technology-neutral domain documentation layer that gives frontend and future Python backend contributors a shared understanding of the system's language, responsibilities, rules, and boundaries.
+프런트엔드와 향후 Python 백엔드 개발자가 시스템의 언어, 책임, 규칙, 경계를 동일하게 이해할 수 있도록 특정 기술에 종속되지 않는 도메인 문서 계층을 만든다.
 
-## Documentation Structure
+## 문서 구조
 
 ```text
 docs/
@@ -18,45 +18,45 @@ docs/
 └── superpowers/
 ```
 
-`docs/domains/README.md` is the entry point and context map. Each bounded context has one focused document. The current system is small enough that splitting a domain into several documents would add navigation overhead without improving clarity.
+`docs/domains/README.md`는 도메인 문서의 진입점이자 컨텍스트 맵이다. 각 바운디드 컨텍스트는 하나의 문서로 작성한다. 현재 시스템 규모에서는 한 도메인을 여러 문서로 분리하면 명확성이 높아지기보다 탐색 비용이 커진다.
 
-## Shared Contract Template
+## 공통 계약 형식
 
-Each domain document uses the same sections:
+각 도메인 문서는 다음과 같은 목차를 사용한다.
 
-1. **Purpose and responsibility** — the business capability owned by the domain.
-2. **Ubiquitous language** — terms that must have the same meaning in product discussion and code.
-3. **Core model** — entities, value objects, identifiers, and important states.
-4. **Invariants** — rules that must remain true regardless of implementation technology.
-5. **Use cases** — behaviors the domain exposes to application workflows.
-6. **Inputs and outputs** — information exchanged with other domains.
-7. **Out of scope** — responsibilities deliberately owned elsewhere.
+1. **목적과 책임** — 도메인이 소유하는 비즈니스 역량
+2. **보편 언어** — 제품 논의와 코드에서 동일한 의미로 사용해야 하는 용어
+3. **핵심 모델** — 엔티티, 값 객체, 식별자, 주요 상태
+4. **불변 조건** — 구현 기술과 관계없이 항상 지켜져야 하는 규칙
+5. **유스케이스** — 도메인이 애플리케이션 흐름에 제공하는 행위
+6. **입력과 출력** — 다른 도메인과 주고받는 정보
+7. **책임지지 않는 영역** — 의도적으로 다른 도메인에 맡긴 책임
 
-The documents describe contracts, not source-file layouts, React components, persistence adapters, API routes, or framework choices. Those details change faster and belong in implementation documentation or code.
+문서는 계약을 설명하며 소스 파일 배치, React 컴포넌트, 영속성 어댑터, API 경로, 프레임워크 선택은 다루지 않는다. 이런 구현 세부 사항은 더 자주 변경되므로 코드나 별도의 구현 문서에서 관리한다.
 
-## Bounded Contexts
+## 바운디드 컨텍스트
 
 ### Projects
 
-Owns the identity, title, summary, selected romance trope reference, and recent-activity metadata of a writing project. It does not own story content.
+집필 프로젝트의 식별자, 제목, 요약, 선택한 로맨스 트로프 참조, 최근 활동 메타데이터를 소유한다. 이야기 내용은 소유하지 않는다.
 
 ### Story Design
 
-Owns the initial story concept, romance trope selection, logline, and initial protagonist names. It validates the minimum concept needed to create a project workspace.
+초기 이야기 콘셉트, 로맨스 트로프 선택, 로그라인, 주인공 초기 이름을 소유한다. 프로젝트 작업공간을 만드는 데 필요한 최소 콘셉트를 검증한다.
 
 ### Story Bible
 
-Owns canonical character and world knowledge used while writing. It selects only the context relevant to a manuscript scene.
+집필 중 참조하는 인물과 세계관의 기준 정보를 소유한다. 원고 장면과 관련된 정보만 문맥으로 선택한다.
 
 ### Manuscript
 
-Owns scenes, scene ordering metadata, active-scene state, prose content, text insertion, and range replacement rules. It is the only domain that owns manuscript text.
+장면, 장면 순서 메타데이터, 활성 장면 상태, 원고 본문, 텍스트 삽입, 범위 교체 규칙을 소유한다. 원고 텍스트를 소유하는 유일한 도메인이다.
 
 ### Writing Assistant
 
-Owns explicit writing-assistance requests and generated suggestions. It never reads or changes a manuscript without an application workflow supplying context and explicitly applying a suggestion.
+명시적인 집필 지원 요청과 생성된 제안을 소유한다. 애플리케이션 흐름이 문맥을 전달하고 제안 적용을 명시적으로 요청하지 않는 한 원고를 읽거나 변경하지 않는다.
 
-## Context Map
+## 컨텍스트 맵
 
 ```text
 Projects
@@ -65,25 +65,26 @@ Projects
         └─ Manuscript ── Writing Assistant
 ```
 
-Application workflows coordinate the boundaries:
+애플리케이션 유스케이스가 도메인 경계를 조정한다.
 
-- **Create project workspace:** combines validated Story Design input with Projects, Story Bible, and Manuscript creation.
-- **Apply writing suggestion:** takes a Writing Assistant suggestion and asks Manuscript to insert or replace text.
+- **프로젝트 작업공간 생성:** 검증된 Story Design 입력을 Projects, Story Bible, Manuscript 생성과 결합한다.
+- **집필 제안 적용:** Writing Assistant의 제안을 받아 Manuscript에 텍스트 삽입 또는 교체를 요청한다.
 
-Direct cross-domain mutation is prohibited. A source domain returns data or a decision; an application workflow passes the required information to the owning target domain.
+도메인이 다른 도메인의 상태를 직접 변경해서는 안 된다. 출발 도메인은 데이터나 판단 결과를 반환하고, 애플리케이션 유스케이스가 필요한 정보를 소유권을 가진 대상 도메인에 전달한다.
 
-## Documentation Quality Rules
+## 문서 품질 규칙
 
-- Use the exact domain names already present in the codebase.
-- Define every specialized term on first use.
-- State invariants as testable rules using “must” or “must not.”
-- Avoid duplicating TypeScript interfaces line for line.
-- Avoid future backend framework or API design decisions.
-- Keep unresolved product expansion outside these contracts until it is approved and implemented.
+- 코드에 이미 존재하는 도메인 이름을 그대로 사용한다.
+- 전문 용어는 처음 등장할 때 정의한다.
+- 불변 조건은 검증 가능하도록 “해야 한다” 또는 “해서는 안 된다”로 작성한다.
+- TypeScript 인터페이스를 줄 단위로 복제하지 않는다.
+- 향후 백엔드 프레임워크나 API 설계를 미리 결정하지 않는다.
+- 승인되고 구현되기 전의 제품 확장 사항은 현재 계약에 포함하지 않는다.
+- 파일명과 코드 식별자는 영문을 유지하되 설명과 본문은 한글로 작성한다.
 
-## Verification
+## 검증 기준
 
-- Every current bounded context has one contract document.
-- The index links to every contract and describes the dependency direction.
-- Names and invariants agree with the current domain implementation and tests.
-- No contract depends on React, localStorage, Vite, Python framework, database, or transport details.
+- 현재의 모든 바운디드 컨텍스트에 계약 문서가 하나씩 존재한다.
+- 인덱스가 모든 계약 문서로 연결되고 도메인 의존 방향을 설명한다.
+- 이름과 불변 조건이 현재 도메인 구현 및 테스트와 일치한다.
+- 어떤 계약도 React, localStorage, Vite, Python 프레임워크, 데이터베이스, 전송 방식에 의존하지 않는다.
