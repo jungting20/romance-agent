@@ -475,7 +475,7 @@ Run from `frontend/`:
 mise exec -- pnpm check
 ```
 
-Expected: 포맷, Oxlint, TypeScript와 35개 테스트가 모두 통과한다.
+Expected: 포맷, Oxlint, TypeScript와 36개 테스트가 모두 통과한다.
 
 - [ ] **Step 7: 집필 계약 커밋**
 
