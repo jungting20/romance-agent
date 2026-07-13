@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 
 import { AppRoutes } from "@/app/app";
 import { AppProvider } from "@/app/state/app-provider";
+import { enableMocking } from "@/mocks/enable-mocking";
 
 import "./index.css";
 
@@ -12,6 +13,8 @@ const root = document.getElementById("root");
 if (!root) {
   throw new Error("Root element was not found");
 }
+
+await enableMocking();
 
 createRoot(root).render(
   <StrictMode>
