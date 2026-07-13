@@ -1,0 +1,7 @@
+.superpowers/
+.mise.local.toml
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
