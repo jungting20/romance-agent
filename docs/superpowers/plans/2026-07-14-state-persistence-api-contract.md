@@ -20,8 +20,9 @@
 - `POST /projects` atomically creates and returns Project, Story Concept, Story Bible, initial Manuscript, and `manuscriptRevision: 1`.
 - `PUT /manuscripts/{manuscriptId}` saves the complete manuscript, increments the expected revision, and updates the owning project's `updatedAt` atomically.
 - A stale manuscript revision returns HTTP 409 without mutating mock state.
-- Identifiers are non-empty strings, timestamps are RFC 3339 UTC date-times, and collections are required non-null arrays.
+- Identifiers are non-empty strings, timestamps are RFC 3339 date-times with an uppercase `Z` suffix, and collections are required non-null arrays.
 - Shared MSW handlers must not include artificial error trigger headers, query parameters, or reserved field values.
+- Malformed JSON, missing required fields, wrong JSON types, and additional request properties return HTTP 400; well-typed values that violate domain constraints return HTTP 422.
 - Existing untracked `.codex/`, `seed.spec.ts`, and `specs/` paths belong to the user and must not be edited, formatted, staged, or committed.
 
 ---
@@ -91,6 +92,12 @@ Use the exact operation response matrix:
 | `saveManuscript` | 200 `SaveManuscriptResponse` | 400 `MALFORMED_REQUEST`; 404 `MANUSCRIPT_NOT_FOUND`; 409 `MANUSCRIPT_REVISION_CONFLICT`; 422 `INVALID_MANUSCRIPT`; 500 `INTERNAL_ERROR` |
 
 Define `ProjectWorkspace` exactly as a required object containing `project`, `concept`, `storyBible`, `manuscript`, and integer `manuscriptRevision` with `minimum: 1`. Define `CreateProjectRequest.protagonistNames` with `minItems: 2` and `maxItems: 2`. Define `SaveManuscriptRequest` as a required object containing `manuscript` and `expectedRevision` with `minimum: 1`. Define `SaveManuscriptResponse` as a required object containing `manuscript`, `manuscriptRevision`, and `projectActivity`, where `projectActivity` contains `projectId` and `updatedAt`.
+
+Every timestamp schema combines `format: date-time` with `pattern: "Z$"` and
+states that only uppercase-`Z` UTC values are accepted. Response descriptions
+must make the error boundary explicit: missing required fields, wrong JSON
+types, and additional properties map to 400; well-typed values that fail enum,
+tuple-length, non-blank, relationship, or active-scene rules map to 422.
 
 Use the exact stable enum values:
 
@@ -318,7 +325,9 @@ Expected: exit 0 without `any`, unchecked broad casts, or domain-module imports 
 
 - [ ] **Step 1: Write failing observable contract tests**
 
-Create `project-handlers.test.ts`. Use `fetch("http://localhost/api/...")` so requests pass through the globally configured MSW Node server. Cover these exact assertions:
+Create `project-handlers.test.ts`. Build absolute request URLs from
+`window.location.origin` so exact relative `/api/...` MSW masks resolve against
+the same jsdom origin. Cover these exact assertions:
 
 ```text
 GET /api/projects -> 200; seed project; descending updatedAt ordering
@@ -326,15 +335,23 @@ POST /api/projects -> 201; Location=/api/projects/{id}/workspace; response revis
 GET returned Location -> 200 and the same newly created workspace
 POST invalid blank title -> 422 INVALID_TITLE with fieldErrors path=title
 POST unknown trope -> 422 INVALID_TROPE with fieldErrors path=tropeId
-POST missing/blank protagonist -> 422 INVALID_PROTAGONISTS with fieldErrors path=protagonistNames
+POST blank or wrong-count protagonist array -> 422 INVALID_PROTAGONISTS with fieldErrors path=protagonistNames
+POST missing required field -> 400 MALFORMED_REQUEST
 POST malformed JSON -> 400 MALFORMED_REQUEST
+POST additional request property -> 400 MALFORMED_REQUEST
 GET unknown workspace -> 404 PROJECT_NOT_FOUND
 PUT seed manuscript expectedRevision=1 -> 200; revision=2; new content retained
 GET seed workspace after save -> revision=2 and updated project timestamp
 PUT the same old revision again -> 409 MANUSCRIPT_REVISION_CONFLICT
 GET seed workspace after conflict -> content and revision unchanged from successful save
+two simultaneous PUT requests at expectedRevision=1 -> exactly one 200, one 409, stored revision=2, and only the winner's content
 PUT unknown manuscript -> 404 MANUSCRIPT_NOT_FOUND
 PUT path/body manuscript-id mismatch -> 422 INVALID_MANUSCRIPT
+PUT project relationship mismatch -> 422 INVALID_MANUSCRIPT
+PUT missing active-scene membership -> 422 INVALID_MANUSCRIPT
+PUT malformed JSON -> 400 MALFORMED_REQUEST
+PUT additional root, manuscript, or scene property -> 400 MALFORMED_REQUEST
+PUT empty manuscript, project, scene, or related-reference ID -> 400 MALFORMED_REQUEST
 test-local server.use() override -> 500 INTERNAL_ERROR fixture
 reset between tests -> seed revision is 1 in the next test
 ```
@@ -375,7 +392,16 @@ export const projectHandlers: RequestHandler[] = [
 ];
 ```
 
-Use `HttpResponse.json(payload, { status })`. Use status 201 and a `Location` header for creation. Validate JSON parsing separately from domain-input validation. Trim title, logline, and protagonist names before storing. Saving must validate active-scene membership, path/body IDs, project relationship, and revision before replacing mock state.
+Use `HttpResponse.json(payload, { status })`. Use status 201 and a `Location`
+header for creation. Validate JSON parsing and exact object keys separately from
+domain-input validation. Missing required fields, wrong JSON types, and
+additional properties at the create root, save root, manuscript, or scene level
+return 400. Present well-typed values that violate title, trope, protagonist,
+project relationship, or active-scene rules return 422. Trim title, logline, and
+protagonist names before storing. Parse a save request before reading mutable
+workspace state, then perform lookup, validation, revision comparison, and
+replacement synchronously without an intervening `await` so simultaneous stale
+writes cannot both succeed.
 
 - [ ] **Step 4: Register the handlers and reset state globally**
 
