@@ -6,3 +6,14 @@ backend = "core:node"
 [[tools."npm:pnpm"]]
 version = "11.4.0"
 backend = "npm:pnpm"
+
+[[tools.python]]
+version = "3.13.14"
+backend = "core:python"
+
+[tools.python.options]
+precompiled_flavor = "install_only_stripped"
+
+[[tools.uv]]
+version = "0.11.28"
+backend = "aqua:astral-sh/uv"
