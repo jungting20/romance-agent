@@ -47,7 +47,7 @@ Expected: the output contains exactly the backend instruction and setup files, `
 Run from the repository root:
 
 ```sh
-python3 - <<'PY'
+mise exec -- python - <<'PY'
 from pathlib import Path
 
 instructions = Path("backend/AGENTS.md").read_text()
@@ -132,7 +132,7 @@ environments, caches, generated files, or ignored artifacts to the tree.
 Run from the repository root:
 
 ```sh
-python3 - <<'PY'
+mise exec -- python - <<'PY'
 from pathlib import Path
 
 instructions = Path("backend/AGENTS.md").read_text()
@@ -155,7 +155,7 @@ Expected: `backend structure instructions: ok`.
 Run from the repository root:
 
 ```sh
-python3 - <<'PY'
+mise exec -- python - <<'PY'
 from pathlib import Path
 import subprocess
 import tomllib
