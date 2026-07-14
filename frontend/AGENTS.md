@@ -86,6 +86,27 @@ coordinated by a feature or application use case.
   independent responsibility, not only because it crosses an arbitrary line
   count.
 
+## TanStack Query and API Access
+
+- Use TanStack Query v5 (`@tanstack/react-query`) for all frontend server state:
+  queries for reads and mutations for writes. Do not introduce another
+  server-state library or bypass TanStack Query without explicit main-agent
+  approval.
+- Keep direct HTTP calls out of React components. Put typed transport calls and
+  response conversion in API adapters, then call those adapters from query and
+  mutation functions.
+- Configure `QueryClient` and `QueryClientProvider` in `src/app`. Do not make
+  domain modules or reusable presentation components depend on TanStack Query.
+- Define stable, feature-scoped query keys. After a successful mutation,
+  explicitly invalidate or update every affected cached query.
+- Model reachable loading, error, empty, disabled, and success states in the
+  consuming UI.
+- Test observable query and mutation behavior with Testing Library and MSW,
+  including meaningful success and contract-declared error responses.
+- When an assigned API-consuming task first needs TanStack Query, adding
+  `@tanstack/react-query` v5 is in scope for that task. Other dependency
+  additions still require main-agent approval.
+
 ## Testing and Verification
 
 - For behavior changes, add or update a focused test before the implementation
