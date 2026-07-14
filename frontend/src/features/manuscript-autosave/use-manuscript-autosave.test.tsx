@@ -100,6 +100,48 @@ describe("useManuscriptAutosave", () => {
     expect(requests[0].manuscript.scenes[0].content).toBe("800밀리초 뒤 저장");
   });
 
+  test("does not restart the idle deadline after an unrelated rerender", async () => {
+    const requests: SaveManuscriptRequest[] = [];
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        requests.push(body);
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 2,
+          projectActivity: {
+            projectId: body.manuscript.projectId,
+            updatedAt: "2026-07-14T03:00:00.000Z",
+          },
+        } satisfies SaveManuscriptResponse);
+      }),
+    );
+    const workspace = getWorkspace();
+    const queryClient = createTestQueryClient();
+    const { result, rerender } = renderHook(
+      ({ unrelated }: { unrelated: number }) => {
+        void unrelated;
+        return useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        });
+      },
+      {
+        initialProps: { unrelated: 0 },
+        wrapper: createWrapper(queryClient),
+      },
+    );
+
+    act(() => result.current.updateDraft(editActiveScene(workspace, "원래 마감에 저장")));
+    await act(async () => vi.advanceTimersByTimeAsync(400));
+    rerender({ unrelated: 1 });
+
+    await act(async () => vi.advanceTimersByTimeAsync(399));
+    expect(requests).toHaveLength(0);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(requests).toHaveLength(1);
+  });
+
   test("retains newer edits during an active save and schedules a serial follow-up", async () => {
     const requests: SaveManuscriptRequest[] = [];
     let releaseFirstSave!: (response: SaveManuscriptResponse) => void;

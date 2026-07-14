@@ -20,6 +20,8 @@ export function useManuscriptAutosave({
   manuscriptRevision,
 }: UseManuscriptAutosaveOptions) {
   const saveMutation = useSaveManuscriptMutation();
+  const mutateAsyncRef = useRef(saveMutation.mutateAsync);
+  mutateAsyncRef.current = saveMutation.mutateAsync;
   const [draft, setDraft] = useState(manuscript);
   const [status, setStatusState] = useState<ManuscriptAutosaveStatus>("saved");
   const [conflict, setConflict] = useState<ApiRequestError | null>(null);
@@ -45,7 +47,7 @@ export function useManuscriptAutosave({
     setStatus("saving");
 
     try {
-      const saved = await saveMutation.mutateAsync({
+      const saved = await mutateAsyncRef.current({
         manuscriptId: savingDraft.id,
         request: { manuscript: savingDraft, expectedRevision },
       });
@@ -69,7 +71,7 @@ export function useManuscriptAutosave({
 
       setStatus("error");
     }
-  }, [saveMutation, setStatus]);
+  }, [setStatus]);
 
   useEffect(() => {
     if (status !== "editing") {

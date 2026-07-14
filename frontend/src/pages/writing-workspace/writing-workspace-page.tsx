@@ -268,6 +268,7 @@ function AutosaveIndicator({
   return (
     <span
       role="status"
+      aria-label={label}
       className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
     >
       {status === "saved" ? (

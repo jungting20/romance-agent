@@ -162,9 +162,10 @@ describe("WritingWorkspacePage", () => {
     const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
       name: "원고 본문",
     });
+    expect(screen.getByRole("status")).toHaveAccessibleName("자동 저장됨");
 
     fireEvent.change(editor, { target: { value: "저장에 실패해도 남는 원고" } });
-    expect(screen.getByRole("status")).toHaveTextContent("편집 중");
+    expect(screen.getByRole("status")).toHaveAccessibleName("편집 중");
 
     expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
     expect(editor.value).toBe("저장에 실패해도 남는 원고");
