@@ -83,6 +83,30 @@ describe("SetupPage", () => {
     );
   });
 
+  test("shows form-level feedback for a 422 field path that has no input", async () => {
+    server.use(
+      http.post("/api/projects", () =>
+        HttpResponse.json(
+          {
+            code: "INVALID_TROPE",
+            message: "선택한 로맨스 트로프를 찾을 수 없습니다.",
+            fieldErrors: [{ path: "tropeId", message: "등록된 로맨스 트로프를 선택해 주세요." }],
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderSetup();
+
+    await user.type(screen.getByLabelText("작품 제목"), "트로프 오류 이야기");
+    await user.click(screen.getByRole("button", { name: "작업 공간 열기" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "선택한 로맨스 트로프를 찾을 수 없습니다.",
+    );
+  });
+
   test("shows a generic error when project creation fails", async () => {
     server.use(
       http.post("/api/projects", () =>

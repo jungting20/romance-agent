@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Heart, Sparkles } from "lucide-react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import { ApiRequestError } from "@/app/infrastructure/api/api-client";
-import type { TropeId } from "@/app/infrastructure/api/contracts";
+import type { CreateProjectRequest } from "@/app/infrastructure/api/contracts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,20 +19,24 @@ export function SetupPage() {
   const navigate = useNavigate();
   const createProject = useCreateProjectMutation();
   const tropeId = searchParams.get("trope");
-  const selectedTropeId = isTropeId(tropeId) ? tropeId : undefined;
-  const trope = TROPE_TEMPLATES.find(({ id }) => id === selectedTropeId);
+  const trope = TROPE_TEMPLATES.find(({ id }) => id === tropeId);
   const [title, setTitle] = useState("");
   const [logline, setLogline] = useState(trope?.starterLogline ?? "");
   const [firstName, setFirstName] = useState("서윤");
   const [secondName, setSecondName] = useState("도현");
-  const fieldErrors =
-    createProject.error instanceof ApiRequestError && createProject.error.status === 422
-      ? createProject.error.error.fieldErrors
-      : [];
+  const apiError = createProject.error instanceof ApiRequestError ? createProject.error : undefined;
+  const fieldErrors = apiError?.status === 422 ? apiError.error.fieldErrors : [];
   const titleError = fieldErrors.find(({ path }) => path === "title")?.message;
   const loglineError = fieldErrors.find(({ path }) => path === "logline")?.message;
   const protagonistError = fieldErrors.find(({ path }) => path === "protagonistNames")?.message;
-  const hasGenericError = createProject.isError && fieldErrors.length === 0;
+  const hasVisibleFieldError = Boolean(titleError || loglineError || protagonistError);
+  const formError = createProject.isError
+    ? apiError?.status === 422 && !hasVisibleFieldError
+      ? apiError.error.message
+      : apiError?.status !== 422
+        ? "프로젝트를 만들지 못했어요. 잠시 후 다시 시도해 주세요."
+        : undefined
+    : undefined;
 
   if (!trope) {
     return <Navigate to="/new" replace />;
@@ -40,7 +44,7 @@ export function SetupPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!trope || !selectedTropeId || createProject.isPending) {
+    if (!trope || createProject.isPending) {
       return;
     }
 
@@ -48,7 +52,8 @@ export function SetupPage() {
       const workspace = await createProject.mutateAsync({
         title,
         logline,
-        tropeId: selectedTropeId,
+        // The template lookup above is the UI's validation boundary for this transport enum.
+        tropeId: trope.id as CreateProjectRequest["tropeId"],
         protagonistNames: [firstName, secondName],
       });
       void navigate(`/projects/${workspace.project.id}/write`);
@@ -204,9 +209,9 @@ export function SetupPage() {
                   </p>
                 )}
               </div>
-              {hasGenericError && (
+              {formError && (
                 <p role="alert" className="text-sm text-destructive">
-                  프로젝트를 만들지 못했어요. 잠시 후 다시 시도해 주세요.
+                  {formError}
                 </p>
               )}
               <Button
@@ -223,14 +228,5 @@ export function SetupPage() {
         </Card>
       </main>
     </div>
-  );
-}
-
-function isTropeId(value: string | null): value is TropeId {
-  return (
-    value === "rivals-to-lovers" ||
-    value === "contract-romance" ||
-    value === "reunion" ||
-    value === "friends-to-lovers"
   );
 }
