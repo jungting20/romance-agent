@@ -18,7 +18,9 @@
 - Preserve Korean product copy and accessible keyboard behavior.
 - Use MSW for all transport behavior in browser development and UI/integration tests.
 - Do not modify or hide the unrelated `seed.spec.ts` Playwright/Vitest baseline issue.
-- Do not commit; the main agent reviews and integrates the shared working-tree diff.
+- Work directly on `main` as explicitly approved by the user. Commit each
+  completed task separately so the main agent can review its exact diff before
+  the next task begins.
 
 ---
 
