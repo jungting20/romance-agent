@@ -18,8 +18,9 @@ This change includes:
   `mise` setup
 - a backend `pyproject.toml` with runtime, development, and test dependencies
 - a FastAPI application entry point
-- the first consumer-facing OpenAPI contract, drafted by the frontend agent
-  and approved by the main agent before backend implementation
+- a `GET /health` operation added to the existing consumer-facing OpenAPI
+  contract by the frontend agent and approved by the main agent before backend
+  implementation
 - a `health` domain implemented across router, service, repository, and schema
   packages
 - unit tests for service and repository behavior
@@ -119,14 +120,14 @@ composition module later if wiring becomes complex.
 
 ## API Contract Workflow
 
-`GET /health` is the repository's first API operation, so
-`docs/api/openapi.yaml` is created as part of this change using OpenAPI 3.1.
-The frontend agent is the single editor and drafts the complete `GET /health`
-operation with `operationId: getHealth`, a `200` response, and a `HealthResponse`
-schema whose `status` field accepts only `ok`. The operation defines no
-domain-specific error response because the initial repository has no external
-failure mode. The main agent reviews and approves the exact baseline before
-assigning backend implementation.
+`docs/api/openapi.yaml` is the repository's existing OpenAPI 3.1 contract. The
+frontend agent is the single editor and adds the complete `GET /health`
+operation with `operationId: getHealth`, an operation-level `/` server override
+so the route remains `/health` rather than inheriting the contract's `/api`
+base URL, a `200` response, and a `HealthResponse` schema whose `status` field
+accepts only `ok`. The operation defines no domain-specific error response
+because the initial repository has no external failure mode. The main agent
+reviews and approves the exact baseline before assigning backend implementation.
 
 The backend agent implements only the approved operation and does not edit the
 OpenAPI document. If the approved contract is infeasible, implementation stops
