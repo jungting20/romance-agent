@@ -45,7 +45,7 @@
 Run from `backend/`:
 
 ```sh
-mise exec -- uv add pydantic-ai
+mise exec -- uv add "pydantic-ai>=2.9.1,<3"
 ```
 
 Expected: exit code 0; `pyproject.toml` contains a `pydantic-ai` runtime dependency and `uv.lock` is refreshed.
