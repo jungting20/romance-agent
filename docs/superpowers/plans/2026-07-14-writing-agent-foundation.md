@@ -37,7 +37,7 @@
 
 **Interfaces:**
 
-- Consumes: Python's `typing.Protocol` and `typing.runtime_checkable`.
+- Consumes: Python's `typing.Protocol`.
 - Produces: `TextGenerationPort.generate_text(prompt: str) -> Awaitable[str]` as the provider-independent structural interface for a future Writing Assistant service.
 
 - [ ] **Step 1: Add Pydantic AI through the project package manager**
@@ -55,6 +55,8 @@ Expected: exit code 0; `pyproject.toml` contains a `pydantic-ai` runtime depende
 Create `backend/tests/writing_assistant/test_text_generation_port.py`:
 
 ```python
+import asyncio
+
 from pydantic_ai import Agent
 
 from apps.writing_assistant.service.text_generation_port import TextGenerationPort
@@ -65,8 +67,10 @@ class StubTextGenerator:
         return prompt
 
 
-def test_text_generator_can_implement_port_structurally() -> None:
-    assert isinstance(StubTextGenerator(), TextGenerationPort)
+def test_text_generator_implements_async_port_contract() -> None:
+    generator: TextGenerationPort = StubTextGenerator()
+
+    assert asyncio.run(generator.generate_text("prompt")) == "prompt"
 
 
 def test_pydantic_ai_is_available() -> None:
@@ -100,10 +104,9 @@ backend/infrastructure/llm/__init__.py
 Create `backend/apps/writing_assistant/service/text_generation_port.py`:
 
 ```python
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 
-@runtime_checkable
 class TextGenerationPort(Protocol):
     async def generate_text(self, prompt: str) -> str: ...
 ```

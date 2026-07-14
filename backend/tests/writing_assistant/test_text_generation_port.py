@@ -1,3 +1,5 @@
+import asyncio
+
 from pydantic_ai import Agent
 
 from apps.writing_assistant.service.text_generation_port import TextGenerationPort
@@ -8,8 +10,10 @@ class StubTextGenerator:
         return prompt
 
 
-def test_text_generator_can_implement_port_structurally() -> None:
-    assert isinstance(StubTextGenerator(), TextGenerationPort)
+def test_text_generator_implements_async_port_contract() -> None:
+    generator: TextGenerationPort = StubTextGenerator()
+
+    assert asyncio.run(generator.generate_text("prompt")) == "prompt"
 
 
 def test_pydantic_ai_is_available() -> None:
