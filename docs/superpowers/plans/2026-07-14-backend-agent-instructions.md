@@ -6,7 +6,7 @@
 
 **Architecture:** Add one self-contained Codex custom-agent definition at `.codex/agents/backend.toml`, following the existing frontend agent's manifest shape. Keep durable project policy in repository documentation, while the custom agent enforces the required preflight checks, ownership boundaries, OpenAPI implementation gate, and completion report every time it is spawned.
 
-**Tech Stack:** Codex custom-agent TOML, Git, Python 3 standard-library `tomllib`
+**Tech Stack:** Codex custom-agent TOML, Git, Python 3.11 standard-library `tomllib`
 
 ## Global Constraints
 
@@ -82,7 +82,7 @@ Before reporting completion, return a concise summary containing changed files, 
 Run:
 
 ```sh
-python3 - <<'PY'
+python3.11 - <<'PY'
 from pathlib import Path
 import tomllib
 
@@ -102,7 +102,7 @@ Expected: `backend agent TOML: ok`
 Run:
 
 ```sh
-python3 - <<'PY'
+python3.11 - <<'PY'
 from pathlib import Path
 import tomllib
 
