@@ -1,3 +1,5 @@
+import { useRef } from "react";
+
 import type {
   CompareManuscriptSceneResponse,
   SceneDiffKind,
@@ -19,10 +21,12 @@ interface ManuscriptConflictDialogProps {
   isComparing: boolean;
   isResolving: boolean;
   compareError: boolean;
+  resolutionError?: boolean;
   onOpenChange: (open: boolean) => void;
   onKeepLocal: () => void;
   onApplyServer: () => void;
   onRetryCompare: () => void;
+  onRetryKeepLocal?: () => void;
 }
 
 const changeLabels: Record<SceneDiffKind, string> = {
@@ -37,16 +41,46 @@ export function ManuscriptConflictDialog({
   isComparing,
   isResolving,
   compareError,
+  resolutionError = false,
   onOpenChange,
   onKeepLocal,
   onApplyServer,
   onRetryCompare,
+  onRetryKeepLocal = onKeepLocal,
 }: ManuscriptConflictDialogProps) {
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
+
+  if (open && !wasOpenRef.current && typeof document !== "undefined") {
+    returnFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
+  wasOpenRef.current = open;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!isResolving) {
+          onOpenChange(nextOpen);
+        }
+      }}
+    >
       <DialogContent
         className="max-h-[calc(100svh-2rem)] max-w-5xl overflow-hidden p-0"
         showCloseButton={false}
+        onEscapeKeyDown={(event) => {
+          if (isResolving) {
+            event.preventDefault();
+          }
+        }}
+        onCloseAutoFocus={(event) => {
+          if (returnFocusRef.current) {
+            event.preventDefault();
+            returnFocusRef.current.focus();
+            returnFocusRef.current = null;
+          }
+        }}
       >
         <DialogHeader className="px-5 pt-5">
           <DialogTitle>원고 저장 충돌 해결</DialogTitle>
@@ -126,21 +160,28 @@ export function ManuscriptConflictDialog({
           <p>서버 최신본을 적용하면 현재 로컬 편집 내용은 대체되고 서버의 전체 원고를 사용해요.</p>
         </div>
 
+        {resolutionError && (
+          <p role="alert" className="px-5 text-sm text-destructive">
+            내 편집본을 서버에 저장하지 못했어요. 현재 편집본을 보관하고 있으니 다시 시도해 주세요.
+          </p>
+        )}
+
         <DialogFooter className="mx-0 mb-0 px-5">
           <Button
             type="button"
             variant="outline"
             disabled={!comparison || isComparing || isResolving || compareError}
             onClick={onApplyServer}
+            autoFocus
           >
             서버 최신본 적용
           </Button>
           <Button
             type="button"
             disabled={!comparison || isComparing || isResolving || compareError}
-            onClick={onKeepLocal}
+            onClick={resolutionError ? onRetryKeepLocal : onKeepLocal}
           >
-            내 편집본 유지
+            {resolutionError ? "내 편집본 저장 다시 시도" : "내 편집본 유지"}
           </Button>
         </DialogFooter>
       </DialogContent>

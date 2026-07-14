@@ -317,6 +317,68 @@ describe("useManuscriptAutosave", () => {
     expect(requestCount).toBe(1);
   });
 
+  test("compares the latest active local scene when an in-flight save returns a conflict", async () => {
+    const workspace = getWorkspace();
+    const secondScene = {
+      ...workspace.manuscript.scenes[0],
+      id: "latest-active-scene",
+      title: "새 활성 장면",
+      content: "두 번째 장면의 이전 내용",
+    };
+    const manuscript = {
+      ...workspace.manuscript,
+      scenes: [...workspace.manuscript.scenes, secondScene],
+    };
+    let releaseSave!: () => void;
+    const saveBarrier = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    const comparisons: Array<{ sceneId: string; localContent: string }> = [];
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async () => {
+        await saveBarrier;
+        return HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        );
+      }),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        const body = (await request.json()) as { sceneId: string; localContent: string };
+        comparisons.push(body);
+        return HttpResponse.json(
+          createComparisonForScene(manuscript, body.sceneId, body.localContent, 2),
+        );
+      }),
+    );
+    const { result } = renderHook(
+      () => useManuscriptAutosave({ manuscript, manuscriptRevision: 1 }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() =>
+      result.current.updateDraft(
+        updateSceneContent(manuscript, manuscript.activeSceneId, "저장 중인 첫 장면"),
+      ),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    act(() =>
+      result.current.updateDraft((current) => ({
+        ...updateSceneContent(current, secondScene.id, "PUT 대기 중 고친 최신 장면"),
+        activeSceneId: secondScene.id,
+      })),
+    );
+    await act(async () => {
+      releaseSave();
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(comparisons).toEqual([
+      { sceneId: secondScene.id, localContent: "PUT 대기 중 고친 최신 장면" },
+    ]);
+    expect(result.current.conflictComparison?.sceneId).toBe(secondScene.id);
+  });
+
   test("keeps the local scene on the latest server manuscript and saves at the server revision", async () => {
     const workspace = getWorkspace();
     const serverManuscript = {
@@ -426,6 +488,73 @@ describe("useManuscriptAutosave", () => {
     expect(result.current.conflictComparison?.serverRevision).toBe(3);
     expect(result.current.conflictComparison?.localContent).toBe("반복 충돌에도 남는 로컬 장면");
     expect(result.current.draft.scenes[0].content).toBe("반복 충돌에도 남는 로컬 장면");
+  });
+
+  test("keeps a non-conflict resolution failure distinct and retries the same server-based save", async () => {
+    const workspace = getWorkspace();
+    const serverManuscript = editActiveScene(workspace, "서버 장면");
+    const saveRequests: SaveManuscriptRequest[] = [];
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        saveRequests.push(body);
+        if (saveRequests.length === 1) {
+          return HttpResponse.json(
+            { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+            { status: 409 },
+          );
+        }
+        if (saveRequests.length === 2) {
+          return HttpResponse.json(
+            { code: "INTERNAL_ERROR", message: "저장 실패", fieldErrors: [] },
+            { status: 500 },
+          );
+        }
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 10,
+          projectActivity: {
+            projectId: workspace.project.id,
+            updatedAt: "2026-07-14T05:00:00Z",
+          },
+        } satisfies SaveManuscriptResponse);
+      }),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        const body = (await request.json()) as { localContent: string };
+        return HttpResponse.json({
+          ...createComparison(workspace, body.localContent, 9),
+          serverManuscript,
+        } satisfies CompareManuscriptSceneResponse);
+      }),
+    );
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() => result.current.updateDraft(editActiveScene(workspace, "재시도할 로컬 장면")));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+    await act(async () => result.current.keepLocal());
+    await flushPromises();
+
+    expect(result.current.status).toBe("conflict");
+    expect(result.current.isConflictResolutionError).toBe(true);
+    expect(result.current.isConflictDialogOpen).toBe(true);
+    expect(result.current.draft.scenes[0].content).toBe("재시도할 로컬 장면");
+
+    await act(async () => result.current.retryKeepLocal());
+    await flushPromises();
+
+    expect(saveRequests).toHaveLength(3);
+    expect(saveRequests[2]).toEqual(saveRequests[1]);
+    expect(saveRequests[2].expectedRevision).toBe(9);
+    expect(saveRequests[2].manuscript.scenes[0].content).toBe("재시도할 로컬 장면");
+    expect(result.current.status).toBe("saved");
   });
 
   test("adopts the complete server manuscript and revision without saving", async () => {
@@ -549,6 +678,65 @@ describe("useManuscriptAutosave", () => {
     expect(result.current.conflictComparison?.localContent).toBe("닫은 뒤 더 고친 초안");
     expect(result.current.draft.scenes[0].content).toBe("닫은 뒤 더 고친 초안");
   });
+
+  test("ignores an old manuscript comparison that finishes after a manuscript reset", async () => {
+    const workspace = getWorkspace();
+    const nextManuscript = {
+      ...workspace.manuscript,
+      id: "next-manuscript",
+      projectId: "next-project",
+      activeSceneId: "next-scene",
+      scenes: [
+        {
+          ...workspace.manuscript.scenes[0],
+          id: "next-scene",
+          content: "다음 원고",
+        },
+      ],
+    };
+    let releaseComparison!: (comparison: CompareManuscriptSceneResponse) => void;
+    const pendingComparison = new Promise<CompareManuscriptSceneResponse>((resolve) => {
+      releaseComparison = resolve;
+    });
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        ),
+      ),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async () =>
+        HttpResponse.json(await pendingComparison),
+      ),
+    );
+    const { result, rerender } = renderHook(
+      ({ manuscript, revision }: { manuscript: typeof workspace.manuscript; revision: number }) =>
+        useManuscriptAutosave({ manuscript, manuscriptRevision: revision }),
+      {
+        initialProps: { manuscript: workspace.manuscript, revision: 1 },
+        wrapper: createWrapper(createTestQueryClient()),
+      },
+    );
+
+    act(() => result.current.updateDraft(editActiveScene(workspace, "이전 원고의 충돌 초안")));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+    expect(result.current.isComparingConflict).toBe(true);
+
+    rerender({ manuscript: nextManuscript, revision: 4 });
+    await flushPromises();
+    await act(async () => {
+      releaseComparison(createComparison(workspace, "이전 원고의 충돌 초안", 2));
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(result.current.draft).toEqual(nextManuscript);
+    expect(result.current.status).toBe("saved");
+    expect(result.current.conflictComparison).toBeNull();
+    expect(result.current.isConflictDialogOpen).toBe(false);
+    expect(result.current.isComparingConflict).toBe(false);
+  });
 });
 
 function createComparison(
@@ -579,5 +767,25 @@ function createComparison(
         serverText: scene.content,
       },
     ],
+  };
+}
+
+function createComparisonForScene(
+  manuscript: ProjectWorkspaceResponse["manuscript"],
+  sceneId: string,
+  localContent: string,
+  serverRevision: number,
+): CompareManuscriptSceneResponse {
+  const scene = manuscript.scenes.find(({ id }) => id === sceneId);
+  if (!scene) {
+    throw new Error("Expected comparison scene");
+  }
+  return {
+    sceneId,
+    serverRevision,
+    localContent,
+    serverContent: scene.content,
+    serverManuscript: manuscript,
+    rows: [],
   };
 }

@@ -113,7 +113,9 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
     isComparingConflict,
     isConflictCompareError,
     isResolvingConflict,
+    isConflictResolutionError,
     keepLocal,
+    retryKeepLocal,
     applyServer,
     retryConflictComparison,
     setConflictDialogVisibility,
@@ -254,10 +256,12 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
         isComparing={isComparingConflict}
         isResolving={isResolvingConflict}
         compareError={isConflictCompareError}
+        resolutionError={isConflictResolutionError}
         onOpenChange={setConflictDialogVisibility}
         onKeepLocal={() => void keepLocal()}
         onApplyServer={applyServer}
         onRetryCompare={retryConflictComparison}
+        onRetryKeepLocal={() => void retryKeepLocal()}
       />
     </div>
   );

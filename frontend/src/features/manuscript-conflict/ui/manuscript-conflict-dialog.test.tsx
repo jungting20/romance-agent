@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, test, vi } from "vitest";
 
 import type { CompareManuscriptSceneResponse } from "@/app/infrastructure/api/contracts";
@@ -164,5 +165,95 @@ describe("ManuscriptConflictDialog", () => {
     expect(screen.getByRole("button", { name: "내 편집본 유지" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "서버 최신본 적용" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "편집본 비교 다시 불러오기" })).toBeEnabled();
+  });
+
+  test("prevents Escape dismissal while a keep-local resolution is pending", async () => {
+    const onOpenChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ManuscriptConflictDialog
+        open
+        comparison={getComparison()}
+        isComparing={false}
+        isResolving
+        compareError={false}
+        resolutionError={false}
+        onOpenChange={onOpenChange}
+        onKeepLocal={vi.fn()}
+        onApplyServer={vi.fn()}
+        onRetryCompare={vi.fn()}
+        onRetryKeepLocal={vi.fn()}
+      />,
+    );
+
+    await user.keyboard("{Escape}");
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "원고 저장 충돌 해결" })).toBeInTheDocument();
+  });
+
+  test("focuses, traps, and returns focus through the modal lifecycle", async () => {
+    const user = userEvent.setup();
+
+    function DialogHarness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            충돌 대화상자 열기
+          </button>
+          <ManuscriptConflictDialog
+            open={open}
+            comparison={getComparison()}
+            isComparing={false}
+            isResolving={false}
+            compareError={false}
+            resolutionError={false}
+            onOpenChange={setOpen}
+            onKeepLocal={vi.fn()}
+            onApplyServer={vi.fn()}
+            onRetryCompare={vi.fn()}
+            onRetryKeepLocal={vi.fn()}
+          />
+        </>
+      );
+    }
+
+    render(<DialogHarness />);
+    const opener = screen.getByRole("button", { name: "충돌 대화상자 열기" });
+    await user.click(opener);
+    const applyServer = screen.getByRole("button", { name: "서버 최신본 적용" });
+    const keepLocal = screen.getByRole("button", { name: "내 편집본 유지" });
+
+    await waitFor(() => expect(applyServer).toHaveFocus());
+    await user.tab();
+    expect(keepLocal).toHaveFocus();
+    await user.tab();
+    expect(applyServer).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  test("offers a dedicated keep-local retry after a resolution save failure", async () => {
+    const onRetryKeepLocal = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ManuscriptConflictDialog
+        open
+        comparison={getComparison()}
+        isComparing={false}
+        isResolving={false}
+        compareError={false}
+        resolutionError
+        onOpenChange={vi.fn()}
+        onKeepLocal={vi.fn()}
+        onApplyServer={vi.fn()}
+        onRetryCompare={vi.fn()}
+        onRetryKeepLocal={onRetryKeepLocal}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("내 편집본을 서버에 저장하지 못했어요");
+    await user.click(screen.getByRole("button", { name: "내 편집본 저장 다시 시도" }));
+    expect(onRetryKeepLocal).toHaveBeenCalledOnce();
   });
 });

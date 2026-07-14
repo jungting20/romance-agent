@@ -236,6 +236,70 @@ describe("WritingWorkspacePage", () => {
     expect(screen.queryByRole("dialog", { name: "원고 저장 충돌 해결" })).not.toBeInTheDocument();
     expect(editor.value).toBe("Escape 뒤에도 남는 로컬 장면");
   });
+
+  test("keeps the modal locked during local resolution and safely adopts its successful save", async () => {
+    const workspace = getWorkspace();
+    let saveCount = 0;
+    let releaseResolution!: () => void;
+    const resolutionBarrier = new Promise<void>((resolve) => {
+      releaseResolution = resolve;
+    });
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        saveCount += 1;
+        const body = (await request.json()) as SaveManuscriptRequest;
+        if (saveCount === 1) {
+          return HttpResponse.json(
+            { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+            { status: 409 },
+          );
+        }
+        await resolutionBarrier;
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 3,
+          projectActivity: {
+            projectId: workspace.project.id,
+            updatedAt: "2026-07-14T06:00:00Z",
+          },
+        });
+      }),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        const body = (await request.json()) as { sceneId: string; localContent: string };
+        return HttpResponse.json({
+          sceneId: body.sceneId,
+          serverRevision: 2,
+          localContent: body.localContent,
+          serverContent: "서버 최신 장면",
+          serverManuscript: {
+            ...workspace.manuscript,
+            scenes: workspace.manuscript.scenes.map((scene) =>
+              scene.id === body.sceneId ? { ...scene, content: "서버 최신 장면" } : scene,
+            ),
+          },
+          rows: [],
+        } satisfies CompareManuscriptSceneResponse);
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "원고 본문" });
+    fireEvent.change(editor, { target: { value: "해결 응답까지 지킬 로컬 장면" } });
+    await screen.findByRole("dialog", { name: "원고 저장 충돌 해결" });
+
+    await user.click(screen.getByRole("button", { name: "내 편집본 유지" }));
+    expect(screen.queryByRole("textbox", { name: "원고 본문" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "원고 저장 충돌 해결" })).toBeInTheDocument();
+
+    releaseResolution();
+    const restoredEditor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+    expect(restoredEditor.value).toBe("해결 응답까지 지킬 로컬 장면");
+    expect(screen.queryByRole("dialog", { name: "원고 저장 충돌 해결" })).not.toBeInTheDocument();
+    expect(saveCount).toBe(2);
+  });
 });
 
 function renderWorkspace(projectId = "silver-garden") {
