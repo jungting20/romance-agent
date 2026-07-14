@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { ApiRequestError } from "@/app/infrastructure/api/api-client";
-import { useSaveManuscriptMutation } from "@/features/project-persistence";
+import type {
+  CompareManuscriptSceneResponse,
+  ProjectWorkspaceResponse,
+} from "@/app/infrastructure/api/contracts";
+import {
+  projectKeys,
+  useCompareManuscriptSceneMutation,
+  useSaveManuscriptMutation,
+} from "@/features/project-persistence";
 import type { Manuscript } from "@/modules/manuscript";
+import { updateSceneContent } from "@/modules/manuscript";
 
 const AUTOSAVE_IDLE_MS = 800;
 
@@ -19,22 +29,73 @@ export function useManuscriptAutosave({
   manuscript,
   manuscriptRevision,
 }: UseManuscriptAutosaveOptions) {
+  const queryClient = useQueryClient();
   const saveMutation = useSaveManuscriptMutation();
+  const compareMutation = useCompareManuscriptSceneMutation();
   const mutateAsyncRef = useRef(saveMutation.mutateAsync);
   mutateAsyncRef.current = saveMutation.mutateAsync;
+  const compareAsyncRef = useRef(compareMutation.mutateAsync);
+  compareAsyncRef.current = compareMutation.mutateAsync;
   const [draft, setDraft] = useState(manuscript);
   const [status, setStatusState] = useState<ManuscriptAutosaveStatus>("saved");
   const [conflict, setConflict] = useState<ApiRequestError | null>(null);
+  const [conflictComparison, setConflictComparison] =
+    useState<CompareManuscriptSceneResponse | null>(null);
+  const [isConflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const [isComparingConflict, setComparingConflict] = useState(false);
+  const [isConflictCompareError, setConflictCompareError] = useState(false);
+  const [isResolvingConflict, setResolvingConflict] = useState(false);
   const draftRef = useRef(manuscript);
   const acknowledgedManuscriptRef = useRef(manuscript);
   const acknowledgedRevisionRef = useRef(manuscriptRevision);
   const inFlightRef = useRef(false);
   const statusRef = useRef<ManuscriptAutosaveStatus>("saved");
+  const conflictComparisonRef = useRef<CompareManuscriptSceneResponse | null>(null);
+  const comparisonRequestRef = useRef(0);
 
   const setStatus = useCallback((nextStatus: ManuscriptAutosaveStatus) => {
     statusRef.current = nextStatus;
     setStatusState(nextStatus);
   }, []);
+
+  const requestConflictComparison = useCallback(
+    async ({
+      manuscriptId,
+      sceneId,
+      localContent,
+    }: {
+      manuscriptId: string;
+      sceneId: string;
+      localContent: string;
+    }) => {
+      const requestId = comparisonRequestRef.current + 1;
+      comparisonRequestRef.current = requestId;
+      setConflictDialogOpen(true);
+      setComparingConflict(true);
+      setConflictCompareError(false);
+
+      try {
+        const comparison = await compareAsyncRef.current({
+          manuscriptId,
+          request: { sceneId, localContent },
+        });
+        if (comparisonRequestRef.current !== requestId) {
+          return;
+        }
+        conflictComparisonRef.current = comparison;
+        setConflictComparison(comparison);
+      } catch {
+        if (comparisonRequestRef.current === requestId) {
+          setConflictCompareError(true);
+        }
+      } finally {
+        if (comparisonRequestRef.current === requestId) {
+          setComparingConflict(false);
+        }
+      }
+    },
+    [],
+  );
 
   const saveCurrentDraft = useCallback(async () => {
     if (inFlightRef.current || statusRef.current === "conflict") {
@@ -66,12 +127,20 @@ export function useManuscriptAutosave({
       ) {
         setConflict(error);
         setStatus("conflict");
+        const scene = savingDraft.scenes.find(({ id }) => id === savingDraft.activeSceneId);
+        if (scene) {
+          void requestConflictComparison({
+            manuscriptId: savingDraft.id,
+            sceneId: scene.id,
+            localContent: scene.content,
+          });
+        }
         return;
       }
 
       setStatus("error");
     }
-  }, [setStatus]);
+  }, [requestConflictComparison, setStatus]);
 
   useEffect(() => {
     if (status !== "editing") {
@@ -95,6 +164,10 @@ export function useManuscriptAutosave({
     acknowledgedRevisionRef.current = manuscriptRevision;
     setDraft(manuscript);
     setConflict(null);
+    conflictComparisonRef.current = null;
+    setConflictComparison(null);
+    setConflictDialogOpen(false);
+    setConflictCompareError(false);
     setStatus("saved");
   }, [manuscript, manuscriptRevision, setStatus]);
 
@@ -123,5 +196,137 @@ export function useManuscriptAutosave({
     }
   }, [saveCurrentDraft]);
 
-  return { draft, updateDraft, status, retry, conflict };
+  const retryConflictComparison = useCallback(() => {
+    const currentDraft = draftRef.current;
+    const scene = currentDraft.scenes.find(({ id }) => id === currentDraft.activeSceneId);
+    if (scene) {
+      void requestConflictComparison({
+        manuscriptId: currentDraft.id,
+        sceneId: scene.id,
+        localContent: scene.content,
+      });
+    }
+  }, [requestConflictComparison]);
+
+  const keepLocal = useCallback(async () => {
+    const comparison = conflictComparisonRef.current;
+    if (!comparison || isResolvingConflict || inFlightRef.current) {
+      return;
+    }
+
+    const resolvedManuscript = updateSceneContent(
+      comparison.serverManuscript,
+      comparison.sceneId,
+      comparison.localContent,
+    );
+    inFlightRef.current = true;
+    setResolvingConflict(true);
+    setStatus("saving");
+
+    try {
+      const saved = await mutateAsyncRef.current({
+        manuscriptId: resolvedManuscript.id,
+        request: {
+          manuscript: resolvedManuscript,
+          expectedRevision: comparison.serverRevision,
+        },
+      });
+      inFlightRef.current = false;
+      acknowledgedManuscriptRef.current = saved.manuscript;
+      acknowledgedRevisionRef.current = saved.manuscriptRevision;
+      draftRef.current = saved.manuscript;
+      setDraft(saved.manuscript);
+      setConflict(null);
+      conflictComparisonRef.current = null;
+      setConflictComparison(null);
+      setConflictDialogOpen(false);
+      setConflictCompareError(false);
+      setStatus("saved");
+    } catch (error) {
+      inFlightRef.current = false;
+      if (
+        error instanceof ApiRequestError &&
+        error.status === 409 &&
+        error.error.code === "MANUSCRIPT_REVISION_CONFLICT"
+      ) {
+        setConflict(error);
+        setStatus("conflict");
+        await requestConflictComparison({
+          manuscriptId: resolvedManuscript.id,
+          sceneId: comparison.sceneId,
+          localContent: comparison.localContent,
+        });
+      } else {
+        setStatus("error");
+      }
+    } finally {
+      setResolvingConflict(false);
+    }
+  }, [isResolvingConflict, requestConflictComparison, setStatus]);
+
+  const applyServer = useCallback(() => {
+    const comparison = conflictComparisonRef.current;
+    if (!comparison || isResolvingConflict || inFlightRef.current) {
+      return;
+    }
+
+    const serverManuscript = comparison.serverManuscript;
+    draftRef.current = serverManuscript;
+    acknowledgedManuscriptRef.current = serverManuscript;
+    acknowledgedRevisionRef.current = comparison.serverRevision;
+    setDraft(serverManuscript);
+    setConflict(null);
+    conflictComparisonRef.current = null;
+    setConflictComparison(null);
+    setConflictDialogOpen(false);
+    setConflictCompareError(false);
+    setStatus("saved");
+    queryClient.setQueryData<ProjectWorkspaceResponse>(
+      projectKeys.workspace(serverManuscript.projectId),
+      (workspace) =>
+        workspace
+          ? {
+              ...workspace,
+              manuscript: serverManuscript,
+              manuscriptRevision: comparison.serverRevision,
+            }
+          : workspace,
+    );
+  }, [isResolvingConflict, queryClient, setStatus]);
+
+  const setConflictDialogVisibility = useCallback((open: boolean) => {
+    setConflictDialogOpen(open);
+  }, []);
+
+  const openConflictDialog = useCallback(() => {
+    if (statusRef.current === "conflict") {
+      const currentDraft = draftRef.current;
+      const scene = currentDraft.scenes.find(({ id }) => id === currentDraft.activeSceneId);
+      if (scene) {
+        void requestConflictComparison({
+          manuscriptId: currentDraft.id,
+          sceneId: scene.id,
+          localContent: scene.content,
+        });
+      }
+    }
+  }, [requestConflictComparison]);
+
+  return {
+    draft,
+    updateDraft,
+    status,
+    retry,
+    conflict,
+    conflictComparison,
+    isConflictDialogOpen,
+    isComparingConflict,
+    isConflictCompareError,
+    isResolvingConflict,
+    keepLocal,
+    applyServer,
+    retryConflictComparison,
+    setConflictDialogVisibility,
+    openConflictDialog,
+  };
 }

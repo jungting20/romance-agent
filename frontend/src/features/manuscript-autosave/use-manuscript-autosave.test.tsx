@@ -5,6 +5,7 @@ import type { PropsWithChildren } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type {
+  CompareManuscriptSceneResponse,
   ProjectWorkspaceResponse,
   SaveManuscriptRequest,
   SaveManuscriptResponse,
@@ -269,6 +270,8 @@ describe("useManuscriptAutosave", () => {
 
   test("suspends autosave and exposes revision conflicts", async () => {
     let requestCount = 0;
+    let compareCount = 0;
+    const workspace = getWorkspace();
     server.use(
       http.put("/api/manuscripts/:manuscriptId", () => {
         requestCount += 1;
@@ -281,8 +284,12 @@ describe("useManuscriptAutosave", () => {
           { status: 409 },
         );
       }),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        compareCount += 1;
+        const body = (await request.json()) as { sceneId: string; localContent: string };
+        return HttpResponse.json(createComparison(workspace, body.localContent, 2));
+      }),
     );
-    const workspace = getWorkspace();
     const { result } = renderHook(
       () =>
         useManuscriptAutosave({
@@ -299,6 +306,8 @@ describe("useManuscriptAutosave", () => {
     expect(result.current.status).toBe("conflict");
     expect(result.current.conflict?.error.code).toBe("MANUSCRIPT_REVISION_CONFLICT");
     expect(result.current.draft.scenes[0].content).toBe("충돌한 로컬 초안");
+    expect(compareCount).toBe(1);
+    expect(result.current.conflictComparison?.localContent).toBe("충돌한 로컬 초안");
 
     act(() => result.current.updateDraft(editActiveScene(workspace, "충돌 뒤의 더 최신 초안")));
     expect(result.current.status).toBe("conflict");
@@ -307,4 +316,268 @@ describe("useManuscriptAutosave", () => {
     expect(result.current.status).toBe("conflict");
     expect(requestCount).toBe(1);
   });
+
+  test("keeps the local scene on the latest server manuscript and saves at the server revision", async () => {
+    const workspace = getWorkspace();
+    const serverManuscript = {
+      ...workspace.manuscript,
+      scenes: [
+        { ...workspace.manuscript.scenes[0], content: "서버의 활성 장면" },
+        {
+          ...workspace.manuscript.scenes[0],
+          id: "server-only-scene",
+          title: "서버에서 추가된 장면",
+          content: "보존해야 하는 서버 변경",
+        },
+      ],
+    };
+    const saveRequests: SaveManuscriptRequest[] = [];
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        saveRequests.push(body);
+        if (saveRequests.length === 1) {
+          return HttpResponse.json(
+            { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+            { status: 409 },
+          );
+        }
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 8,
+          projectActivity: { projectId: workspace.project.id, updatedAt: "2026-07-14T04:00:00Z" },
+        } satisfies SaveManuscriptResponse);
+      }),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        const body = (await request.json()) as { localContent: string };
+        return HttpResponse.json({
+          ...createComparison(workspace, body.localContent, 7),
+          serverManuscript,
+        } satisfies CompareManuscriptSceneResponse);
+      }),
+    );
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() => result.current.updateDraft(editActiveScene(workspace, "유지할 로컬 장면")));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+    await act(async () => {
+      await Promise.all([result.current.keepLocal(), result.current.keepLocal()]);
+    });
+    await flushPromises();
+
+    expect(saveRequests).toHaveLength(2);
+    expect(saveRequests[1].expectedRevision).toBe(7);
+    expect(saveRequests[1].manuscript.scenes[0].content).toBe("유지할 로컬 장면");
+    expect(saveRequests[1].manuscript.scenes[1]).toMatchObject({
+      id: "server-only-scene",
+      content: "보존해야 하는 서버 변경",
+    });
+    expect(result.current.status).toBe("saved");
+  });
+
+  test("requests a fresh diff after local resolution meets another conflict", async () => {
+    const workspace = getWorkspace();
+    let saveCount = 0;
+    let compareCount = 0;
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () => {
+        saveCount += 1;
+        return HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        );
+      }),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        compareCount += 1;
+        const body = (await request.json()) as { localContent: string };
+        return HttpResponse.json(createComparison(workspace, body.localContent, compareCount + 1));
+      }),
+    );
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() =>
+      result.current.updateDraft(editActiveScene(workspace, "반복 충돌에도 남는 로컬 장면")),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+    expect(compareCount).toBe(1);
+
+    await act(async () => result.current.keepLocal());
+    await flushPromises();
+
+    expect(saveCount).toBe(2);
+    expect(compareCount).toBe(2);
+    expect(result.current.status).toBe("conflict");
+    expect(result.current.conflictComparison?.serverRevision).toBe(3);
+    expect(result.current.conflictComparison?.localContent).toBe("반복 충돌에도 남는 로컬 장면");
+    expect(result.current.draft.scenes[0].content).toBe("반복 충돌에도 남는 로컬 장면");
+  });
+
+  test("adopts the complete server manuscript and revision without saving", async () => {
+    const workspace = getWorkspace();
+    const serverManuscript = editActiveScene(workspace, "서버가 선택한 최신 장면");
+    let saveCount = 0;
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(projectKeys.workspace(workspace.project.id), workspace);
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () => {
+        saveCount += 1;
+        return HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        );
+      }),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        const body = (await request.json()) as { localContent: string };
+        return HttpResponse.json({
+          ...createComparison(workspace, body.localContent, 5),
+          serverManuscript,
+        } satisfies CompareManuscriptSceneResponse);
+      }),
+    );
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    act(() => result.current.updateDraft(editActiveScene(workspace, "버릴 로컬 장면")));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+    act(() => result.current.applyServer());
+
+    expect(saveCount).toBe(1);
+    expect(result.current.status).toBe("saved");
+    expect(result.current.draft).toEqual(serverManuscript);
+    expect(result.current.conflictComparison).toBeNull();
+    expect(result.current.isConflictDialogOpen).toBe(false);
+    expect(
+      queryClient.getQueryData<ProjectWorkspaceResponse>(
+        projectKeys.workspace(workspace.project.id),
+      ),
+    ).toMatchObject({ manuscript: serverManuscript, manuscriptRevision: 5 });
+  });
+
+  test("preserves the local draft when comparison fails", async () => {
+    const workspace = getWorkspace();
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        ),
+      ),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", () =>
+        HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "비교 실패", fieldErrors: [] },
+          { status: 500 },
+        ),
+      ),
+    );
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() => result.current.updateDraft(editActiveScene(workspace, "비교 실패에도 남는 초안")));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+
+    expect(result.current.status).toBe("conflict");
+    expect(result.current.isConflictCompareError).toBe(true);
+    expect(result.current.draft.scenes[0].content).toBe("비교 실패에도 남는 초안");
+  });
+
+  test("refreshes a dismissed comparison with edits made while conflict autosave is suspended", async () => {
+    const workspace = getWorkspace();
+    const comparedContents: string[] = [];
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        ),
+      ),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        const body = (await request.json()) as { localContent: string };
+        comparedContents.push(body.localContent);
+        return HttpResponse.json(
+          createComparison(workspace, body.localContent, comparedContents.length + 1),
+        );
+      }),
+    );
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() => result.current.updateDraft(editActiveScene(workspace, "처음 충돌한 초안")));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+    act(() => result.current.setConflictDialogVisibility(false));
+    act(() => result.current.updateDraft(editActiveScene(workspace, "닫은 뒤 더 고친 초안")));
+    act(() => result.current.openConflictDialog());
+    await flushPromises();
+
+    expect(comparedContents).toEqual(["처음 충돌한 초안", "닫은 뒤 더 고친 초안"]);
+    expect(result.current.conflictComparison?.localContent).toBe("닫은 뒤 더 고친 초안");
+    expect(result.current.draft.scenes[0].content).toBe("닫은 뒤 더 고친 초안");
+  });
 });
+
+function createComparison(
+  workspace: ProjectWorkspaceResponse,
+  localContent: string,
+  serverRevision: number,
+): CompareManuscriptSceneResponse {
+  const scene = workspace.manuscript.scenes[0];
+  return {
+    sceneId: scene.id,
+    serverRevision,
+    localContent,
+    serverContent: scene.content,
+    serverManuscript: workspace.manuscript,
+    rows: [
+      {
+        kind: "local-only",
+        localLineNumber: 1,
+        localText: localContent,
+        serverLineNumber: null,
+        serverText: null,
+      },
+      {
+        kind: "server-only",
+        localLineNumber: null,
+        localText: null,
+        serverLineNumber: 1,
+        serverText: scene.content,
+      },
+    ],
+  };
+}

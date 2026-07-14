@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, test } from "vitest";
 
 import type {
+  CompareManuscriptSceneResponse,
   ProjectWorkspaceResponse,
   SaveManuscriptRequest,
 } from "@/app/infrastructure/api/contracts";
@@ -174,6 +175,66 @@ describe("WritingWorkspacePage", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("자동 저장됨");
     expect(editor.value).toBe("저장에 실패해도 남는 원고");
     expect(saveCount).toBe(2);
+  });
+
+  test("opens the conflict comparison and Escape closes it without discarding the draft", async () => {
+    const workspace = getWorkspace();
+    let compareCount = 0;
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        ),
+      ),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        compareCount += 1;
+        const body = (await request.json()) as { sceneId: string; localContent: string };
+        return HttpResponse.json({
+          sceneId: body.sceneId,
+          serverRevision: 2,
+          localContent: body.localContent,
+          serverContent: "서버 최신 장면",
+          serverManuscript: {
+            ...workspace.manuscript,
+            scenes: workspace.manuscript.scenes.map((scene) =>
+              scene.id === body.sceneId ? { ...scene, content: "서버 최신 장면" } : scene,
+            ),
+          },
+          rows: [
+            {
+              kind: "local-only",
+              localLineNumber: 1,
+              localText: body.localContent,
+              serverLineNumber: null,
+              serverText: null,
+            },
+            {
+              kind: "server-only",
+              localLineNumber: null,
+              localText: null,
+              serverLineNumber: 1,
+              serverText: "서버 최신 장면",
+            },
+          ],
+        } satisfies CompareManuscriptSceneResponse);
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "원고 본문" });
+
+    fireEvent.change(editor, { target: { value: "Escape 뒤에도 남는 로컬 장면" } });
+    expect(await screen.findByRole("dialog", { name: "원고 저장 충돌 해결" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "내 편집본" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "서버 최신본" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "내 편집본 유지" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "서버 최신본 적용" })).toBeEnabled();
+    expect(compareCount).toBe(1);
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "원고 저장 충돌 해결" })).not.toBeInTheDocument();
+    expect(editor.value).toBe("Escape 뒤에도 남는 로컬 장면");
   });
 });
 

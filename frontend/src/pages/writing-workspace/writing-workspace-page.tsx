@@ -17,6 +17,7 @@ import type { ProjectWorkspaceResponse } from "@/app/infrastructure/api/contract
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { applyWritingSuggestion } from "@/features/apply-writing-suggestion";
+import { ManuscriptConflictDialog } from "@/features/manuscript-conflict";
 import {
   type ManuscriptAutosaveStatus,
   useManuscriptAutosave,
@@ -102,7 +103,22 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [selection, setSelection] = useState<TextRange | null>(null);
   const { project, storyBible: bible } = workspace;
-  const { draft, updateDraft, status, retry } = useManuscriptAutosave({
+  const {
+    draft,
+    updateDraft,
+    status,
+    retry,
+    conflictComparison,
+    isConflictDialogOpen,
+    isComparingConflict,
+    isConflictCompareError,
+    isResolvingConflict,
+    keepLocal,
+    applyServer,
+    retryConflictComparison,
+    setConflictDialogVisibility,
+    openConflictDialog,
+  } = useManuscriptAutosave({
     manuscript: workspace.manuscript,
     manuscriptRevision: workspace.manuscriptRevision,
   });
@@ -140,7 +156,7 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
             <p className="truncate text-[11px] text-muted-foreground">제1장 · {scene.title}</p>
           </div>
         </div>
-        <AutosaveIndicator status={status} onRetry={retry} />
+        <AutosaveIndicator status={status} onRetry={retry} onOpenConflict={openConflictDialog} />
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -232,6 +248,17 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
           </div>
         )}
       </div>
+      <ManuscriptConflictDialog
+        open={isConflictDialogOpen}
+        comparison={conflictComparison}
+        isComparing={isComparingConflict}
+        isResolving={isResolvingConflict}
+        compareError={isConflictCompareError}
+        onOpenChange={setConflictDialogVisibility}
+        onKeepLocal={() => void keepLocal()}
+        onApplyServer={applyServer}
+        onRetryCompare={retryConflictComparison}
+      />
     </div>
   );
 }
@@ -239,9 +266,11 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
 function AutosaveIndicator({
   status,
   onRetry,
+  onOpenConflict,
 }: {
   status: ManuscriptAutosaveStatus;
   onRetry: () => void;
+  onOpenConflict: () => void;
 }) {
   if (status === "error") {
     return (
@@ -257,9 +286,13 @@ function AutosaveIndicator({
 
   if (status === "conflict") {
     return (
-      <span role="alert" className="flex shrink-0 items-center gap-1.5 text-xs text-destructive">
-        <CircleAlert className="size-3.5" /> 저장 충돌
-      </span>
+      <div role="alert" className="flex shrink-0 items-center gap-1.5 text-xs text-destructive">
+        <CircleAlert className="size-3.5" />
+        <span>저장 충돌</span>
+        <Button type="button" variant="ghost" size="sm" onClick={onOpenConflict}>
+          충돌 해결 열기
+        </Button>
+      </div>
     );
   }
 
