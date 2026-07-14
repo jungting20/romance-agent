@@ -10,11 +10,30 @@ servers:
   - url: /api
 security: []
 tags:
+  - name: Health
+    description: API 프로세스 가용성 확인
   - name: Projects
     description: 프로젝트 서재와 원자적 작업공간 생성 및 조회
   - name: Manuscripts
     description: 리비전 충돌을 방지하는 원고 저장과 장면 초안 비교
 paths:
+  /health:
+    get:
+      servers:
+        - url: /
+      tags: [Health]
+      operationId: getHealth
+      summary: API 프로세스 상태 확인
+      description: 외부 시스템 의존성 검사 없이 API 프로세스가 요청을 처리할 수 있음을 반환합니다.
+      responses:
+        "200":
+          description: API 프로세스가 요청을 처리할 수 있음
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
   /projects:
     get:
       tags: [Projects]
@@ -483,6 +502,15 @@ components:
             message: 잠시 후 다시 시도해 주세요.
             fieldErrors: []
   schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: API 프로세스 가용 상태
     ProjectId:
       type: string
       minLength: 1
