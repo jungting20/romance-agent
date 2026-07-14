@@ -10,9 +10,11 @@ The project-scoped custom agent that specializes in this work is registered as
 
 ## Mission
 
-The frontend agent is a task-scoped specialist responsible for frontend code quality, user-visible behavior, accessibility, and consumer-facing API contract authoring. It owns only the paths explicitly assigned by the main agent. The
-main agent remains responsible for architecture, cross-stack integration, and
-final approval.
+The frontend agent is a task-scoped specialist responsible for frontend code
+quality, user-visible behavior, accessibility, and API consumer integration.
+It owns only the paths explicitly assigned by the main agent. The main agent
+remains responsible for architecture, cross-stack integration, and final
+approval.
 
 ## Before Editing
 
@@ -20,8 +22,8 @@ final approval.
 2. Inspect the nearest existing module, feature, page, and test patterns before
    introducing a new pattern.
 3. Confirm the assigned paths, acceptance criteria, and verification commands.
-4. If API work is required, confirm that the task explicitly assigns
-   `docs/api/openapi.yaml`; it is outside the normal frontend-owned path.
+4. For API-consuming work, confirm the main-agent-approved OpenAPI baseline
+   and affected `operationId` values. Never edit `docs/api/openapi.yaml`.
 5. Preserve unrelated user changes and report a file-ownership conflict before
    editing an overlapping file.
 
@@ -129,63 +131,45 @@ coordinated by a feature or application use case.
 Report the commands run and their results. Do not claim completion from a
 partial test, lint, type-check, or build result.
 
-## API Spec Ownership
+## E2E Test Planning and Generation
 
-The frontend agent is the author and steward of the consumer-facing API spec;
-it is not the final approver. The main agent owns approval and the backend agent
-owns implementation feasibility and server implementation.
+After implementing a frontend feature, use the project-scoped custom agents in
+the following order before handing the work back to the main agent:
 
-- Use OpenAPI 3.1 in `docs/api/openapi.yaml` as the authoritative transport
-  contract.
-- Create the spec only when the first endpoint is required; do not create an
-  empty placeholder contract.
-- Edit the spec only when the main agent explicitly assigns that shared path to
-  the frontend task.
-- Derive operations from the UI use case and relevant domain contracts, not
-  from guessed backend storage or framework structure.
-- Keep frontend types, mocks, fixtures, and API adapters aligned with the same
-  proposed or approved spec baseline when they are in scope.
-- A semantic API change must update the affected domain document in the same
-  change. Transport-only detail must not leak into `docs/domains/`.
+1. Use `.codex/agents/playwright_test_planner.toml` to inspect the implemented
+   behavior and produce an E2E test plan covering the acceptance criteria,
+   critical user flows, meaningful failure states, and relevant accessibility
+   interactions.
+2. Give the approved E2E test plan to
+   `.codex/agents/playwright_test_generator.toml` and use it to generate the
+   corresponding Playwright tests.
 
-## API Spec Requirements
+Each delegated E2E task must include the implemented feature's owned paths,
+acceptance criteria, relevant domain contracts, test-plan output, and the exact
+verification commands. The planner must not modify implementation or test
+files. The generator may modify only the explicitly assigned Playwright test
+paths and must not change product behavior to make a test pass.
 
-Every operation must define, as applicable:
+Review the generated tests against the implemented behavior and E2E plan, run
+the relevant Playwright verification, and include the plan, generated test
+paths, commands, and results in the frontend handoff. If either custom agent is
+missing or unavailable, report that blocker to the main agent instead of
+silently skipping or replacing the required E2E step.
 
-- a stable, unique `operationId`;
-- method, path, summary, and domain-oriented description;
-- path, query, and header parameters;
-- request-body content types, schemas, and required fields;
-- success status codes, response schemas, and headers;
-- expected client and server error status codes with machine-readable error
-  schemas;
-- identifiers, formats, enums, nullability, collection semantics, and date-time
-  representation;
-- representative request, success-response, and error-response examples;
-- authentication and authorization requirements when they enter approved
-  scope;
-- pagination, concurrency, or idempotency behavior when the use case needs it.
+## API Consumer and MSW Responsibilities
 
-Reuse named component schemas for stable shared wire concepts without copying
-frontend view models into the transport contract. Do not specify Python types,
-web frameworks, database tables, persistence models, or LLM-provider details.
-Do not invent missing domain or product decisions; list them as unresolved and
-return them to the main agent before approval.
-
-## MSW API Mock Requirements
-
-After creating or changing an API operation in `docs/api/openapi.yaml`, create
-or update its Mock Service Worker (MSW) handlers and representative mock
-response data before returning the contract to the main agent. An API draft is
-not ready for review until these artifacts exist.
+For frontend work that consumes a new or changed operation, use the exact
+main-agent-approved `docs/api/openapi.yaml` baseline. Do not author, approve, or
+edit the OpenAPI contract. Create or update the aligned frontend types, API
+adapters, Mock Service Worker (MSW) handlers, and representative mock response
+data within the assigned frontend paths.
 
 - Register shared handlers through `src/mocks/handlers.ts` so browser
   development and Vitest exercise the same transport behavior.
 - Cover every affected operation's success response and each meaningful
   contract-declared error response that the UI consumes.
 - Keep handler methods, paths, status codes, headers, and payloads aligned with
-  the same proposed or approved OpenAPI baseline as the frontend types and API
-  adapter.
+  the same approved OpenAPI baseline as the frontend types and API adapter.
 - Keep scenario-specific overrides in focused tests; do not make one test's
   exceptional response the shared development default.
 - OpenAPI examples alone do not satisfy the MSW handler and mock-data
@@ -193,31 +177,8 @@ not ready for review until these artifacts exist.
 - Do not invent behavior missing from the domain contracts or API decision;
   return unresolved product decisions to the main agent.
 
-## API Handoff to Main
-
-The frontend agent does not hand a draft directly to Backend as an accepted
-contract. It returns this package to the main agent:
-
-```text
-API contract handoff
-- Spec: docs/api/openapi.yaml
-- Baseline: <accepted revision or explicitly identified diff>
-- Operations: <operationId values>
-- Domain contracts: <docs/domains paths>
-- Assumptions: <explicit list or none>
-- Frontend artifacts: <types, MSW handler and mock-data paths, adapters>
-- Validation: <commands and results>
-```
-
-An API-spec handoff must not use `none` for MSW artifacts.
-
-Main assigns each approved baseline to Backend. Backend must not silently edit
-the approved API spec. If Backend proposes a change, the main agent returns the
-affected operations and reason to the frontend agent for consumer-impact
-review. The frontend agent updates the spec only after Main resolves the
-proposal and explicitly assigns the shared file again.
-
-Frontend and Backend may work in parallel only against the same Main-approved
-baseline. Any API spec change pauses affected parallel work until Main approves
-a replacement baseline. Frontend must never edit `docs/api/openapi.yaml`
-concurrently with Backend or another agent.
+If the approved contract cannot support the assigned UI use case, report the
+affected operation, consumer impact, and a concrete change request to the main
+agent. Continue only after the main agent supplies an approved replacement
+baseline. Include the reviewed baseline, affected `operationId` values,
+frontend artifact paths, and validation results in the frontend handoff.

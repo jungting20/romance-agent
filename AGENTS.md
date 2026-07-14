@@ -32,18 +32,23 @@ The main agent owns the end-to-end result. It must:
 Delegation does not transfer responsibility for architecture, integration, or
 verification away from the main agent.
 
-## Frontend and Backend Subagents
+## Frontend, OpenAPI, and Backend Subagents
 
 Use task-scoped subagents when multi-agent support is available.
 
 - For substantial, independently testable work under `frontend/`, spawn the
   project-scoped custom agent named `frontend`, defined in
   `.codex/agents/frontend.toml`.
+- For every new or changed consumer-facing API operation, assign
+  `docs/api/openapi.yaml` to the project-scoped custom agent named `openapi`,
+  defined in `.codex/agents/openapi.toml`. It is the only subagent that authors
+  or edits the OpenAPI contract.
 - Delegate substantial, independently testable work under `backend/` to a
   backend subagent.
-- For cross-stack features, the main agent must define the shared contract
-  before delegation. Frontend and backend tasks may run in parallel only when
-  their file ownership and inputs and outputs do not overlap.
+- For cross-stack features, the main agent must define the contract scope and
+  acceptance criteria before assigning the OpenAPI draft. Frontend and backend
+  implementation may run in parallel only after the main agent approves the
+  same OpenAPI baseline and their file ownership does not overlap.
 - Do not create a subagent for a trivial edit, a tightly coupled change, or a
   task whose boundary is still unclear.
 
@@ -85,40 +90,39 @@ each task.
 
 `docs/api/openapi.yaml` is the authoritative consumer-facing API contract and
 uses OpenAPI 3.1. Create it only when the first endpoint is needed. The
-frontend agent authors and stewards this contract, but the main agent is its
-final approver.
+OpenAPI agent exclusively authors and stewards this contract, but the main
+agent is its final approver.
 
 Use this workflow for every new or changed API operation:
 
-1. **Frontend drafts:** The main agent explicitly assigns
-   `docs/api/openapi.yaml` to the frontend task. The frontend agent derives the
-   operation from the UI use case and relevant domain documents, then drafts
-   the complete request, response, and error contract.
-2. **Frontend reports:** The frontend agent returns a handoff package with the
-   spec path, proposed baseline or diff, affected `operationId` values, linked
-   domain documents, assumptions, aligned frontend types, mocks, or adapters,
-   and validation results.
+1. **Main scopes:** The main agent defines the UI use case, domain behavior,
+   acceptance criteria, validation ownership, and unresolved decisions, then
+   explicitly assigns `docs/api/openapi.yaml` to the OpenAPI agent.
+2. **OpenAPI drafts:** The OpenAPI agent derives the operation from the
+   assigned use case and relevant domain documents, drafts the complete
+   request, response, and error contract, and returns the contract handoff
+   defined in `.codex/agents/openapi.toml`.
 3. **Main approves:** The main agent reviews domain consistency, scope, error
    semantics, and compatibility. Only the main agent may approve an exact spec
-   baseline for backend implementation.
-4. **Main delegates:** The main agent gives the backend agent the approved spec
-   path and baseline, affected operations, acceptance criteria, and required
-   contract verification.
-5. **Backend reviews and implements:** The backend agent implements the
-   approved operations and must not silently edit the API spec. If the contract
-   is infeasible or unsafe, it must stop the affected implementation and return
-   a concrete contract change proposal with its reason to the main agent.
-6. **Frontend evaluates changes:** The main agent routes a backend proposal to
-   the frontend agent for consumer-impact review. The frontend agent updates
-   the spec only after the main agent resolves the proposal.
+   baseline for implementation.
+4. **Main delegates:** The main agent gives frontend and backend agents the
+   approved spec path and baseline, affected operations, acceptance criteria,
+   and required contract verification. Frontend aligns its consumer types,
+   adapters, and mocks; Backend implements the approved operations.
+5. **Implementers review:** Frontend reports consumer-impact concerns and
+   Backend reports infeasible or unsafe contract details to the main agent.
+   Neither implementation agent edits the API spec.
+6. **OpenAPI revises:** The main agent resolves each proposal and, when a spec
+   change is approved, assigns the affected operations back to the OpenAPI
+   agent. Any edit creates a new proposed baseline requiring main approval.
 7. **Main verifies:** The main agent confirms that the final spec, frontend
    consumer, backend behavior, contract tests, and domain documents agree.
 
 Frontend and backend tasks may proceed in parallel only after Main approves
 the same approved spec baseline for both tasks. Any spec change invalidates
-that baseline until Main approves a replacement. The main agent must assign a
-single editor for `docs/api/openapi.yaml`; frontend and backend agents must
-never edit it concurrently.
+that baseline until Main approves a replacement. The OpenAPI agent is the sole
+editor of `docs/api/openapi.yaml`; frontend and backend agents must never edit
+it.
 
 ## Frontend Guidance
 
