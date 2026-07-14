@@ -178,8 +178,7 @@ repository establishes safely.
 Present an `implementation brief` containing user value and scope, UI target,
 persistence, domain behavior and invariants, API need, request/response/error
 semantics, ownership, acceptance criteria, verification commands, and domain
-documentation impact. Do not author OpenAPI or implement code until the user
-approves this brief.
+documentation impact. Do not author OpenAPI or implement code until the user approves this brief.
 
 ## 4. Draft and approve the API contract
 
