@@ -3,8 +3,8 @@
 ## Goal
 
 Create the first executable Python backend foundation with FastAPI. Organize
-each domain as a self-contained vertical module whose request handling flows
-through router, service, and repository layers.
+each domain under `apps/` as a self-contained vertical module whose request
+handling flows through router, service, and repository packages.
 
 The initial `health` domain proves that the application boots, dependencies are
 wired correctly, and the layer boundaries can be tested without selecting a
@@ -18,6 +18,8 @@ This change includes:
   `mise` setup
 - a backend `pyproject.toml` with runtime, development, and test dependencies
 - a FastAPI application entry point
+- the first consumer-facing OpenAPI contract, drafted by the frontend agent
+  and approved by the main agent before backend implementation
 - a `health` domain implemented across router, service, repository, and schema
   packages
 - unit tests for service and repository behavior
@@ -32,18 +34,17 @@ systems.
 
 ```text
 backend/
-├── app/
+├── apps/
 │   ├── __init__.py
-│   ├── main.py
 │   └── health/
 │       ├── __init__.py
-│       ├── routers/
+│       ├── router/
 │       │   ├── __init__.py
 │       │   └── health.py
-│       ├── services/
+│       ├── service/
 │       │   ├── __init__.py
 │       │   └── health.py
-│       ├── repositories/
+│       ├── repository/
 │       │   ├── __init__.py
 │       │   └── health.py
 │       └── schemas/
@@ -54,21 +55,23 @@ backend/
 │   │   ├── test_repository.py
 │   │   └── test_service.py
 │   └── test_health_api.py
+├── main.py
 ├── pyproject.toml
 └── README.md
 ```
 
 New business domains follow the same
-`app/{domain}/{routers,services,repositories,schemas}` convention. A domain owns
-the implementation inside its directory. Direct mutation of another domain's
-state is prohibited; future cross-domain workflows belong in an application
-use-case or feature layer introduced when needed.
+`apps/{domain}/{router,service,repository,schemas}` convention. Each layer
+directory is a Python package containing focused modules. A domain owns the
+implementation inside its directory. Direct mutation of another domain's state
+is prohibited; future cross-domain workflows belong in an application use-case
+or feature layer introduced when needed.
 
 ## Responsibilities
 
 ### Application entry point
 
-`app/main.py` creates the FastAPI application and registers domain routers. It
+`main.py` creates the FastAPI application and registers domain routers. It
 contains no business or persistence logic.
 
 ### Router
@@ -114,6 +117,24 @@ Dependency-provider functions live beside the layer they construct, keeping
 the initial setup local to the health domain. They can be moved to a shared
 composition module later if wiring becomes complex.
 
+## API Contract Workflow
+
+`GET /health` is the repository's first API operation, so
+`docs/api/openapi.yaml` is created as part of this change using OpenAPI 3.1.
+The frontend agent is the single editor and drafts the complete `GET /health`
+operation with `operationId: getHealth`, a `200` response, and a `HealthResponse`
+schema whose `status` field accepts only `ok`. The operation defines no
+domain-specific error response because the initial repository has no external
+failure mode. The main agent reviews and approves the exact baseline before
+assigning backend implementation.
+
+The backend agent implements only the approved operation and does not edit the
+OpenAPI document. If the approved contract is infeasible, implementation stops
+until the frontend agent evaluates a concrete change proposal and the main
+agent approves a replacement baseline. The main agent finally verifies that
+the OpenAPI document, FastAPI route, response schema, and integration test
+describe the same behavior.
+
 ## Error Handling
 
 The initial repository has no external failure mode, so the health endpoint's
@@ -144,7 +165,7 @@ mise exec -- uv run ruff format --check .
 The development server runs with:
 
 ```sh
-mise exec -- uv run uvicorn app.main:app --reload
+mise exec -- uv run uvicorn main:app --reload
 ```
 
 ## Acceptance Criteria
