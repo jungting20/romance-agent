@@ -114,14 +114,17 @@ paths:
         "400":
           $ref: "#/components/responses/MalformedRequest"
         "422":
-          description: 프로젝트 생성 입력이 도메인 규칙을 위반함
+          description: >-
+            필드는 모두 존재하고 JSON 타입도 올바르지만 제목이 공백이거나, 트로프 문자열이 등록된 값이 아니거나,
+            주인공 이름 배열의 항목 수가 정확히 두 개가 아니거나 공백 이름을 포함해 도메인 규칙을 위반함.
+            서버는 TropeId enum 및 protagonistNames minItems/maxItems 위반 중 이 범주를 422로 매핑해야 합니다.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
               examples:
                 invalidTitle:
-                  summary: 제목 누락
+                  summary: 공백 제목
                   value:
                     code: INVALID_TITLE
                     message: 작품 제목을 입력해 주세요.
@@ -137,7 +140,7 @@ paths:
                       - path: tropeId
                         message: 등록된 로맨스 트로프를 선택해 주세요.
                 invalidProtagonists:
-                  summary: 두 주인공 이름 누락
+                  summary: 주인공 수 또는 이름 오류
                   value:
                     code: INVALID_PROTAGONISTS
                     message: 두 주인공의 이름을 모두 입력해 주세요.
@@ -294,7 +297,11 @@ components:
       example: silver-garden-manuscript
   responses:
     MalformedRequest:
-      description: JSON 또는 요청 본문 구조가 올바르지 않음
+      description: >-
+        JSON 구문이 잘못되었거나, 필수 필드가 없거나, JSON 값 타입이 스키마와 다르거나,
+        요청 루트 또는 중첩된 Manuscript나 Scene 객체에 선언되지 않은 속성이 있음.
+        빈 식별자, 잘못된 정수 및 배열 항목 타입을 포함한 그 밖의 요청 스키마 위반도 400으로 매핑합니다.
+        단, POST /projects의 타입이 올바른 미등록 트로프 문자열과 protagonistNames 항목 수 위반은 422로 매핑합니다.
       content:
         application/json:
           schema:
@@ -334,7 +341,9 @@ components:
             message: 다른 위치에서 원고가 먼저 수정되었습니다.
             fieldErrors: []
     InvalidManuscript:
-      description: 원고 또는 프로젝트 관계가 도메인 규칙을 위반함
+      description: >-
+        필드는 모두 존재하고 JSON 타입 및 객체 구조도 올바르지만 경로와 본문의 원고 식별자가 다르거나,
+        원고의 프로젝트 관계가 다르거나, activeSceneId가 scenes에 존재하지 않아 도메인 규칙을 위반함
       content:
         application/json:
           schema:
@@ -424,8 +433,7 @@ components:
         tropeId:
           $ref: "#/components/schemas/TropeId"
         updatedAt:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/UtcDateTime"
     StoryConcept:
       type: object
       additionalProperties: false
@@ -594,8 +602,7 @@ components:
         projectId:
           $ref: "#/components/schemas/ProjectId"
         updatedAt:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/UtcDateTime"
     SaveManuscriptResponse:
       type: object
       additionalProperties: false
@@ -608,6 +615,12 @@ components:
           minimum: 1
         projectActivity:
           $ref: "#/components/schemas/SavedProjectActivity"
+    UtcDateTime:
+      type: string
+      format: date-time
+      pattern: Z$
+      description: RFC 3339 형식이며 대문자 Z로 끝나는 UTC 일시
+      examples: ["2026-07-14T03:00:00.000Z"]
     ApiErrorCode:
       type: string
       enum:

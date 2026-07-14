@@ -18,7 +18,7 @@ import {
   listMockProjects,
   MOCK_NOW,
   PROJECT_API_BASE_URL,
-  replaceMockWorkspace,
+  replaceMockWorkspaceAtRevision,
 } from "@/mocks/data/project-workspaces";
 
 const tropeIds: readonly TropeId[] = [
@@ -32,8 +32,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
+  const actualKeys = Object.keys(value);
+
+  return (
+    actualKeys.length === expectedKeys.length &&
+    expectedKeys.every((key) => Object.hasOwn(value, key))
+  );
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonEmptyString);
 }
 
 function isTropeId(value: unknown): value is TropeId {
@@ -41,33 +54,54 @@ function isTropeId(value: unknown): value is TropeId {
 }
 
 function isApiManuscript(value: unknown): value is ApiManuscript {
-  if (!isRecord(value) || typeof value.id !== "string" || typeof value.projectId !== "string") {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["id", "projectId", "scenes", "activeSceneId"]) ||
+    !isNonEmptyString(value.id) ||
+    !isNonEmptyString(value.projectId)
+  ) {
     return false;
   }
 
-  if (typeof value.activeSceneId !== "string" || !Array.isArray(value.scenes)) {
+  if (!isNonEmptyString(value.activeSceneId) || !Array.isArray(value.scenes)) {
     return false;
   }
 
   return value.scenes.every(
     (scene) =>
       isRecord(scene) &&
-      typeof scene.id === "string" &&
+      hasExactKeys(scene, [
+        "id",
+        "title",
+        "chapterNumber",
+        "content",
+        "relatedCharacterIds",
+        "relatedWorldEntryIds",
+      ]) &&
+      isNonEmptyString(scene.id) &&
       typeof scene.title === "string" &&
       Number.isInteger(scene.chapterNumber) &&
       Number(scene.chapterNumber) >= 0 &&
       typeof scene.content === "string" &&
-      isStringArray(scene.relatedCharacterIds) &&
-      isStringArray(scene.relatedWorldEntryIds),
+      isNonEmptyStringArray(scene.relatedCharacterIds) &&
+      isNonEmptyStringArray(scene.relatedWorldEntryIds),
   );
 }
 
 function parseCreateProjectRequest(value: unknown): CreateProjectRequest | ApiError {
-  if (!isRecord(value) || typeof value.logline !== "string") {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["title", "logline", "tropeId", "protagonistNames"]) ||
+    typeof value.title !== "string" ||
+    typeof value.logline !== "string" ||
+    typeof value.tropeId !== "string" ||
+    !Array.isArray(value.protagonistNames) ||
+    !value.protagonistNames.every((name): name is string => typeof name === "string")
+  ) {
     return apiErrors.malformedRequest;
   }
 
-  if (typeof value.title !== "string" || !value.title.trim()) {
+  if (!value.title.trim()) {
     return {
       code: "INVALID_TITLE",
       message: "작품 제목을 입력해 주세요.",
@@ -83,13 +117,7 @@ function parseCreateProjectRequest(value: unknown): CreateProjectRequest | ApiEr
     };
   }
 
-  if (
-    !Array.isArray(value.protagonistNames) ||
-    value.protagonistNames.length !== 2 ||
-    !value.protagonistNames.every(
-      (name): name is string => typeof name === "string" && Boolean(name.trim()),
-    )
-  ) {
+  if (value.protagonistNames.length !== 2 || value.protagonistNames.some((name) => !name.trim())) {
     return {
       code: "INVALID_PROTAGONISTS",
       message: "두 주인공의 이름을 모두 입력해 주세요.",
@@ -113,6 +141,7 @@ function parseCreateProjectRequest(value: unknown): CreateProjectRequest | ApiEr
 function parseSaveManuscriptRequest(value: unknown): SaveManuscriptRequest | undefined {
   if (
     !isRecord(value) ||
+    !hasExactKeys(value, ["manuscript", "expectedRevision"]) ||
     !isApiManuscript(value.manuscript) ||
     !Number.isInteger(value.expectedRevision) ||
     Number(value.expectedRevision) < 1
@@ -263,19 +292,19 @@ const getWorkspaceHandler: HttpResponseResolver = ({ params }) => {
 };
 
 const saveManuscriptHandler: HttpResponseResolver = async ({ params, request }) => {
+  const requestJson = await readRequestJson(request);
+  const parsedRequest = parseSaveManuscriptRequest(requestJson);
+
+  if (!parsedRequest) {
+    return HttpResponse.json(apiErrors.malformedRequest, { status: 400 });
+  }
+
   const manuscriptId = params.manuscriptId;
   const workspace =
     typeof manuscriptId === "string" ? findMockWorkspaceByManuscriptId(manuscriptId) : undefined;
 
   if (!workspace) {
     return HttpResponse.json(apiErrors.manuscriptNotFound, { status: 404 });
-  }
-
-  const requestJson = await readRequestJson(request);
-  const parsedRequest = parseSaveManuscriptRequest(requestJson);
-
-  if (!parsedRequest) {
-    return HttpResponse.json(apiErrors.malformedRequest, { status: 400 });
   }
 
   if (parsedRequest.manuscript.id !== manuscriptId) {
@@ -301,24 +330,32 @@ const saveManuscriptHandler: HttpResponseResolver = async ({ params, request }) 
     );
   }
 
-  if (parsedRequest.expectedRevision !== workspace.manuscriptRevision) {
-    return HttpResponse.json(apiErrors.revisionConflict, { status: 409 });
-  }
-
   const updatedWorkspace: ProjectWorkspaceResponse = {
     ...workspace,
     project: { ...workspace.project, updatedAt: MOCK_NOW },
     manuscript: parsedRequest.manuscript,
     manuscriptRevision: workspace.manuscriptRevision + 1,
   };
-  replaceMockWorkspace(updatedWorkspace);
+  const replacement = replaceMockWorkspaceAtRevision(
+    workspace.manuscript.id,
+    parsedRequest.expectedRevision,
+    updatedWorkspace,
+  );
+
+  if (replacement.status === "not-found") {
+    return HttpResponse.json(apiErrors.manuscriptNotFound, { status: 404 });
+  }
+
+  if (replacement.status === "revision-conflict") {
+    return HttpResponse.json(apiErrors.revisionConflict, { status: 409 });
+  }
 
   const response: SaveManuscriptResponse = {
-    manuscript: structuredClone(updatedWorkspace.manuscript),
-    manuscriptRevision: updatedWorkspace.manuscriptRevision,
+    manuscript: replacement.workspace.manuscript,
+    manuscriptRevision: replacement.workspace.manuscriptRevision,
     projectActivity: {
-      projectId: updatedWorkspace.project.id,
-      updatedAt: updatedWorkspace.project.updatedAt,
+      projectId: replacement.workspace.project.id,
+      updatedAt: replacement.workspace.project.updatedAt,
     },
   };
 
@@ -326,8 +363,8 @@ const saveManuscriptHandler: HttpResponseResolver = async ({ params, request }) 
 };
 
 export const projectHandlers: RequestHandler[] = [
-  http.get(`*${PROJECT_API_BASE_URL}/projects`, listProjectsHandler),
-  http.post(`*${PROJECT_API_BASE_URL}/projects`, createProjectHandler),
-  http.get(`*${PROJECT_API_BASE_URL}/projects/:projectId/workspace`, getWorkspaceHandler),
-  http.put(`*${PROJECT_API_BASE_URL}/manuscripts/:manuscriptId`, saveManuscriptHandler),
+  http.get(`${PROJECT_API_BASE_URL}/projects`, listProjectsHandler),
+  http.post(`${PROJECT_API_BASE_URL}/projects`, createProjectHandler),
+  http.get(`${PROJECT_API_BASE_URL}/projects/:projectId/workspace`, getWorkspaceHandler),
+  http.put(`${PROJECT_API_BASE_URL}/manuscripts/:manuscriptId`, saveManuscriptHandler),
 ];

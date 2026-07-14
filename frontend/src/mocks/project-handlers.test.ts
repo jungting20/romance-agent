@@ -12,7 +12,7 @@ import type {
 import { apiErrors, MOCK_NOW } from "@/mocks/data/project-workspaces";
 import { server } from "@/mocks/server";
 
-const API_ORIGIN = "http://localhost";
+const API_ORIGIN = window.location.origin;
 
 const validCreateRequest: CreateProjectRequest = {
   title: " 빗속의 재회 ",
@@ -102,12 +102,8 @@ describe("project persistence API handlers", () => {
       path: "protagonistNames",
     },
     {
-      name: "missing protagonists",
-      request: {
-        title: validCreateRequest.title,
-        logline: validCreateRequest.logline,
-        tropeId: validCreateRequest.tropeId,
-      },
+      name: "incorrect protagonist count",
+      request: { ...validCreateRequest, protagonistNames: ["하린"] },
       code: "INVALID_PROTAGONISTS",
       path: "protagonistNames",
     },
@@ -129,6 +125,35 @@ describe("project persistence API handlers", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{",
+    });
+    const body: ApiError = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual(apiErrors.malformedRequest);
+  });
+
+  test.each([
+    {
+      name: "a missing required field",
+      request: {
+        title: validCreateRequest.title,
+        logline: validCreateRequest.logline,
+        tropeId: validCreateRequest.tropeId,
+      },
+    },
+    {
+      name: "a wrong field type",
+      request: { ...validCreateRequest, title: 42 },
+    },
+    {
+      name: "an additional root property",
+      request: { ...validCreateRequest, unexpected: true },
+    },
+  ])("returns MALFORMED_REQUEST for create input with $name", async ({ request }) => {
+    const response = await fetch(`${API_ORIGIN}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
     });
     const body: ApiError = await response.json();
 
@@ -190,6 +215,140 @@ describe("project persistence API handlers", () => {
     expect(loadedAfterConflict).toEqual(loadedAfterSave);
   });
 
+  test("allows exactly one of two concurrent writes at the same revision", async () => {
+    const original = await getSeedWorkspace();
+    const firstManuscript = structuredClone(original.manuscript);
+    const secondManuscript = structuredClone(original.manuscript);
+    firstManuscript.scenes[0].content = "첫 번째 동시 저장";
+    secondManuscript.scenes[0].content = "두 번째 동시 저장";
+
+    const responses = await Promise.all(
+      [firstManuscript, secondManuscript].map((manuscript) =>
+        fetch(`${API_ORIGIN}/api/manuscripts/${manuscript.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ manuscript, expectedRevision: 1 }),
+        }),
+      ),
+    );
+
+    expect(responses.map(({ status }) => status).toSorted((left, right) => left - right)).toEqual([
+      200, 409,
+    ]);
+    const winnerIndex = responses.findIndex(({ status }) => status === 200);
+    const loserIndex = responses.findIndex(({ status }) => status === 409);
+    const winner: SaveManuscriptResponse = await responses[winnerIndex].json();
+    const loser: ApiError = await responses[loserIndex].json();
+
+    expect(winner.manuscriptRevision).toBe(2);
+    expect(loser).toEqual(apiErrors.revisionConflict);
+
+    const stored = await getSeedWorkspace();
+    expect(stored.manuscriptRevision).toBe(2);
+    expect(stored.manuscript.scenes[0].content).toBe(
+      [firstManuscript, secondManuscript][winnerIndex].scenes[0].content,
+    );
+  });
+
+  test("returns MALFORMED_REQUEST for malformed save JSON", async () => {
+    const response = await fetch(`${API_ORIGIN}/api/manuscripts/silver-garden-manuscript`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: "{",
+    });
+    const body: ApiError = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual(apiErrors.malformedRequest);
+  });
+
+  test.each([
+    {
+      name: "an additional save root property",
+      mutate: (request: Record<string, unknown>) => ({ ...request, unexpected: true }),
+    },
+    {
+      name: "an additional manuscript property",
+      mutate: (request: Record<string, unknown>) => ({
+        ...request,
+        manuscript: { ...(request.manuscript as object), unexpected: true },
+      }),
+    },
+    {
+      name: "an additional scene property",
+      mutate: (request: Record<string, unknown>) => {
+        const manuscript = structuredClone(
+          request.manuscript,
+        ) as ProjectWorkspaceResponse["manuscript"];
+        return {
+          ...request,
+          manuscript: {
+            ...manuscript,
+            scenes: [{ ...manuscript.scenes[0], unexpected: true }],
+          },
+        };
+      },
+    },
+    {
+      name: "an empty manuscript identifier",
+      mutate: (request: Record<string, unknown>) => ({
+        ...request,
+        manuscript: { ...(request.manuscript as object), id: "" },
+      }),
+    },
+    {
+      name: "an empty project identifier",
+      mutate: (request: Record<string, unknown>) => ({
+        ...request,
+        manuscript: { ...(request.manuscript as object), projectId: "" },
+      }),
+    },
+    {
+      name: "an empty scene identifier",
+      mutate: (request: Record<string, unknown>) => {
+        const manuscript = structuredClone(
+          request.manuscript,
+        ) as ProjectWorkspaceResponse["manuscript"];
+        return {
+          ...request,
+          manuscript: {
+            ...manuscript,
+            activeSceneId: "",
+            scenes: [{ ...manuscript.scenes[0], id: "" }],
+          },
+        };
+      },
+    },
+    {
+      name: "an empty related character identifier",
+      mutate: (request: Record<string, unknown>) => {
+        const manuscript = structuredClone(
+          request.manuscript,
+        ) as ProjectWorkspaceResponse["manuscript"];
+        return {
+          ...request,
+          manuscript: {
+            ...manuscript,
+            scenes: [{ ...manuscript.scenes[0], relatedCharacterIds: [""] }],
+          },
+        };
+      },
+    },
+  ])("returns MALFORMED_REQUEST for save input with $name", async ({ mutate }) => {
+    const workspace = await getSeedWorkspace();
+    const request = mutate({ manuscript: workspace.manuscript, expectedRevision: 1 });
+    const response = await fetch(`${API_ORIGIN}/api/manuscripts/${workspace.manuscript.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    const body: ApiError = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual(apiErrors.malformedRequest);
+    expect((await getSeedWorkspace()).manuscriptRevision).toBe(1);
+  });
+
   test("returns MANUSCRIPT_NOT_FOUND for an unknown manuscript", async () => {
     const workspace = await getSeedWorkspace();
     const response = await fetch(`${API_ORIGIN}/api/manuscripts/missing-manuscript`, {
@@ -219,6 +378,37 @@ describe("project persistence API handlers", () => {
     expect(response.status).toBe(422);
     expect(body.code).toBe("INVALID_MANUSCRIPT");
     expect(body.fieldErrors).toContainEqual(expect.objectContaining({ path: "manuscript.id" }));
+  });
+
+  test.each([
+    {
+      name: "the project relationship differs",
+      mutate: (workspace: ProjectWorkspaceResponse) => ({
+        ...workspace.manuscript,
+        projectId: "different-project",
+      }),
+      path: "manuscript.projectId",
+    },
+    {
+      name: "the active scene is absent",
+      mutate: (workspace: ProjectWorkspaceResponse) => ({
+        ...workspace.manuscript,
+        activeSceneId: "missing-scene",
+      }),
+      path: "manuscript.activeSceneId",
+    },
+  ])("returns INVALID_MANUSCRIPT when $name", async ({ mutate, path }) => {
+    const workspace = await getSeedWorkspace();
+    const response = await fetch(`${API_ORIGIN}/api/manuscripts/${workspace.manuscript.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ manuscript: mutate(workspace), expectedRevision: 1 }),
+    });
+    const body: ApiError = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.code).toBe("INVALID_MANUSCRIPT");
+    expect(body.fieldErrors).toContainEqual(expect.objectContaining({ path }));
   });
 
   test("supports a test-local INTERNAL_ERROR response", async () => {

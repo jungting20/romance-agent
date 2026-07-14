@@ -138,12 +138,32 @@ export function addMockWorkspace(workspace: ProjectWorkspaceResponse): void {
   projectWorkspaces.push(structuredClone(workspace));
 }
 
-export function replaceMockWorkspace(workspace: ProjectWorkspaceResponse): void {
-  projectWorkspaces = projectWorkspaces.map((currentWorkspace) =>
-    currentWorkspace.project.id === workspace.project.id
-      ? structuredClone(workspace)
-      : currentWorkspace,
+export type ReplaceMockWorkspaceAtRevisionResult =
+  | { status: "not-found" }
+  | { status: "revision-conflict" }
+  | { status: "replaced"; workspace: ProjectWorkspaceResponse };
+
+export function replaceMockWorkspaceAtRevision(
+  manuscriptId: string,
+  expectedRevision: number,
+  replacement: ProjectWorkspaceResponse,
+): ReplaceMockWorkspaceAtRevisionResult {
+  const workspaceIndex = projectWorkspaces.findIndex(
+    ({ manuscript }) => manuscript.id === manuscriptId,
   );
+
+  if (workspaceIndex < 0) {
+    return { status: "not-found" };
+  }
+
+  if (projectWorkspaces[workspaceIndex].manuscriptRevision !== expectedRevision) {
+    return { status: "revision-conflict" };
+  }
+
+  const storedWorkspace = structuredClone(replacement);
+  projectWorkspaces[workspaceIndex] = storedWorkspace;
+
+  return { status: "replaced", workspace: structuredClone(storedWorkspace) };
 }
 
 export function resetProjectWorkspaceMockData(): void {
