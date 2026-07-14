@@ -1,7 +1,13 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test } from "vitest";
+
+import { findMockWorkspace } from "@/mocks/data/project-workspaces";
+import { server } from "@/mocks/server";
 
 import { AppProvider } from "./state/app-provider";
 
@@ -14,7 +20,7 @@ describe("core writing journey", () => {
     const { AppRoutes } = await import("./app");
     const user = userEvent.setup();
 
-    render(
+    renderWithProviders(
       <MemoryRouter initialEntries={["/"]}>
         <AppProvider>
           <AppRoutes />
@@ -25,20 +31,25 @@ describe("core writing journey", () => {
     expect(
       screen.getByRole("heading", { name: "다시, 이야기를 시작해 볼까요?" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("은빛 정원의 약속")).toBeInTheDocument();
+    expect(await screen.findByText("은빛 정원의 약속")).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "새 작품 시작" }));
 
     expect(screen.getByRole("heading", { name: "어떤 사랑을 쓰고 싶나요?" })).toBeInTheDocument();
   });
 
-  test("creates a project from a trope and opens its workspace", async () => {
+  test("opens the workspace identified by the project creation response", async () => {
     const { AppRoutes } = await import("./app");
     const user = userEvent.setup();
+    const workspace = findMockWorkspace("silver-garden");
+    if (!workspace) {
+      throw new Error("Expected the seeded workspace");
+    }
+    server.use(http.post("/api/projects", () => HttpResponse.json(workspace, { status: 201 })));
 
-    render(
+    renderWithProviders(
       <MemoryRouter initialEntries={["/new"]}>
-        <AppProvider createId={() => "moonlight-reunion"}>
+        <AppProvider>
           <AppRoutes />
         </AppProvider>
       </MemoryRouter>,
@@ -57,7 +68,15 @@ describe("core writing journey", () => {
     await user.type(screen.getByLabelText("두 번째 주인공"), "태오");
     await user.click(screen.getByRole("button", { name: "작업 공간 열기" }));
 
-    expect(screen.getByRole("heading", { name: "달빛 아래 다시" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "은빛 정원의 약속" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "원고 본문" })).toBeInTheDocument();
   });
 });
+
+function renderWithProviders(children: ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  return render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>);
+}
