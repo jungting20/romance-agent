@@ -4,27 +4,19 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import { findMockWorkspace } from "@/mocks/data/project-workspaces";
 import { server } from "@/mocks/server";
 
-import { AppProvider } from "./state/app-provider";
-
 describe("core writing journey", () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-  });
-
   test("opens trope selection from the project library", async () => {
     const { AppRoutes } = await import("./app");
     const user = userEvent.setup();
 
     renderWithProviders(
       <MemoryRouter initialEntries={["/"]}>
-        <AppProvider>
-          <AppRoutes />
-        </AppProvider>
+        <AppRoutes />
       </MemoryRouter>,
     );
 
@@ -49,9 +41,7 @@ describe("core writing journey", () => {
 
     renderWithProviders(
       <MemoryRouter initialEntries={["/new"]}>
-        <AppProvider>
-          <AppRoutes />
-        </AppProvider>
+        <AppRoutes />
       </MemoryRouter>,
     );
 
