@@ -93,6 +93,11 @@ export function useSaveManuscriptMutation() {
         return;
       }
 
+      if (!projects.items.some(({ id }) => id === projectId)) {
+        await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+        return;
+      }
+
       queryClient.setQueryData<ProjectListResponse>(projectKeys.list(), {
         items: projects.items
           .map((project) => (project.id === projectId ? { ...project, updatedAt } : project))

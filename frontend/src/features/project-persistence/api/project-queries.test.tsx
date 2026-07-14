@@ -96,14 +96,21 @@ describe("project persistence queries", () => {
     const queryClient = createTestQueryClient();
     const wrapper = createWrapper(queryClient);
     const workspaceHook = renderHook(() => useProjectWorkspaceQuery("silver-garden"), { wrapper });
-    const projectsHook = renderHook(() => useProjectsQuery(), { wrapper });
 
-    await waitFor(() => {
-      expect(workspaceHook.result.current.isSuccess).toBe(true);
-      expect(projectsHook.result.current.isSuccess).toBe(true);
-    });
+    await waitFor(() => expect(workspaceHook.result.current.isSuccess).toBe(true));
 
     const workspace = workspaceHook.result.current.data!;
+    const olderProject = {
+      id: "paper-moon",
+      title: "종이 달의 고백",
+      logline: "오랜 친구가 낯선 도시에서 다시 만난다.",
+      tropeId: "friends-to-lovers" as const,
+      updatedAt: "2026-07-13T09:00:00.000Z",
+    };
+    const cachedItems = [olderProject, workspace.project];
+    const originalCachedItems = structuredClone(cachedItems);
+    queryClient.setQueryData<ProjectListResponse>(projectKeys.list(), { items: cachedItems });
+
     const manuscript = {
       ...workspace.manuscript,
       scenes: workspace.manuscript.scenes.map((scene) => ({
@@ -130,14 +137,56 @@ describe("project persistence queries", () => {
       manuscriptRevision: 2,
       project: { updatedAt: "2026-07-14T03:00:00.000Z" },
     });
-    expect(cachedList?.items.find(({ id }) => id === "silver-garden")?.updatedAt).toBe(
-      "2026-07-14T03:00:00.000Z",
-    );
+    expect(cachedList?.items.map(({ id }) => id)).toEqual(["silver-garden", "paper-moon"]);
+    expect(cachedItems).toEqual(originalCachedItems);
+  });
+
+  it("invalidates a populated project list when the saved project is absent", async () => {
+    const queryClient = createTestQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const workspaceHook = renderHook(() => useProjectWorkspaceQuery("silver-garden"), { wrapper });
+
+    await waitFor(() => expect(workspaceHook.result.current.isSuccess).toBe(true));
+
+    const workspace = workspaceHook.result.current.data!;
+    queryClient.setQueryData<ProjectListResponse>(projectKeys.list(), {
+      items: [
+        {
+          id: "paper-moon",
+          title: "종이 달의 고백",
+          logline: "오랜 친구가 낯선 도시에서 다시 만난다.",
+          tropeId: "friends-to-lovers",
+          updatedAt: "2026-07-13T09:00:00.000Z",
+        },
+      ],
+    });
+
+    const manuscript = {
+      ...workspace.manuscript,
+      scenes: workspace.manuscript.scenes.map((scene) => ({
+        ...scene,
+        content: "서윤은 오래된 온실 문을 천천히 열었다.",
+      })),
+    };
+    const mutation = renderHook(() => useSaveManuscriptMutation(), { wrapper });
+
+    await act(async () => {
+      await mutation.result.current.mutateAsync({
+        manuscriptId: manuscript.id,
+        request: { manuscript, expectedRevision: workspace.manuscriptRevision },
+      });
+    });
+
+    expect(queryClient.getQueryState(projectKeys.list())?.isInvalidated).toBe(true);
   });
 
   it("compares a local scene through the comparison mutation", async () => {
     const queryClient = createTestQueryClient();
     const wrapper = createWrapper(queryClient);
+    const unrelatedList: ProjectListResponse = { items: [] };
+    const unrelatedWorkspace = { untouched: true };
+    queryClient.setQueryData(projectKeys.list(), unrelatedList);
+    queryClient.setQueryData(projectKeys.workspace("unrelated-project"), unrelatedWorkspace);
     const mutation = renderHook(() => useCompareManuscriptSceneMutation(), { wrapper });
 
     await act(async () => {
@@ -155,5 +204,9 @@ describe("project persistence queries", () => {
       serverRevision: 1,
       localContent: "로컬 초안",
     });
+    expect(queryClient.getQueryData(projectKeys.list())).toBe(unrelatedList);
+    expect(queryClient.getQueryData(projectKeys.workspace("unrelated-project"))).toBe(
+      unrelatedWorkspace,
+    );
   });
 });
