@@ -1,0 +1,333 @@
+import { http, HttpResponse, type HttpResponseResolver, type RequestHandler } from "msw";
+
+import type {
+  ApiError,
+  ApiManuscript,
+  CreateProjectRequest,
+  ProjectListResponse,
+  ProjectWorkspaceResponse,
+  SaveManuscriptRequest,
+  SaveManuscriptResponse,
+  TropeId,
+} from "@/app/infrastructure/api/contracts";
+import {
+  addMockWorkspace,
+  apiErrors,
+  findMockWorkspace,
+  findMockWorkspaceByManuscriptId,
+  listMockProjects,
+  MOCK_NOW,
+  PROJECT_API_BASE_URL,
+  replaceMockWorkspace,
+} from "@/mocks/data/project-workspaces";
+
+const tropeIds: readonly TropeId[] = [
+  "rivals-to-lovers",
+  "contract-romance",
+  "reunion",
+  "friends-to-lovers",
+];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isTropeId(value: unknown): value is TropeId {
+  return typeof value === "string" && tropeIds.some((tropeId) => tropeId === value);
+}
+
+function isApiManuscript(value: unknown): value is ApiManuscript {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.projectId !== "string") {
+    return false;
+  }
+
+  if (typeof value.activeSceneId !== "string" || !Array.isArray(value.scenes)) {
+    return false;
+  }
+
+  return value.scenes.every(
+    (scene) =>
+      isRecord(scene) &&
+      typeof scene.id === "string" &&
+      typeof scene.title === "string" &&
+      Number.isInteger(scene.chapterNumber) &&
+      Number(scene.chapterNumber) >= 0 &&
+      typeof scene.content === "string" &&
+      isStringArray(scene.relatedCharacterIds) &&
+      isStringArray(scene.relatedWorldEntryIds),
+  );
+}
+
+function parseCreateProjectRequest(value: unknown): CreateProjectRequest | ApiError {
+  if (!isRecord(value) || typeof value.logline !== "string") {
+    return apiErrors.malformedRequest;
+  }
+
+  if (typeof value.title !== "string" || !value.title.trim()) {
+    return {
+      code: "INVALID_TITLE",
+      message: "작품 제목을 입력해 주세요.",
+      fieldErrors: [{ path: "title", message: "작품 제목을 입력해 주세요." }],
+    };
+  }
+
+  if (!isTropeId(value.tropeId)) {
+    return {
+      code: "INVALID_TROPE",
+      message: "선택한 로맨스 트로프를 찾을 수 없습니다.",
+      fieldErrors: [{ path: "tropeId", message: "등록된 로맨스 트로프를 선택해 주세요." }],
+    };
+  }
+
+  if (
+    !Array.isArray(value.protagonistNames) ||
+    value.protagonistNames.length !== 2 ||
+    !value.protagonistNames.every(
+      (name): name is string => typeof name === "string" && Boolean(name.trim()),
+    )
+  ) {
+    return {
+      code: "INVALID_PROTAGONISTS",
+      message: "두 주인공의 이름을 모두 입력해 주세요.",
+      fieldErrors: [
+        {
+          path: "protagonistNames",
+          message: "두 주인공의 이름을 모두 입력해 주세요.",
+        },
+      ],
+    };
+  }
+
+  return {
+    title: value.title.trim(),
+    logline: value.logline.trim(),
+    tropeId: value.tropeId,
+    protagonistNames: [value.protagonistNames[0].trim(), value.protagonistNames[1].trim()],
+  };
+}
+
+function parseSaveManuscriptRequest(value: unknown): SaveManuscriptRequest | undefined {
+  if (
+    !isRecord(value) ||
+    !isApiManuscript(value.manuscript) ||
+    !Number.isInteger(value.expectedRevision) ||
+    Number(value.expectedRevision) < 1
+  ) {
+    return undefined;
+  }
+
+  return {
+    manuscript: value.manuscript,
+    expectedRevision: Number(value.expectedRevision),
+  };
+}
+
+async function readRequestJson(request: Request): Promise<unknown> {
+  try {
+    return await request.json();
+  } catch {
+    return undefined;
+  }
+}
+
+function createProjectId(): string {
+  const projectIds = new Set(listMockProjects().map(({ id }) => id));
+  let sequence = 1;
+
+  while (projectIds.has(`mock-project-${sequence}`)) {
+    sequence += 1;
+  }
+
+  return `mock-project-${sequence}`;
+}
+
+function buildWorkspace(
+  projectId: string,
+  request: CreateProjectRequest,
+): ProjectWorkspaceResponse {
+  const firstCharacterId = `${projectId}-character-1`;
+  const secondCharacterId = `${projectId}-character-2`;
+  const worldEntryId = `${projectId}-world-1`;
+  const sceneId = `${projectId}-scene-1`;
+
+  return {
+    project: {
+      id: projectId,
+      title: request.title,
+      logline: request.logline,
+      tropeId: request.tropeId,
+      updatedAt: MOCK_NOW,
+    },
+    concept: {
+      id: `${projectId}-concept`,
+      projectId,
+      tropeId: request.tropeId,
+      logline: request.logline,
+      protagonistNames: request.protagonistNames,
+    },
+    storyBible: {
+      projectId,
+      characters: [
+        {
+          id: firstCharacterId,
+          name: request.protagonistNames[0],
+          role: "protagonist",
+          desire: "상대에게 흔들리지 않고 자신의 선택을 지키고 싶다.",
+          hiddenFeeling: "여전히 상대의 진심을 확인하고 싶다.",
+        },
+        {
+          id: secondCharacterId,
+          name: request.protagonistNames[1],
+          role: "protagonist",
+          desire: "과거의 오해를 풀고 다시 신뢰받고 싶다.",
+          hiddenFeeling: "이번에는 먼저 놓치고 싶지 않다.",
+        },
+      ],
+      worldEntries: [
+        {
+          id: worldEntryId,
+          kind: "place",
+          title: "첫 장면의 장소",
+          description: "두 주인공의 이야기가 시작되는 장소다.",
+        },
+      ],
+    },
+    manuscript: {
+      id: `${projectId}-manuscript`,
+      projectId,
+      scenes: [
+        {
+          id: sceneId,
+          title: "첫 장면",
+          chapterNumber: 1,
+          content: "",
+          relatedCharacterIds: [firstCharacterId, secondCharacterId],
+          relatedWorldEntryIds: [worldEntryId],
+        },
+      ],
+      activeSceneId: sceneId,
+    },
+    manuscriptRevision: 1,
+  };
+}
+
+function invalidManuscript(path: string, message: string): ApiError {
+  return {
+    code: "INVALID_MANUSCRIPT",
+    message: "원고 정보를 확인해 주세요.",
+    fieldErrors: [{ path, message }],
+  };
+}
+
+const listProjectsHandler: HttpResponseResolver = () => {
+  const response: ProjectListResponse = { items: listMockProjects() };
+  return HttpResponse.json(response);
+};
+
+const createProjectHandler: HttpResponseResolver = async ({ request }) => {
+  const requestJson = await readRequestJson(request);
+
+  if (requestJson === undefined) {
+    return HttpResponse.json(apiErrors.malformedRequest, { status: 400 });
+  }
+
+  const parsedRequest = parseCreateProjectRequest(requestJson);
+
+  if ("code" in parsedRequest) {
+    const status = parsedRequest.code === "MALFORMED_REQUEST" ? 400 : 422;
+    return HttpResponse.json(parsedRequest, { status });
+  }
+
+  const workspace = buildWorkspace(createProjectId(), parsedRequest);
+  addMockWorkspace(workspace);
+
+  return HttpResponse.json(workspace, {
+    status: 201,
+    headers: {
+      Location: `${PROJECT_API_BASE_URL}/projects/${workspace.project.id}/workspace`,
+    },
+  });
+};
+
+const getWorkspaceHandler: HttpResponseResolver = ({ params }) => {
+  const projectId = params.projectId;
+  const workspace = typeof projectId === "string" ? findMockWorkspace(projectId) : undefined;
+
+  return workspace
+    ? HttpResponse.json(workspace)
+    : HttpResponse.json(apiErrors.projectNotFound, { status: 404 });
+};
+
+const saveManuscriptHandler: HttpResponseResolver = async ({ params, request }) => {
+  const manuscriptId = params.manuscriptId;
+  const workspace =
+    typeof manuscriptId === "string" ? findMockWorkspaceByManuscriptId(manuscriptId) : undefined;
+
+  if (!workspace) {
+    return HttpResponse.json(apiErrors.manuscriptNotFound, { status: 404 });
+  }
+
+  const requestJson = await readRequestJson(request);
+  const parsedRequest = parseSaveManuscriptRequest(requestJson);
+
+  if (!parsedRequest) {
+    return HttpResponse.json(apiErrors.malformedRequest, { status: 400 });
+  }
+
+  if (parsedRequest.manuscript.id !== manuscriptId) {
+    return HttpResponse.json(
+      invalidManuscript("manuscript.id", "경로의 원고 식별자와 일치해야 합니다."),
+      { status: 422 },
+    );
+  }
+
+  if (parsedRequest.manuscript.projectId !== workspace.project.id) {
+    return HttpResponse.json(
+      invalidManuscript("manuscript.projectId", "원고가 속한 프로젝트와 일치해야 합니다."),
+      { status: 422 },
+    );
+  }
+
+  if (
+    !parsedRequest.manuscript.scenes.some(({ id }) => id === parsedRequest.manuscript.activeSceneId)
+  ) {
+    return HttpResponse.json(
+      invalidManuscript("manuscript.activeSceneId", "원고에 존재하는 장면을 선택해 주세요."),
+      { status: 422 },
+    );
+  }
+
+  if (parsedRequest.expectedRevision !== workspace.manuscriptRevision) {
+    return HttpResponse.json(apiErrors.revisionConflict, { status: 409 });
+  }
+
+  const updatedWorkspace: ProjectWorkspaceResponse = {
+    ...workspace,
+    project: { ...workspace.project, updatedAt: MOCK_NOW },
+    manuscript: parsedRequest.manuscript,
+    manuscriptRevision: workspace.manuscriptRevision + 1,
+  };
+  replaceMockWorkspace(updatedWorkspace);
+
+  const response: SaveManuscriptResponse = {
+    manuscript: structuredClone(updatedWorkspace.manuscript),
+    manuscriptRevision: updatedWorkspace.manuscriptRevision,
+    projectActivity: {
+      projectId: updatedWorkspace.project.id,
+      updatedAt: updatedWorkspace.project.updatedAt,
+    },
+  };
+
+  return HttpResponse.json(response);
+};
+
+export const projectHandlers: RequestHandler[] = [
+  http.get(`*${PROJECT_API_BASE_URL}/projects`, listProjectsHandler),
+  http.post(`*${PROJECT_API_BASE_URL}/projects`, createProjectHandler),
+  http.get(`*${PROJECT_API_BASE_URL}/projects/:projectId/workspace`, getWorkspaceHandler),
+  http.put(`*${PROJECT_API_BASE_URL}/manuscripts/:manuscriptId`, saveManuscriptHandler),
+];
