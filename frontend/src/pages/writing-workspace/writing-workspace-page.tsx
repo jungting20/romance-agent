@@ -1,11 +1,27 @@
-import { useEffect, useState } from "react";
-import { ArrowLeft, Check, Feather, FileText, Map, Users, WandSparkles } from "lucide-react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { useState } from "react";
+import {
+  ArrowLeft,
+  Check,
+  CircleAlert,
+  Feather,
+  FileText,
+  LoaderCircle,
+  Map,
+  Users,
+  WandSparkles,
+} from "lucide-react";
+import { Link, useParams } from "react-router-dom";
 
-import { useApp } from "@/app/state/app-provider";
+import { ApiRequestError } from "@/app/infrastructure/api/api-client";
+import type { ProjectWorkspaceResponse } from "@/app/infrastructure/api/contracts";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { applyWritingSuggestion } from "@/features/apply-writing-suggestion";
+import {
+  type ManuscriptAutosaveStatus,
+  useManuscriptAutosave,
+} from "@/features/manuscript-autosave";
+import { useProjectWorkspaceQuery } from "@/features/project-persistence";
 import type { TextRange } from "@/modules/manuscript";
 import { updateSceneContent } from "@/modules/manuscript";
 import { ManuscriptEditor } from "@/modules/manuscript/ui/manuscript-editor";
@@ -27,27 +43,79 @@ const contextTools: Array<{
 
 export function WritingWorkspacePage() {
   const { projectId } = useParams();
-  const { state, openProject, saveManuscript } = useApp();
+  const workspaceQuery = useProjectWorkspaceQuery(projectId ?? "");
+
+  if (workspaceQuery.isPending) {
+    return (
+      <main className="grid min-h-svh place-items-center bg-[#ede6dd] p-6">
+        <p role="status" className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+          작업 공간을 불러오는 중이에요.
+        </p>
+      </main>
+    );
+  }
+
+  if (workspaceQuery.isError) {
+    if (isProjectNotFound(workspaceQuery.error)) {
+      return (
+        <main className="grid min-h-svh place-items-center bg-[#ede6dd] p-6 text-center">
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+            <h1 className="font-heading text-2xl font-semibold">프로젝트를 찾을 수 없어요</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              작품 서재에서 다른 프로젝트를 선택해 주세요.
+            </p>
+            <Button asChild className="mt-5">
+              <Link to="/" aria-label="작품 서재로 돌아가기">
+                <ArrowLeft data-icon="inline-start" /> 작품 서재로 돌아가기
+              </Link>
+            </Button>
+          </div>
+        </main>
+      );
+    }
+
+    return (
+      <main className="grid min-h-svh place-items-center bg-[#ede6dd] p-6 text-center">
+        <div
+          role="alert"
+          className="rounded-2xl border border-destructive/30 bg-card p-8 shadow-sm"
+        >
+          <p>작업 공간을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-4"
+            onClick={() => void workspaceQuery.refetch()}
+          >
+            작업 공간 다시 불러오기
+          </Button>
+        </div>
+      </main>
+    );
+  }
+
+  return <LoadedWritingWorkspace workspace={workspaceQuery.data} />;
+}
+
+function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResponse }) {
   const [contextMode, setContextMode] = useState<ContextMode>("manuscript");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [selection, setSelection] = useState<TextRange | null>(null);
-  const project = state.projects.find(({ id }) => id === projectId);
-  const manuscript = state.manuscripts.find(
-    ({ projectId: manuscriptProjectId }) => manuscriptProjectId === projectId,
-  );
-  const bible = state.storyBibles.find(
-    ({ projectId: bibleProjectId }) => bibleProjectId === projectId,
-  );
-  const scene = manuscript?.scenes.find(({ id }) => id === manuscript.activeSceneId);
+  const { project, storyBible: bible } = workspace;
+  const { draft, updateDraft, status, retry } = useManuscriptAutosave({
+    manuscript: workspace.manuscript,
+    manuscriptRevision: workspace.manuscriptRevision,
+  });
+  const scene = draft.scenes.find(({ id }) => id === draft.activeSceneId);
 
-  useEffect(() => {
-    if (projectId && project && state.lastProjectId !== projectId) {
-      openProject(projectId);
-    }
-  }, [openProject, project, projectId, state.lastProjectId]);
-
-  if (!project || !manuscript || !bible || !scene) {
-    return <Navigate to="/" replace />;
+  if (!scene) {
+    return (
+      <main className="grid min-h-svh place-items-center bg-[#ede6dd] p-6">
+        <p role="alert" className="rounded-2xl border border-destructive/30 bg-card p-8">
+          현재 집필할 장면을 찾을 수 없어요.
+        </p>
+      </main>
+    );
   }
 
   const selectedRange = selection && selection.start !== selection.end ? selection : null;
@@ -72,10 +140,7 @@ export function WritingWorkspacePage() {
             <p className="truncate text-[11px] text-muted-foreground">제1장 · {scene.title}</p>
           </div>
         </div>
-        <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <Check className="size-3.5 text-primary" />
-          <span className="hidden sm:inline">자동 저장됨</span>
-        </span>
+        <AutosaveIndicator status={status} onRetry={retry} />
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -125,7 +190,7 @@ export function WritingWorkspacePage() {
 
         <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-border bg-sidebar/90 md:block">
           {contextMode === "manuscript" ? (
-            <SceneTree manuscript={manuscript} />
+            <SceneTree manuscript={draft} />
           ) : (
             <StoryContextPanel bible={bible} mode={contextMode} />
           )}
@@ -134,9 +199,7 @@ export function WritingWorkspacePage() {
         <main className="min-w-0 flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6">
           <ManuscriptEditor
             scene={scene}
-            onChange={(content) =>
-              saveManuscript(updateSceneContent(manuscript, scene.id, content))
-            }
+            onChange={(content) => updateDraft(updateSceneContent(draft, scene.id, content))}
             onSelectionChange={setSelection}
           />
         </main>
@@ -150,14 +213,14 @@ export function WritingWorkspacePage() {
               onClose={() => setAssistantOpen(false)}
               onApply={(suggestion) => {
                 const updated = applyWritingSuggestion({
-                  manuscript,
+                  manuscript: draft,
                   sceneId: scene.id,
                   suggestion,
                   cursorPosition: selection?.end ?? scene.content.length,
                   selectedRange,
                 });
                 const updatedScene = updated.scenes.find(({ id }) => id === scene.id);
-                saveManuscript(updated);
+                updateDraft(updated);
                 if (updatedScene) {
                   setSelection({
                     start: updatedScene.content.length,
@@ -170,5 +233,57 @@ export function WritingWorkspacePage() {
         )}
       </div>
     </div>
+  );
+}
+
+function AutosaveIndicator({
+  status,
+  onRetry,
+}: {
+  status: ManuscriptAutosaveStatus;
+  onRetry: () => void;
+}) {
+  if (status === "error") {
+    return (
+      <div role="alert" className="flex shrink-0 items-center gap-2 text-xs text-destructive">
+        <CircleAlert className="size-3.5" />
+        <span>저장 실패</span>
+        <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
+          원고 저장 다시 시도
+        </Button>
+      </div>
+    );
+  }
+
+  if (status === "conflict") {
+    return (
+      <span role="alert" className="flex shrink-0 items-center gap-1.5 text-xs text-destructive">
+        <CircleAlert className="size-3.5" /> 저장 충돌
+      </span>
+    );
+  }
+
+  const label = status === "editing" ? "편집 중" : status === "saving" ? "저장 중" : "자동 저장됨";
+
+  return (
+    <span
+      role="status"
+      className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
+    >
+      {status === "saved" ? (
+        <Check className="size-3.5 text-primary" />
+      ) : (
+        <LoaderCircle className={status === "saving" ? "size-3.5 animate-spin" : "size-3.5"} />
+      )}
+      <span className="hidden sm:inline">{label}</span>
+    </span>
+  );
+}
+
+function isProjectNotFound(error: Error): boolean {
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 404 &&
+    error.error.code === "PROJECT_NOT_FOUND"
   );
 }
