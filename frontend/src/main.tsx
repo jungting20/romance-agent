@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { AppRoutes } from "@/app/app";
-import { AppProvider } from "@/app/state/app-provider";
+import { QueryProvider } from "@/app/query/query-provider";
 import { enableMocking } from "@/mocks/enable-mocking";
 
 import "./index.css";
@@ -19,9 +19,9 @@ await enableMocking();
 createRoot(root).render(
   <StrictMode>
     <BrowserRouter>
-      <AppProvider>
+      <QueryProvider>
         <AppRoutes />
-      </AppProvider>
+      </QueryProvider>
     </BrowserRouter>
   </StrictMode>,
 );
