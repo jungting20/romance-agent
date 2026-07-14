@@ -3,11 +3,14 @@ import { http, HttpResponse, type HttpResponseResolver, type RequestHandler } fr
 import type {
   ApiError,
   ApiManuscript,
+  CompareManuscriptSceneRequest,
+  CompareManuscriptSceneResponse,
   CreateProjectRequest,
   ProjectListResponse,
   ProjectWorkspaceResponse,
   SaveManuscriptRequest,
   SaveManuscriptResponse,
+  SceneDiffRow,
   TropeId,
 } from "@/app/infrastructure/api/contracts";
 import {
@@ -15,6 +18,7 @@ import {
   apiErrors,
   findMockWorkspace,
   findMockWorkspaceByManuscriptId,
+  findMockWorkspaceBySceneId,
   listMockProjects,
   MOCK_NOW,
   PROJECT_API_BASE_URL,
@@ -153,6 +157,104 @@ function parseSaveManuscriptRequest(value: unknown): SaveManuscriptRequest | und
     manuscript: value.manuscript,
     expectedRevision: Number(value.expectedRevision),
   };
+}
+
+function parseCompareManuscriptSceneRequest(
+  value: unknown,
+): CompareManuscriptSceneRequest | undefined {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["sceneId", "localContent"]) ||
+    !isNonEmptyString(value.sceneId) ||
+    typeof value.localContent !== "string"
+  ) {
+    return undefined;
+  }
+
+  return { sceneId: value.sceneId, localContent: value.localContent };
+}
+
+function alignSceneLines(localContent: string, serverContent: string): SceneDiffRow[] {
+  const localLines = localContent.split("\n");
+  const serverLines = serverContent.split("\n");
+  const longestCommonSubsequence = Array.from({ length: localLines.length + 1 }, () =>
+    Array<number>(serverLines.length + 1).fill(0),
+  );
+
+  for (let localIndex = localLines.length - 1; localIndex >= 0; localIndex -= 1) {
+    for (let serverIndex = serverLines.length - 1; serverIndex >= 0; serverIndex -= 1) {
+      longestCommonSubsequence[localIndex][serverIndex] =
+        localLines[localIndex] === serverLines[serverIndex]
+          ? longestCommonSubsequence[localIndex + 1][serverIndex + 1] + 1
+          : Math.max(
+              longestCommonSubsequence[localIndex + 1][serverIndex],
+              longestCommonSubsequence[localIndex][serverIndex + 1],
+            );
+    }
+  }
+
+  const rows: SceneDiffRow[] = [];
+  let localIndex = 0;
+  let serverIndex = 0;
+
+  while (localIndex < localLines.length && serverIndex < serverLines.length) {
+    if (localLines[localIndex] === serverLines[serverIndex]) {
+      rows.push({
+        kind: "unchanged",
+        localLineNumber: localIndex + 1,
+        localText: localLines[localIndex],
+        serverLineNumber: serverIndex + 1,
+        serverText: serverLines[serverIndex],
+      });
+      localIndex += 1;
+      serverIndex += 1;
+    } else if (
+      longestCommonSubsequence[localIndex + 1][serverIndex] >=
+      longestCommonSubsequence[localIndex][serverIndex + 1]
+    ) {
+      rows.push({
+        kind: "local-only",
+        localLineNumber: localIndex + 1,
+        localText: localLines[localIndex],
+        serverLineNumber: null,
+        serverText: null,
+      });
+      localIndex += 1;
+    } else {
+      rows.push({
+        kind: "server-only",
+        localLineNumber: null,
+        localText: null,
+        serverLineNumber: serverIndex + 1,
+        serverText: serverLines[serverIndex],
+      });
+      serverIndex += 1;
+    }
+  }
+
+  while (localIndex < localLines.length) {
+    rows.push({
+      kind: "local-only",
+      localLineNumber: localIndex + 1,
+      localText: localLines[localIndex],
+      serverLineNumber: null,
+      serverText: null,
+    });
+    localIndex += 1;
+  }
+
+  while (serverIndex < serverLines.length) {
+    rows.push({
+      kind: "server-only",
+      localLineNumber: null,
+      localText: null,
+      serverLineNumber: serverIndex + 1,
+      serverText: serverLines[serverIndex],
+    });
+    serverIndex += 1;
+  }
+
+  return rows;
 }
 
 async function readRequestJson(request: Request): Promise<unknown> {
@@ -362,9 +464,56 @@ const saveManuscriptHandler: HttpResponseResolver = async ({ params, request }) 
   return HttpResponse.json(response);
 };
 
+const compareManuscriptSceneHandler: HttpResponseResolver = async ({ params, request }) => {
+  const parsedRequest = parseCompareManuscriptSceneRequest(await readRequestJson(request));
+
+  if (!parsedRequest) {
+    return HttpResponse.json(apiErrors.malformedRequest, { status: 400 });
+  }
+
+  const manuscriptId = params.manuscriptId;
+  const workspace =
+    typeof manuscriptId === "string" ? findMockWorkspaceByManuscriptId(manuscriptId) : undefined;
+
+  if (!workspace) {
+    return HttpResponse.json(apiErrors.manuscriptNotFound, { status: 404 });
+  }
+
+  const sceneWorkspace = findMockWorkspaceBySceneId(parsedRequest.sceneId);
+
+  if (!sceneWorkspace) {
+    return HttpResponse.json(apiErrors.sceneNotFound, { status: 404 });
+  }
+
+  if (sceneWorkspace.manuscript.id !== manuscriptId) {
+    return HttpResponse.json(apiErrors.invalidSceneReference, { status: 422 });
+  }
+
+  const serverScene = workspace.manuscript.scenes.find(({ id }) => id === parsedRequest.sceneId);
+
+  if (!serverScene) {
+    return HttpResponse.json(apiErrors.invalidSceneReference, { status: 422 });
+  }
+
+  const response: CompareManuscriptSceneResponse = {
+    sceneId: parsedRequest.sceneId,
+    serverRevision: workspace.manuscriptRevision,
+    localContent: parsedRequest.localContent,
+    serverContent: serverScene.content,
+    serverManuscript: structuredClone(workspace.manuscript),
+    rows: alignSceneLines(parsedRequest.localContent, serverScene.content),
+  };
+
+  return HttpResponse.json(response);
+};
+
 export const projectHandlers: RequestHandler[] = [
   http.get(`${PROJECT_API_BASE_URL}/projects`, listProjectsHandler),
   http.post(`${PROJECT_API_BASE_URL}/projects`, createProjectHandler),
   http.get(`${PROJECT_API_BASE_URL}/projects/:projectId/workspace`, getWorkspaceHandler),
   http.put(`${PROJECT_API_BASE_URL}/manuscripts/:manuscriptId`, saveManuscriptHandler),
+  http.post(
+    `${PROJECT_API_BASE_URL}/manuscripts/:manuscriptId/scene-diffs`,
+    compareManuscriptSceneHandler,
+  ),
 ];

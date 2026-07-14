@@ -4,6 +4,8 @@ export type ApiErrorCode =
   | "MALFORMED_REQUEST"
   | "PROJECT_NOT_FOUND"
   | "MANUSCRIPT_NOT_FOUND"
+  | "SCENE_NOT_FOUND"
+  | "INVALID_SCENE_REFERENCE"
   | "MANUSCRIPT_REVISION_CONFLICT"
   | "INVALID_TITLE"
   | "INVALID_TROPE"
@@ -92,6 +94,30 @@ export interface SaveManuscriptResponse {
   manuscript: ApiManuscript;
   manuscriptRevision: number;
   projectActivity: { projectId: string; updatedAt: string };
+}
+
+export type SceneDiffKind = "unchanged" | "local-only" | "server-only";
+
+export interface SceneDiffRow {
+  kind: SceneDiffKind;
+  localLineNumber: number | null;
+  localText: string | null;
+  serverLineNumber: number | null;
+  serverText: string | null;
+}
+
+export interface CompareManuscriptSceneRequest {
+  sceneId: string;
+  localContent: string;
+}
+
+export interface CompareManuscriptSceneResponse {
+  sceneId: string;
+  serverRevision: number;
+  localContent: string;
+  serverContent: string;
+  serverManuscript: ApiManuscript;
+  rows: SceneDiffRow[];
 }
 
 export interface FieldError {

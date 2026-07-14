@@ -23,6 +23,21 @@ export const apiErrors = {
     message: "원고를 찾을 수 없습니다.",
     fieldErrors: [],
   },
+  sceneNotFound: {
+    code: "SCENE_NOT_FOUND",
+    message: "장면을 찾을 수 없습니다.",
+    fieldErrors: [],
+  },
+  invalidSceneReference: {
+    code: "INVALID_SCENE_REFERENCE",
+    message: "장면이 원고에 속하지 않습니다.",
+    fieldErrors: [
+      {
+        path: "sceneId",
+        message: "경로의 원고에 속한 장면을 선택해 주세요.",
+      },
+    ],
+  },
   revisionConflict: {
     code: "MANUSCRIPT_REVISION_CONFLICT",
     message: "다른 위치에서 원고가 먼저 수정되었습니다.",
@@ -130,6 +145,14 @@ export function findMockWorkspaceByManuscriptId(
   manuscriptId: string,
 ): ProjectWorkspaceResponse | undefined {
   const workspace = projectWorkspaces.find(({ manuscript }) => manuscript.id === manuscriptId);
+
+  return workspace ? structuredClone(workspace) : undefined;
+}
+
+export function findMockWorkspaceBySceneId(sceneId: string): ProjectWorkspaceResponse | undefined {
+  const workspace = projectWorkspaces.find(({ manuscript }) =>
+    manuscript.scenes.some(({ id }) => id === sceneId),
+  );
 
   return workspace ? structuredClone(workspace) : undefined;
 }

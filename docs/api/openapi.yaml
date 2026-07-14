@@ -13,7 +13,7 @@ tags:
   - name: Projects
     description: 프로젝트 서재와 원자적 작업공간 생성 및 조회
   - name: Manuscripts
-    description: 리비전 충돌을 방지하는 원고 저장
+    description: 리비전 충돌을 방지하는 원고 저장과 장면 초안 비교
 paths:
   /projects:
     get:
@@ -277,6 +277,82 @@ paths:
           $ref: "#/components/responses/InvalidManuscript"
         "500":
           $ref: "#/components/responses/InternalError"
+  /manuscripts/{manuscriptId}/scene-diffs:
+    post:
+      tags: [Manuscripts]
+      operationId: compareManuscriptScene
+      summary: 장면 초안 비교
+      description: >-
+        경로의 원고에 속한 장면의 로컬 초안과 현재 서버 초안을 줄 단위로 정렬해 반환합니다.
+        비교는 원고, 서버 장면 및 제출한 로컬 내용을 변경하지 않습니다.
+      parameters:
+        - $ref: "#/components/parameters/ManuscriptIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompareManuscriptSceneRequest"
+            example:
+              sceneId: silver-garden-scene-1
+              localContent: |-
+                첫째 줄
+                로컬 줄
+      responses:
+        "200":
+          description: 현재 서버 리비전과 원고 전체 표현을 포함한 줄 단위 장면 비교 결과
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompareManuscriptSceneResponse"
+              example:
+                sceneId: silver-garden-scene-1
+                serverRevision: 2
+                localContent: |-
+                  첫째 줄
+                  로컬 줄
+                serverContent: |-
+                  첫째 줄
+                  서버 줄
+                serverManuscript:
+                  id: silver-garden-manuscript
+                  projectId: silver-garden
+                  scenes:
+                    - id: silver-garden-scene-1
+                      title: 비가 그친 뒤의 정원
+                      chapterNumber: 1
+                      content: |-
+                        첫째 줄
+                        서버 줄
+                      relatedCharacterIds:
+                        - silver-garden-character-1
+                        - silver-garden-character-2
+                      relatedWorldEntryIds: [silver-garden-world-1]
+                  activeSceneId: silver-garden-scene-1
+                rows:
+                  - kind: unchanged
+                    localLineNumber: 1
+                    localText: 첫째 줄
+                    serverLineNumber: 1
+                    serverText: 첫째 줄
+                  - kind: local-only
+                    localLineNumber: 2
+                    localText: 로컬 줄
+                    serverLineNumber: null
+                    serverText: null
+                  - kind: server-only
+                    localLineNumber: null
+                    localText: null
+                    serverLineNumber: 2
+                    serverText: 서버 줄
+        "400":
+          $ref: "#/components/responses/MalformedRequest"
+        "404":
+          $ref: "#/components/responses/ManuscriptOrSceneNotFound"
+        "422":
+          $ref: "#/components/responses/InvalidSceneReference"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   parameters:
     ProjectIdPath:
@@ -291,7 +367,7 @@ components:
       name: manuscriptId
       in: path
       required: true
-      description: 저장할 원고 식별자
+      description: 작업 대상 원고 식별자
       schema:
         $ref: "#/components/schemas/ManuscriptId"
       example: silver-garden-manuscript
@@ -330,6 +406,37 @@ components:
             code: MANUSCRIPT_NOT_FOUND
             message: 원고를 찾을 수 없습니다.
             fieldErrors: []
+    ManuscriptOrSceneNotFound:
+      description: 경로의 원고 또는 요청한 장면을 찾을 수 없음
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            manuscriptNotFound:
+              summary: 원고를 찾을 수 없음
+              value:
+                code: MANUSCRIPT_NOT_FOUND
+                message: 원고를 찾을 수 없습니다.
+                fieldErrors: []
+            sceneNotFound:
+              summary: 장면을 찾을 수 없음
+              value:
+                code: SCENE_NOT_FOUND
+                message: 장면을 찾을 수 없습니다.
+                fieldErrors: []
+    InvalidSceneReference:
+      description: 요청한 장면이 존재하지만 경로의 원고에 속하지 않아 식별 관계가 일치하지 않음
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            code: INVALID_SCENE_REFERENCE
+            message: 장면이 원고에 속하지 않습니다.
+            fieldErrors:
+              - path: sceneId
+                message: 경로의 원고에 속한 장면을 선택해 주세요.
     ManuscriptRevisionConflict:
       description: 기대 리비전보다 저장된 원고 리비전이 앞서 있음
       content:
@@ -615,6 +722,68 @@ components:
           minimum: 1
         projectActivity:
           $ref: "#/components/schemas/SavedProjectActivity"
+    SceneDiffKind:
+      type: string
+      enum: [unchanged, local-only, server-only]
+      description: 정렬된 줄이 두 초안에서 유지되었는지 또는 한쪽에만 있는지 나타내는 분류
+    SceneDiffRow:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - localLineNumber
+        - localText
+        - serverLineNumber
+        - serverText
+      properties:
+        kind:
+          $ref: "#/components/schemas/SceneDiffKind"
+        localLineNumber:
+          type: [integer, "null"]
+          minimum: 1
+        localText:
+          type: [string, "null"]
+        serverLineNumber:
+          type: [integer, "null"]
+          minimum: 1
+        serverText:
+          type: [string, "null"]
+    CompareManuscriptSceneRequest:
+      type: object
+      additionalProperties: false
+      required: [sceneId, localContent]
+      properties:
+        sceneId:
+          $ref: "#/components/schemas/SceneId"
+        localContent:
+          type: string
+          description: 비교할 로컬 장면 초안의 전체 본문
+    CompareManuscriptSceneResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - sceneId
+        - serverRevision
+        - localContent
+        - serverContent
+        - serverManuscript
+        - rows
+      properties:
+        sceneId:
+          $ref: "#/components/schemas/SceneId"
+        serverRevision:
+          type: integer
+          minimum: 1
+        localContent:
+          type: string
+        serverContent:
+          type: string
+        serverManuscript:
+          $ref: "#/components/schemas/Manuscript"
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/SceneDiffRow"
     UtcDateTime:
       type: string
       format: date-time
@@ -627,6 +796,8 @@ components:
         - MALFORMED_REQUEST
         - PROJECT_NOT_FOUND
         - MANUSCRIPT_NOT_FOUND
+        - SCENE_NOT_FOUND
+        - INVALID_SCENE_REFERENCE
         - MANUSCRIPT_REVISION_CONFLICT
         - INVALID_TITLE
         - INVALID_TROPE

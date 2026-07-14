@@ -3,6 +3,8 @@ import { describe, expect, test } from "vitest";
 
 import type {
   ApiError,
+  CompareManuscriptSceneRequest,
+  CompareManuscriptSceneResponse,
   CreateProjectRequest,
   ProjectListResponse,
   ProjectWorkspaceResponse,
@@ -26,6 +28,31 @@ async function getSeedWorkspace(): Promise<ProjectWorkspaceResponse> {
 
   expect(response.status).toBe(200);
   return response.json();
+}
+
+async function saveSeedSceneContent(content: string): Promise<ProjectWorkspaceResponse> {
+  const workspace = await getSeedWorkspace();
+  const manuscript = structuredClone(workspace.manuscript);
+  manuscript.scenes[0].content = content;
+  const response = await fetch(`${API_ORIGIN}/api/manuscripts/${manuscript.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manuscript, expectedRevision: workspace.manuscriptRevision }),
+  });
+
+  expect(response.status).toBe(200);
+  return getSeedWorkspace();
+}
+
+async function compareSeedScene(
+  request: CompareManuscriptSceneRequest | Record<string, unknown>,
+  manuscriptId = "silver-garden-manuscript",
+): Promise<Response> {
+  return fetch(`${API_ORIGIN}/api/manuscripts/${manuscriptId}/scene-diffs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
 }
 
 describe("project persistence API handlers", () => {
@@ -409,6 +436,124 @@ describe("project persistence API handlers", () => {
     expect(response.status).toBe(422);
     expect(body.code).toBe("INVALID_MANUSCRIPT");
     expect(body.fieldErrors).toContainEqual(expect.objectContaining({ path }));
+  });
+
+  test("compares a local scene draft with the current stored scene without mutation", async () => {
+    const beforeCompare = await saveSeedSceneContent("첫째 줄\n서버 줄");
+    const request: CompareManuscriptSceneRequest = {
+      sceneId: "silver-garden-scene-1",
+      localContent: "첫째 줄\n로컬 줄",
+    };
+
+    const response = await compareSeedScene(request);
+    const body: CompareManuscriptSceneResponse = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      sceneId: request.sceneId,
+      serverRevision: 2,
+      localContent: request.localContent,
+      serverContent: "첫째 줄\n서버 줄",
+      serverManuscript: beforeCompare.manuscript,
+      rows: [
+        {
+          kind: "unchanged",
+          localLineNumber: 1,
+          localText: "첫째 줄",
+          serverLineNumber: 1,
+          serverText: "첫째 줄",
+        },
+        {
+          kind: "local-only",
+          localLineNumber: 2,
+          localText: "로컬 줄",
+          serverLineNumber: null,
+          serverText: null,
+        },
+        {
+          kind: "server-only",
+          localLineNumber: null,
+          localText: null,
+          serverLineNumber: 2,
+          serverText: "서버 줄",
+        },
+      ],
+    });
+    expect(await getSeedWorkspace()).toEqual(beforeCompare);
+  });
+
+  test.each([
+    { name: "a missing field", request: { sceneId: "silver-garden-scene-1" } },
+    {
+      name: "an additional field",
+      request: {
+        sceneId: "silver-garden-scene-1",
+        localContent: "첫째 줄\n로컬 줄",
+        unexpected: true,
+      },
+    },
+  ])("returns MALFORMED_REQUEST for scene comparison input with $name", async ({ request }) => {
+    const response = await compareSeedScene(request);
+    const body: ApiError = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual(apiErrors.malformedRequest);
+  });
+
+  test("returns MANUSCRIPT_NOT_FOUND when comparing against an unknown manuscript", async () => {
+    const response = await compareSeedScene(
+      { sceneId: "silver-garden-scene-1", localContent: "로컬 초안" },
+      "missing-manuscript",
+    );
+    const body: ApiError = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body).toEqual(apiErrors.manuscriptNotFound);
+  });
+
+  test("returns SCENE_NOT_FOUND when the scene does not exist", async () => {
+    const response = await compareSeedScene({
+      sceneId: "missing-scene",
+      localContent: "로컬 초안",
+    });
+    const body: ApiError = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body).toEqual(apiErrors.sceneNotFound);
+  });
+
+  test("returns INVALID_SCENE_REFERENCE when the scene belongs to another manuscript", async () => {
+    const createResponse = await fetch(`${API_ORIGIN}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validCreateRequest),
+    });
+    const created: ProjectWorkspaceResponse = await createResponse.json();
+    const response = await compareSeedScene({
+      sceneId: created.manuscript.activeSceneId,
+      localContent: "로컬 초안",
+    });
+    const body: ApiError = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body).toEqual(apiErrors.invalidSceneReference);
+  });
+
+  test("supports a test-local INTERNAL_ERROR scene comparison response", async () => {
+    server.use(
+      http.post(`${API_ORIGIN}/api/manuscripts/:manuscriptId/scene-diffs`, () =>
+        HttpResponse.json(apiErrors.internalError, { status: 500 }),
+      ),
+    );
+
+    const response = await compareSeedScene({
+      sceneId: "silver-garden-scene-1",
+      localContent: "로컬 초안",
+    });
+    const body: ApiError = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual(apiErrors.internalError);
   });
 
   test("supports a test-local INTERNAL_ERROR response", async () => {
