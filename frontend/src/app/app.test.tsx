@@ -2,23 +2,19 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router-dom";
+import { RouterProvider } from "react-router-dom";
 import { describe, expect, test } from "vitest";
 
 import { findMockWorkspace } from "@/mocks/data/project-workspaces";
 import { server } from "@/mocks/server";
 
+import { createAppMemoryRouter } from "./app";
+
 describe("core writing journey", () => {
   test("opens trope selection from the project library", async () => {
-    const { AppRoutes } = await import("./app");
     const user = userEvent.setup();
 
-    renderWithProviders(
-      <MemoryRouter initialEntries={["/"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
+    renderApp(["/"]);
 
     expect(
       screen.getByRole("heading", { name: "다시, 이야기를 시작해 볼까요?" }),
@@ -31,7 +27,6 @@ describe("core writing journey", () => {
   });
 
   test("opens the workspace identified by the project creation response", async () => {
-    const { AppRoutes } = await import("./app");
     const user = userEvent.setup();
     const workspace = findMockWorkspace("silver-garden");
     if (!workspace) {
@@ -39,11 +34,7 @@ describe("core writing journey", () => {
     }
     server.use(http.post("/api/projects", () => HttpResponse.json(workspace, { status: 201 })));
 
-    renderWithProviders(
-      <MemoryRouter initialEntries={["/new"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
+    renderApp(["/new"]);
 
     await user.click(screen.getByRole("link", { name: "재회 로맨스 선택" }));
 
@@ -63,10 +54,14 @@ describe("core writing journey", () => {
   });
 });
 
-function renderWithProviders(children: ReactNode) {
+function renderApp(initialEntries: string[]) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
 
-  return render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={createAppMemoryRouter(initialEntries)} />
+    </QueryClientProvider>,
+  );
 }

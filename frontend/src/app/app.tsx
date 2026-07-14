@@ -1,4 +1,10 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import {
+  createBrowserRouter,
+  createMemoryRouter,
+  Navigate,
+  Outlet,
+  type RouteObject,
+} from "react-router-dom";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LibraryPage } from "@/pages/library/library-page";
@@ -6,19 +12,31 @@ import { SetupPage } from "@/pages/new-project/setup-page";
 import { TropePage } from "@/pages/new-project/trope-page";
 import { WritingWorkspacePage } from "@/pages/writing-workspace/writing-workspace-page";
 
-export function AppRoutes() {
+const appRoutes: RouteObject[] = [
+  {
+    element: <AppLayout />,
+    children: [
+      { index: true, element: <LibraryPage /> },
+      { path: "new", element: <TropePage /> },
+      { path: "new/setup", element: <SetupPage /> },
+      { path: "projects/:projectId/write", element: <WritingWorkspacePage /> },
+      { path: "*", element: <Navigate to="/" replace /> },
+    ],
+  },
+];
+
+function AppLayout() {
   return (
     <TooltipProvider>
-      <Routes>
-        <Route path="/" element={<LibraryPage />} />
-        <Route path="/new" element={<TropePage />} />
-        <Route path="/new/setup" element={<SetupPage />} />
-        <Route
-          path="/projects/:projectId/write"
-          element={<WritingWorkspacePage />}
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Outlet />
     </TooltipProvider>
   );
+}
+
+export function createAppBrowserRouter() {
+  return createBrowserRouter(appRoutes);
+}
+
+export function createAppMemoryRouter(initialEntries: string[]) {
+  return createMemoryRouter(appRoutes, { initialEntries });
 }

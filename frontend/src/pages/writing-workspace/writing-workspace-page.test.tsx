@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
-import { MemoryRouter } from "react-router-dom";
+import { RouterProvider } from "react-router-dom";
 import { describe, expect, test } from "vitest";
 
 import type {
@@ -10,7 +10,7 @@ import type {
   ProjectWorkspaceResponse,
   SaveManuscriptRequest,
 } from "@/app/infrastructure/api/contracts";
-import { AppRoutes } from "@/app/app";
+import { createAppMemoryRouter } from "@/app/app";
 import { findMockWorkspace } from "@/mocks/data/project-workspaces";
 import { server } from "@/mocks/server";
 
@@ -177,6 +177,166 @@ describe("WritingWorkspacePage", () => {
     expect(saveCount).toBe(2);
   });
 
+  test("saves an edit immediately before internal navigation and proceeds only after success", async () => {
+    const requests: SaveManuscriptRequest[] = [];
+    let releaseSave!: () => void;
+    const saveBarrier = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        requests.push(body);
+        await saveBarrier;
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 2,
+          projectActivity: {
+            projectId: body.manuscript.projectId,
+            updatedAt: "2026-07-14T03:00:00.000Z",
+          },
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+
+    fireEvent.change(editor, { target: { value: "탐색 전에 저장할 원고" } });
+    await user.click(screen.getByRole("link", { name: "작품 서재로 돌아가기" }));
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(screen.getByRole("heading", { name: getWorkspace().project.title })).toBeInTheDocument();
+    expect(requests[0].manuscript.scenes[0].content).toBe("탐색 전에 저장할 원고");
+
+    releaseSave();
+    expect(
+      await screen.findByRole("heading", { name: "다시, 이야기를 시작해 볼까요?" }),
+    ).toBeInTheDocument();
+  });
+
+  test("saves a newer edit queued behind an active save before navigating", async () => {
+    const requests: SaveManuscriptRequest[] = [];
+    let releaseFirstSave!: () => void;
+    const firstSaveBarrier = new Promise<void>((resolve) => {
+      releaseFirstSave = resolve;
+    });
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        requests.push(body);
+        if (requests.length === 1) {
+          await firstSaveBarrier;
+        }
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: requests.length + 1,
+          projectActivity: {
+            projectId: body.manuscript.projectId,
+            updatedAt: "2026-07-14T03:00:00.000Z",
+          },
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+
+    fireEvent.change(editor, { target: { value: "첫 저장 원고" } });
+    await waitFor(() => expect(requests).toHaveLength(1), { timeout: 2_000 });
+    fireEvent.change(editor, { target: { value: "뒤에 대기한 최신 원고" } });
+    await user.click(screen.getByRole("link", { name: "작품 서재로 돌아가기" }));
+
+    expect(screen.getByRole("heading", { name: getWorkspace().project.title })).toBeInTheDocument();
+    releaseFirstSave();
+    expect(
+      await screen.findByRole("heading", { name: "다시, 이야기를 시작해 볼까요?" }),
+    ).toBeInTheDocument();
+    expect(requests).toHaveLength(2);
+    expect(requests[1].expectedRevision).toBe(2);
+    expect(requests[1].manuscript.scenes[0].content).toBe("뒤에 대기한 최신 원고");
+  });
+
+  test("warns before unloading while the manuscript has unsaved work", async () => {
+    renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+    fireEvent.change(editor, { target: { value: "닫기 전에 지킬 원고" } });
+
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
+  test("cancels internal navigation when the immediate save fails and exposes retry", async () => {
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+          { status: 500 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+    fireEvent.change(editor, { target: { value: "실패해도 지킬 원고" } });
+
+    await user.click(screen.getByRole("link", { name: "작품 서재로 돌아가기" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
+    expect(screen.getByRole("button", { name: "원고 저장 다시 시도" })).toBeInTheDocument();
+    expect(editor.value).toBe("실패해도 지킬 원고");
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
+  test("cancels internal navigation when saving finds a conflict", async () => {
+    const workspace = getWorkspace();
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        ),
+      ),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        const body = (await request.json()) as { sceneId: string; localContent: string };
+        return HttpResponse.json({
+          sceneId: body.sceneId,
+          serverRevision: 2,
+          localContent: body.localContent,
+          serverContent: workspace.manuscript.scenes[0].content,
+          serverManuscript: workspace.manuscript,
+          rows: [],
+        } satisfies CompareManuscriptSceneResponse);
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+    fireEvent.change(editor, { target: { value: "충돌해도 지킬 원고" } });
+
+    await user.click(screen.getByRole("link", { name: "작품 서재로 돌아가기" }));
+
+    expect(await screen.findByRole("dialog", { name: "원고 저장 충돌 해결" })).toBeInTheDocument();
+    expect(editor.value).toBe("충돌해도 지킬 원고");
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
   test("opens the conflict comparison and Escape closes it without discarding the draft", async () => {
     const workspace = getWorkspace();
     let compareCount = 0;
@@ -309,9 +469,7 @@ function renderWorkspace(projectId = "silver-garden") {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/projects/${projectId}/write`]}>
-        <AppRoutes />
-      </MemoryRouter>
+      <RouterProvider router={createAppMemoryRouter([`/projects/${projectId}/write`])} />
     </QueryClientProvider>,
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Check,
@@ -10,7 +10,7 @@ import {
   Users,
   WandSparkles,
 } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useBeforeUnload, useBlocker, useParams } from "react-router-dom";
 
 import { ApiRequestError } from "@/app/infrastructure/api/api-client";
 import type { ProjectWorkspaceResponse } from "@/app/infrastructure/api/contracts";
@@ -108,6 +108,7 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
     updateDraft,
     status,
     retry,
+    flush,
     conflictComparison,
     isConflictDialogOpen,
     isComparingConflict,
@@ -124,6 +125,7 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
     manuscript: workspace.manuscript,
     manuscriptRevision: workspace.manuscriptRevision,
   });
+  useManuscriptNavigationGuard(status, flush);
   const scene = draft.scenes.find(({ id }) => id === draft.activeSceneId);
 
   if (!scene) {
@@ -265,6 +267,44 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
       />
     </div>
   );
+}
+
+function useManuscriptNavigationGuard(
+  status: ManuscriptAutosaveStatus,
+  flush: () => Promise<boolean>,
+) {
+  const shouldBlock = status !== "saved";
+  const blocker = useBlocker(shouldBlock);
+  const isHandlingBlockedNavigationRef = useRef(false);
+
+  useBeforeUnload(
+    useCallback(
+      (event) => {
+        if (shouldBlock) {
+          event.preventDefault();
+          event.returnValue = "";
+        }
+      },
+      [shouldBlock],
+    ),
+    { capture: true },
+  );
+
+  useEffect(() => {
+    if (blocker.state !== "blocked" || isHandlingBlockedNavigationRef.current) {
+      return;
+    }
+
+    isHandlingBlockedNavigationRef.current = true;
+    void flush().then((saved) => {
+      isHandlingBlockedNavigationRef.current = false;
+      if (saved) {
+        blocker.proceed();
+      } else {
+        blocker.reset();
+      }
+    });
+  }, [blocker, flush]);
 }
 
 function AutosaveIndicator({

@@ -143,6 +143,86 @@ describe("useManuscriptAutosave", () => {
     expect(requests).toHaveLength(1);
   });
 
+  test("adopts a canonicalized save response when no newer local edit exists", async () => {
+    const workspace = getWorkspace();
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        return HttpResponse.json({
+          manuscript: updateSceneContent(
+            body.manuscript,
+            body.manuscript.activeSceneId,
+            "서버가 정규화한 원고",
+          ),
+          manuscriptRevision: 2,
+          projectActivity: {
+            projectId: body.manuscript.projectId,
+            updatedAt: "2026-07-14T03:00:00.000Z",
+          },
+        } satisfies SaveManuscriptResponse);
+      }),
+    );
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() => result.current.updateDraft(editActiveScene(workspace, "정규화 전 원고")));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+
+    expect(result.current.status).toBe("saved");
+    expect(result.current.draft.scenes[0].content).toBe("서버가 정규화한 원고");
+  });
+
+  test("adopts a newer same-manuscript workspace update while clean", () => {
+    const workspace = getWorkspace();
+    const incomingManuscript = editActiveScene(workspace, "다른 쿼리가 받은 최신 원고");
+    const { result, rerender } = renderHook(
+      ({ manuscript, manuscriptRevision }) =>
+        useManuscriptAutosave({ manuscript, manuscriptRevision }),
+      {
+        initialProps: {
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        },
+        wrapper: createWrapper(createTestQueryClient()),
+      },
+    );
+
+    rerender({ manuscript: incomingManuscript, manuscriptRevision: 2 });
+
+    expect(result.current.status).toBe("saved");
+    expect(result.current.draft).toBe(incomingManuscript);
+  });
+
+  test("preserves a dirty local draft when a newer same-manuscript workspace update arrives", () => {
+    const workspace = getWorkspace();
+    const incomingManuscript = editActiveScene(workspace, "쿼리의 최신 원고");
+    const localDraft = editActiveScene(workspace, "아직 저장하지 않은 로컬 원고");
+    const { result, rerender } = renderHook(
+      ({ manuscript, manuscriptRevision }) =>
+        useManuscriptAutosave({ manuscript, manuscriptRevision }),
+      {
+        initialProps: {
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        },
+        wrapper: createWrapper(createTestQueryClient()),
+      },
+    );
+
+    act(() => result.current.updateDraft(localDraft));
+    rerender({ manuscript: incomingManuscript, manuscriptRevision: 2 });
+
+    expect(result.current.status).toBe("editing");
+    expect(result.current.draft).toBe(localDraft);
+  });
+
   test("retains newer edits during an active save and schedules a serial follow-up", async () => {
     const requests: SaveManuscriptRequest[] = [];
     let releaseFirstSave!: (response: SaveManuscriptResponse) => void;

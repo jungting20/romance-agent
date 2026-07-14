@@ -54,10 +54,27 @@ export function useManuscriptAutosave({
   const conflictComparisonRef = useRef<CompareManuscriptSceneResponse | null>(null);
   const comparisonRequestRef = useRef(0);
   const manuscriptGenerationRef = useRef(0);
+  const saveSettledWaitersRef = useRef<Array<() => void>>([]);
 
   const setStatus = useCallback((nextStatus: ManuscriptAutosaveStatus) => {
     statusRef.current = nextStatus;
     setStatusState(nextStatus);
+  }, []);
+
+  const notifySaveSettled = useCallback(() => {
+    const waiters = saveSettledWaitersRef.current;
+    saveSettledWaitersRef.current = [];
+    waiters.forEach((resolve) => resolve());
+  }, []);
+
+  const waitForActiveSave = useCallback(() => {
+    if (!inFlightRef.current) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      saveSettledWaitersRef.current.push(resolve);
+    });
   }, []);
 
   const requestConflictComparison = useCallback(
@@ -109,9 +126,9 @@ export function useManuscriptAutosave({
     [],
   );
 
-  const saveCurrentDraft = useCallback(async () => {
+  const saveCurrentDraft = useCallback(async (): Promise<boolean> => {
     if (inFlightRef.current || statusRef.current === "conflict") {
-      return;
+      return false;
     }
 
     const savingDraft = draftRef.current;
@@ -127,20 +144,25 @@ export function useManuscriptAutosave({
       });
 
       if (manuscriptGenerationRef.current !== manuscriptGeneration) {
-        return;
+        return false;
       }
 
-      inFlightRef.current = false;
       acknowledgedManuscriptRef.current = saved.manuscript;
       acknowledgedRevisionRef.current = saved.manuscriptRevision;
       setConflict(null);
-      setStatus(draftRef.current === savingDraft ? "saved" : "editing");
+      if (draftRef.current === savingDraft) {
+        draftRef.current = saved.manuscript;
+        setDraft(saved.manuscript);
+        setStatus("saved");
+      } else {
+        setStatus("editing");
+      }
+      return true;
     } catch (error) {
       if (manuscriptGenerationRef.current !== manuscriptGeneration) {
-        return;
+        return false;
       }
 
-      inFlightRef.current = false;
       if (
         error instanceof ApiRequestError &&
         error.status === 409 &&
@@ -157,12 +179,44 @@ export function useManuscriptAutosave({
             localContent: scene.content,
           });
         }
-        return;
+        return false;
       }
 
       setStatus("error");
+      return false;
+    } finally {
+      if (manuscriptGenerationRef.current === manuscriptGeneration) {
+        inFlightRef.current = false;
+        notifySaveSettled();
+      }
     }
-  }, [requestConflictComparison, setStatus]);
+  }, [notifySaveSettled, requestConflictComparison, setStatus]);
+
+  const flush = useCallback(async (): Promise<boolean> => {
+    while (true) {
+      if (statusRef.current === "error" || statusRef.current === "conflict") {
+        return false;
+      }
+
+      if (inFlightRef.current) {
+        await waitForActiveSave();
+        continue;
+      }
+
+      if (statusRef.current === "saved") {
+        return true;
+      }
+
+      if (statusRef.current === "editing") {
+        if (!(await saveCurrentDraft())) {
+          return false;
+        }
+        continue;
+      }
+
+      await Promise.resolve();
+    }
+  }, [saveCurrentDraft, waitForActiveSave]);
 
   useEffect(() => {
     if (status !== "editing") {
@@ -178,12 +232,19 @@ export function useManuscriptAutosave({
 
   useEffect(() => {
     if (manuscript.id === acknowledgedManuscriptRef.current.id) {
+      if (manuscriptRevision > acknowledgedRevisionRef.current && statusRef.current === "saved") {
+        draftRef.current = manuscript;
+        acknowledgedManuscriptRef.current = manuscript;
+        acknowledgedRevisionRef.current = manuscriptRevision;
+        setDraft(manuscript);
+      }
       return;
     }
 
     manuscriptGenerationRef.current += 1;
     comparisonRequestRef.current += 1;
     inFlightRef.current = false;
+    notifySaveSettled();
     draftRef.current = manuscript;
     acknowledgedManuscriptRef.current = manuscript;
     acknowledgedRevisionRef.current = manuscriptRevision;
@@ -197,7 +258,7 @@ export function useManuscriptAutosave({
     setResolvingConflict(false);
     setConflictResolutionError(false);
     setStatus("saved");
-  }, [manuscript, manuscriptRevision, setStatus]);
+  }, [manuscript, manuscriptRevision, notifySaveSettled, setStatus]);
 
   const updateDraft = useCallback(
     (update: DraftUpdate) => {
@@ -264,7 +325,6 @@ export function useManuscriptAutosave({
       if (manuscriptGenerationRef.current !== manuscriptGeneration) {
         return;
       }
-      inFlightRef.current = false;
       acknowledgedManuscriptRef.current = saved.manuscript;
       acknowledgedRevisionRef.current = saved.manuscriptRevision;
       draftRef.current = saved.manuscript;
@@ -280,7 +340,6 @@ export function useManuscriptAutosave({
       if (manuscriptGenerationRef.current !== manuscriptGeneration) {
         return;
       }
-      inFlightRef.current = false;
       if (
         error instanceof ApiRequestError &&
         error.status === 409 &&
@@ -301,10 +360,12 @@ export function useManuscriptAutosave({
       }
     } finally {
       if (manuscriptGenerationRef.current === manuscriptGeneration) {
+        inFlightRef.current = false;
+        notifySaveSettled();
         setResolvingConflict(false);
       }
     }
-  }, [isResolvingConflict, requestConflictComparison, setStatus]);
+  }, [isResolvingConflict, notifySaveSettled, requestConflictComparison, setStatus]);
 
   const applyServer = useCallback(() => {
     const comparison = conflictComparisonRef.current;
@@ -362,6 +423,7 @@ export function useManuscriptAutosave({
     updateDraft,
     status,
     retry,
+    flush,
     conflict,
     conflictComparison,
     isConflictDialogOpen,

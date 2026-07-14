@@ -1,8 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { RouterProvider } from "react-router-dom";
 
-import { AppRoutes } from "@/app/app";
+import { createAppBrowserRouter } from "@/app/app";
 import { QueryProvider } from "@/app/query/query-provider";
 import { enableMocking } from "@/mocks/enable-mocking";
 
@@ -18,10 +18,8 @@ await enableMocking();
 
 createRoot(root).render(
   <StrictMode>
-    <BrowserRouter>
-      <QueryProvider>
-        <AppRoutes />
-      </QueryProvider>
-    </BrowserRouter>
+    <QueryProvider>
+      <RouterProvider router={createAppBrowserRouter()} />
+    </QueryProvider>
   </StrictMode>,
 );
