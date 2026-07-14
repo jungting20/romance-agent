@@ -36,8 +36,9 @@ verification away from the main agent.
 
 Use task-scoped subagents when multi-agent support is available.
 
-- Delegate substantial, independently testable work under `frontend/` to a
-  frontend subagent.
+- For substantial, independently testable work under `frontend/`, spawn the
+  project-scoped custom agent named `frontend`, defined in
+  `.codex/agents/frontend.toml`.
 - Delegate substantial, independently testable work under `backend/` to a
   backend subagent.
 - For cross-stack features, the main agent must define the shared contract
@@ -79,6 +80,45 @@ each task.
   change. A domain-affecting task is incomplete without it.
 - A refactor that provably preserves domain meaning and behavior does not
   require a domain-document rewrite.
+
+## API Contract Workflow
+
+`docs/api/openapi.yaml` is the authoritative consumer-facing API contract and
+uses OpenAPI 3.1. Create it only when the first endpoint is needed. The
+frontend agent authors and stewards this contract, but the main agent is its
+final approver.
+
+Use this workflow for every new or changed API operation:
+
+1. **Frontend drafts:** The main agent explicitly assigns
+   `docs/api/openapi.yaml` to the frontend task. The frontend agent derives the
+   operation from the UI use case and relevant domain documents, then drafts
+   the complete request, response, and error contract.
+2. **Frontend reports:** The frontend agent returns a handoff package with the
+   spec path, proposed baseline or diff, affected `operationId` values, linked
+   domain documents, assumptions, aligned frontend types, mocks, or adapters,
+   and validation results.
+3. **Main approves:** The main agent reviews domain consistency, scope, error
+   semantics, and compatibility. Only the main agent may approve an exact spec
+   baseline for backend implementation.
+4. **Main delegates:** The main agent gives the backend agent the approved spec
+   path and baseline, affected operations, acceptance criteria, and required
+   contract verification.
+5. **Backend reviews and implements:** The backend agent implements the
+   approved operations and must not silently edit the API spec. If the contract
+   is infeasible or unsafe, it must stop the affected implementation and return
+   a concrete contract change proposal with its reason to the main agent.
+6. **Frontend evaluates changes:** The main agent routes a backend proposal to
+   the frontend agent for consumer-impact review. The frontend agent updates
+   the spec only after the main agent resolves the proposal.
+7. **Main verifies:** The main agent confirms that the final spec, frontend
+   consumer, backend behavior, contract tests, and domain documents agree.
+
+Frontend and backend tasks may proceed in parallel only after Main approves
+the same approved spec baseline for both tasks. Any spec change invalidates
+that baseline until Main approves a replacement. The main agent must assign a
+single editor for `docs/api/openapi.yaml`; frontend and backend agents must
+never edit it concurrently.
 
 ## Frontend Guidance
 

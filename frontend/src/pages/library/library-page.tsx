@@ -24,7 +24,8 @@ export function LibraryPage() {
               다시, 이야기를 시작해 볼까요?
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground md:text-lg">
-              관계의 첫 떨림부터 마지막 문장까지. 당신의 로맨스를 한곳에서 기획하고 써 내려가세요.
+              관계의 첫 떨림부터 마지막 문장까지. 당신의 로맨스를 한곳에서
+              기획하고 써 내려가세요.
             </p>
             <Button className="mt-8 h-11 rounded-full px-5" size="lg" asChild>
               <Link to="/new" aria-label="새 작품 시작">
@@ -41,7 +42,9 @@ export function LibraryPage() {
               <p className="text-xs font-semibold tracking-[0.18em] text-primary uppercase">
                 Library
               </p>
-              <h2 className="mt-2 font-heading text-2xl font-semibold">내 작품</h2>
+              <h2 className="mt-2 font-heading text-2xl font-semibold">
+                내 작품
+              </h2>
             </div>
             <p className="text-sm text-muted-foreground">
               {state.projects.length}개의 이야기가 기다리고 있어요

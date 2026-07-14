@@ -63,7 +63,8 @@ export function SetupPage() {
             이야기의 첫 문장을 준비할게요
           </h1>
           <p className="mt-4 text-base leading-7 text-muted-foreground">
-            지금은 알고 있는 만큼만 적어도 충분해요. 나머지는 집필하면서 함께 발견할 수 있습니다.
+            지금은 알고 있는 만큼만 적어도 충분해요. 나머지는 집필하면서 함께
+            발견할 수 있습니다.
           </p>
           <Card className="mt-8 border-primary/20 bg-secondary/55 shadow-none">
             <CardContent className="space-y-4">
@@ -73,7 +74,9 @@ export function SetupPage() {
                 </span>
                 <div>
                   <p className="text-xs text-muted-foreground">선택한 트로프</p>
-                  <p className="font-heading text-lg font-semibold">{trope.title}</p>
+                  <p className="font-heading text-lg font-semibold">
+                    {trope.title}
+                  </p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -112,8 +115,8 @@ export function SetupPage() {
                   className="resize-none bg-background/60 leading-6"
                 />
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Sparkles className="size-3.5 text-primary" /> 선택한 트로프에서 시작 문장을
-                  준비했어요.
+                  <Sparkles className="size-3.5 text-primary" /> 선택한
+                  트로프에서 시작 문장을 준비했어요.
                 </p>
               </div>
               <div>
@@ -141,7 +144,11 @@ export function SetupPage() {
                   </div>
                 </div>
               </div>
-              <Button type="submit" size="lg" className="h-11 w-full rounded-xl">
+              <Button
+                type="submit"
+                size="lg"
+                className="h-11 w-full rounded-xl"
+              >
                 작업 공간 열기 <ArrowRight data-icon="inline-end" />
               </Button>
             </form>
