@@ -41,9 +41,34 @@ repository establishes safely.
 Present an `implementation brief` containing user value and scope, UI target,
 persistence, domain behavior and invariants, API need, request/response/error
 semantics, ownership, acceptance criteria, verification commands, and domain
-documentation impact. Do not author OpenAPI or implement code until the user approves this brief.
+documentation impact. For UI-affecting work, use the approved brief's UI target
+as the bounded input to UI planning and later keep it consistent with the exact
+approved UI plan. Do not author OpenAPI or implement code until the user
+approves this brief.
 
-## 4. Draft and approve the API contract
+## 4. Plan and approve the UI
+
+When UI behavior changes, assign a bounded planning task to the project-scoped
+planning-only `ui-planner` defined in `.codex/agents/ui-planner.toml`. Provide
+the approved requirements and UI target, relevant domain contracts, acceptance
+criteria, constraints, and one exact owned
+`frontend/docs/ui-plans/<feature-name>.md` path. The UI planner authors only
+that plan; it never authors domain documents, API contracts, or application
+code.
+
+Review the returned plan for domain consistency, screen scope, user flows,
+states, accessibility, responsive behavior, shadcn/ui decisions, requirement
+traceability, and unresolved questions. The main agent must
+approve the exact UI plan before OpenAPI drafting or implementation. If the
+plan materially changes the implementation brief's UI target, reconcile and
+reapprove the brief and plan before downstream work. When UI behavior changes,
+hand the same exact approved UI plan to frontend implementation and later to
+`frontend-review`.
+
+Skip this section when no UI behavior changes. UI planning does not replace
+approval of the implementation brief, domain behavior, or API scope.
+
+## 5. Draft and approve the API contract
 
 When an API is required, assign the project-scoped `openapi` agent sole
 ownership of `docs/api/openapi.yaml`. Provide the approved use case, domain
@@ -57,11 +82,13 @@ affected work until the replacement baseline is approved.
 
 Skip this section when no consumer-facing API changes.
 
-## 5. Delegate implementation
+## 6. Delegate implementation
 
 For each assignment, state owned paths, deliverable, constraints, verification
-commands, relevant domain contracts, acceptance criteria, approved baseline,
-and assigned `operationId` values.
+commands, relevant domain contracts, and acceptance criteria. When a
+consumer-facing API is involved, also provide the exact approved OpenAPI
+baseline and assigned `operationId` values. For UI-affecting frontend work,
+also provide the exact approved UI plan.
 
 Use the project-scoped `frontend` and `backend` agents in `parallel` only when
 both are needed, their work is substantial and independently testable, and
@@ -73,19 +100,74 @@ Assign each affected `docs/domains/*.md` file to exactly one agent or retain it
 in the main thread. Assign `docs/domains/README.md` too when dependency
 directions change. Never let two agents edit the same file concurrently.
 
-## 6. Resolve contract feedback
+## 7. Resolve contract feedback when applicable
 
-Frontend and backend agents never edit `docs/api/openapi.yaml`. They report an
-infeasible or unsafe operation with its impact and a concrete change proposal.
-Resolve the proposal, send accepted changes to `openapi`, and approve the new
-exact baseline before affected implementation resumes.
+When an approved consumer-facing API operation is in scope, frontend and
+backend agents never edit `docs/api/openapi.yaml`. They report an infeasible or
+unsafe operation with its impact and a concrete change proposal. Resolve the
+proposal, send accepted changes to `openapi`, and approve the new exact
+baseline before affected implementation resumes. Contract-change proposal
+logic does not apply when no approved API operation is in scope.
 
-## 7. Integrate and verify
+## 8. Dispatch read-only review
 
-Review every delegated diff and confirm the OpenAPI request, response, status,
-and error behavior matches frontend consumers and backend handlers. Confirm
+Wait until implementation agents complete their checks and stop editing. For
+substantial frontend work, dispatch `frontend-review` with the complete affected
+screen boundary, implementer handoff, relevant domain contracts, acceptance
+criteria, accepted deviations, and approved OpenAPI baseline and operation IDs
+when applicable. When UI behavior changes, also provide the same exact approved
+UI plan used for frontend implementation; `frontend-review` must check it.
+Absence of a UI plan does not block non-UI frontend review. It must review the
+whole affected screen and explicitly check whether available shadcn/ui
+components or established compositions were unnecessarily reimplemented.
+
+For substantial backend work, dispatch `backend-review` with the complete
+affected operation or backend boundary, implementer handoff, relevant domain
+contracts, acceptance criteria, and accepted deviations. When a consumer-facing
+API is involved, also provide the exact approved OpenAPI baseline and operation
+IDs; the reviewer must inspect, prioritize for transport behavior, and summarize
+alignment with those inputs. Substantial backend-only domain, persistence,
+provider, or infrastructure review proceeds without an OpenAPI artifact.
+Frontend and backend review may run in parallel, but neither may run while its
+implementation boundary is still being edited.
+
+Reviewers are read-only. Require evidence-based findings with severity,
+introduced/pre-existing classification, source location, impact, repair
+direction, and re-review requirement. Use only the relevant reviewer for
+single-application work. The main agent may retain review of a trivial change
+when specialist dispatch would not add meaningful coverage, and must state that
+decision in the final handoff.
+
+## 9. Triage, fix, and re-review
+
+Validate every finding against the diff, requirements, domain contracts, UI
+plan when applicable, approved OpenAPI baseline when applicable, and repository
+instructions. Accept it, reject it with concrete rationale that remains in the
+handoff, or escalate a real contract or product decision. Every accepted
+finding must be resolved before completion, regardless of severity. Send
+accepted implementation findings to the original owning implementation agent
+when practical; this preference selects the fixer and never makes resolution
+optional. Review agents never make fixes.
+
+Re-dispatch the matching reviewer with original finding IDs and the fix diff
+when a blocking or high finding requires confirmation or when any fix
+materially changes reviewed behavior. Medium and low resolutions do not
+otherwise require re-review. A reviewer result of `No blocking findings` is an
+input to main-agent judgment, not approval or permission to merge.
+
+Keep pre-existing debt and unapproved shadcn/ui adoption candidates separate
+from introduced defects. They do not block the feature unless the change made
+them worse, acceptance criteria require repair, or they expose a blocking
+correctness or safety failure in affected behavior.
+
+## 10. Integrate and verify
+
+Review every delegated implementation diff and every review finding. Confirm
+the OpenAPI request, response, status, and error behavior matches frontend
+consumers and backend handlers when a consumer-facing API is involved. Confirm
 implementation and domain documents describe identical behavior and
-boundaries.
+boundaries. Confirm every accepted finding is resolved, regardless of severity.
+Confirm every rejected finding has concrete main-agent rationale.
 
 Require focused agent checks, then run all checks for each affected app. From
 `frontend/`, run:
@@ -99,5 +181,5 @@ For backend work, run commands defined by `backend/README.md` and nested
 `backend/AGENTS.md`; do not invent a new toolchain for an unrelated feature.
 
 Report implemented behavior, changed files, the approved OpenAPI baseline and
-operations, domain updates, verification commands and results, and remaining
-risks.
+operations when applicable, domain updates, review scope and finding
+resolution, verification commands and results, and remaining risks.
