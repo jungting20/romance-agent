@@ -96,18 +96,18 @@ save the entire draft atomically.
 
 ## 4. Requirements
 
-| ID | UI interpretation and acceptance signal |
-| --- | --- |
-| `REQ-WORLD-001` | The world panel heading has an accessible `세계관 수정 및 추가` button in populated and empty states. |
-| `REQ-WORLD-002` | Opening the button shows one labeled editor section per existing entry, with editable kind, title, and description. |
-| `REQ-WORLD-003` | `세계관 항목 추가` appends any number of blank `새 항목` sections and focuses the new kind field. |
+| ID              | UI interpretation and acceptance signal                                                                                                                                                                                           |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REQ-WORLD-001` | The world panel heading has an accessible `세계관 수정 및 추가` button in populated and empty states.                                                                                                                             |
+| `REQ-WORLD-002` | Opening the button shows one labeled editor section per existing entry, with editable kind, title, and description.                                                                                                               |
+| `REQ-WORLD-003` | `세계관 항목 추가` appends any number of blank `새 항목` sections and focuses the new kind field.                                                                                                                                 |
 | `REQ-WORLD-004` | Save validates trimmed title and description as non-empty, exposes all invalid fields, and does not let the author edit identifiers. The UI submits existing identities and treats returned addition identities as authoritative. |
-| `REQ-WORLD-005` | Success replaces the visible list from the response, announces success, and closes the Sheet. Failure preserves every draft value, explains the outcome, and exposes the appropriate retry or recovery action. |
-| `REQ-WORLD-006` | Every attempted close of a dirty editor opens a discard confirmation; an unchanged editor closes immediately. Cancel returns to the editor without draft loss. |
-| `REQ-WORLD-007` | `tab=world&panel=world-editor` reconstructs the open editor. Explicit open/close writes history; Back/Forward replays state. Invalid state is replacement-canonicalized. |
-| `REQ-WORLD-008` | A stale-revision result is presented as a conflict that preserves the draft and offers `최신 세계관 불러오기`; the UI never offers overwrite. File persistence itself is backend-owned. |
-| `REQ-WORLD-009` | The UI reports only authoritative success or a preserved-draft failure and never presents partial success. Atomic file replacement is backend-owned. |
-| `REQ-WORLD-010` | Desktop and mobile expose equivalent edit, add, save, conflict, retry, and discard flows with keyboard operation, visible focus, explicit labels, and announced errors/status. |
+| `REQ-WORLD-005` | Success replaces the visible list from the response, announces success, and closes the Sheet. Failure preserves every draft value, explains the outcome, and exposes the appropriate retry or recovery action.                    |
+| `REQ-WORLD-006` | Every attempted close of a dirty editor opens a discard confirmation; an unchanged editor closes immediately. Cancel returns to the editor without draft loss.                                                                    |
+| `REQ-WORLD-007` | `tab=world&panel=world-editor` reconstructs the open editor. Explicit open/close writes history; Back/Forward replays state. Invalid state is replacement-canonicalized.                                                          |
+| `REQ-WORLD-008` | A stale-revision result is presented as a conflict that preserves the draft and offers `최신 세계관 불러오기`; the UI never offers overwrite. File persistence itself is backend-owned.                                           |
+| `REQ-WORLD-009` | The UI reports only authoritative success or a preserved-draft failure and never presents partial success. Atomic file replacement is backend-owned.                                                                              |
+| `REQ-WORLD-010` | Desktop and mobile expose equivalent edit, add, save, conflict, retry, and discard flows with keyboard operation, visible focus, explicit labels, and announced errors/status.                                                    |
 
 ## 5. Confirmed Decisions
 
@@ -431,12 +431,12 @@ confirmation and return to the editor; they never imply discard.
 
 ## 11. Responsive Behavior
 
-| Width / current workspace mode | World read context | Editor Sheet | Form layout |
-| --- | --- | --- | --- |
-| `< 640 px` | Existing full-width left context Sheet when opened from the rail | Full viewport width, right-side layer, `100svh`; safe-area-aware fixed header/footer | Kind, title, description stacked; full-width add action; footer actions expand as needed |
-| `640–767 px` | Existing left context Sheet capped by its current `sm:max-w-sm` behavior | Right Sheet up to `sm:max-w-2xl`, but never wider than viewport | Kind and title may remain stacked to preserve comfortable targets |
-| `768–1279 px` | Existing 16rem inline context panel | Right Sheet around 40rem; workspace remains perceptible under overlay | Kind/title two columns when the Sheet has room; description full width |
-| `>= 1280 px` | Existing resizable context/editor layout | Same bounded right Sheet above resizable panels | Two-column first row; scrollable entry body |
+| Width / current workspace mode | World read context                                                       | Editor Sheet                                                                         | Form layout                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `< 640 px`                     | Existing full-width left context Sheet when opened from the rail         | Full viewport width, right-side layer, `100svh`; safe-area-aware fixed header/footer | Kind, title, description stacked; full-width add action; footer actions expand as needed |
+| `640–767 px`                   | Existing left context Sheet capped by its current `sm:max-w-sm` behavior | Right Sheet up to `sm:max-w-2xl`, but never wider than viewport                      | Kind and title may remain stacked to preserve comfortable targets                        |
+| `768–1279 px`                  | Existing 16rem inline context panel                                      | Right Sheet around 40rem; workspace remains perceptible under overlay                | Kind/title two columns when the Sheet has room; description full width                   |
+| `>= 1280 px`                   | Existing resizable context/editor layout                                 | Same bounded right Sheet above resizable panels                                      | Two-column first row; scrollable entry body                                              |
 
 - No core action disappears at a breakpoint. Edit, add, validation, save,
   retry, latest reload, and discard remain available with the same labels.
@@ -453,23 +453,23 @@ confirmation and return to the editor; they never imply discard.
 
 ## 12. UI States
 
-| State | Visible behavior | Available actions | State exit |
-| --- | --- | --- | --- |
-| World loading | Existing workspace loading shell or a world-panel Skeleton/status when the focused Story Bible read is pending | None until authoritative data is available | Query success/error |
-| World populated | Kind-tagged compact cards and edit action | Open editor | Open URL state |
-| World empty | Explanatory empty copy and edit action | Open editor | Open URL state |
-| World read error | Destructive Alert: `세계관을 불러오지 못했어요.` | `다시 불러오기` | Refetch |
-| Editor initializing | Sheet shell with `세계관을 불러오는 중이에요.` status and Skeleton rows; no editable controls | Close if clean | Query success/error |
-| Pristine editor | Existing rows or empty editor prompt; save disabled until a valid change/addition exists | Edit, add, clean close | Change/add/close |
-| Dirty valid | Draft differs from baseline and all normalized required fields are nonblank | Save, add, edit, guarded close | Save/close/change |
-| Dirty invalid | Field messages persist after validation attempt; `aria-invalid` marks fields | Correct fields, add, guarded close, Save to revalidate | Correction/save/close |
-| Saving | Controls frozen, spinner plus live `세계관을 저장하는 중이에요.`; duplicate submit disabled | None | Success/failure |
-| Save success | Sheet closes, list is replaced from response, page live region says `세계관을 저장했어요.` | Reopen editor | Mutation completion |
-| Retryable save error | Draft remains; destructive Alert explains no content was lost | `다시 시도`, continue editing, guarded close | Retry/edit/close |
-| Revision conflict | Draft remains; Alert explains server changed and no overwrite occurred | Continue editing, `최신 세계관 불러오기`, guarded close | Reload confirmation/close |
-| Latest reload pending | Confirmation is gone; editor controls frozen; status announces loading | None | Refetch success/failure |
-| Missing/unavailable | Draft remains; Alert says the project or Story Bible can no longer be edited; Save disabled | `세계관 보기로 돌아가기` through guarded close | Close/navigation |
-| Discard confirmation | Modal Dialog above Sheet; editor inert | `계속 편집`, destructive confirm | Cancel/confirm |
+| State                 | Visible behavior                                                                                               | Available actions                                       | State exit                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------- |
+| World loading         | Existing workspace loading shell or a world-panel Skeleton/status when the focused Story Bible read is pending | None until authoritative data is available              | Query success/error       |
+| World populated       | Kind-tagged compact cards and edit action                                                                      | Open editor                                             | Open URL state            |
+| World empty           | Explanatory empty copy and edit action                                                                         | Open editor                                             | Open URL state            |
+| World read error      | Destructive Alert: `세계관을 불러오지 못했어요.`                                                               | `다시 불러오기`                                         | Refetch                   |
+| Editor initializing   | Sheet shell with `세계관을 불러오는 중이에요.` status and Skeleton rows; no editable controls                  | Close if clean                                          | Query success/error       |
+| Pristine editor       | Existing rows or empty editor prompt; save disabled until a valid change/addition exists                       | Edit, add, clean close                                  | Change/add/close          |
+| Dirty valid           | Draft differs from baseline and all normalized required fields are nonblank                                    | Save, add, edit, guarded close                          | Save/close/change         |
+| Dirty invalid         | Field messages persist after validation attempt; `aria-invalid` marks fields                                   | Correct fields, add, guarded close, Save to revalidate  | Correction/save/close     |
+| Saving                | Controls frozen, spinner plus live `세계관을 저장하는 중이에요.`; duplicate submit disabled                    | None                                                    | Success/failure           |
+| Save success          | Sheet closes, list is replaced from response, page live region says `세계관을 저장했어요.`                     | Reopen editor                                           | Mutation completion       |
+| Retryable save error  | Draft remains; destructive Alert explains no content was lost                                                  | `다시 시도`, continue editing, guarded close            | Retry/edit/close          |
+| Revision conflict     | Draft remains; Alert explains server changed and no overwrite occurred                                         | Continue editing, `최신 세계관 불러오기`, guarded close | Reload confirmation/close |
+| Latest reload pending | Confirmation is gone; editor controls frozen; status announces loading                                         | None                                                    | Refetch success/failure   |
+| Missing/unavailable   | Draft remains; Alert says the project or Story Bible can no longer be edited; Save disabled                    | `세계관 보기로 돌아가기` through guarded close          | Close/navigation          |
+| Discard confirmation  | Modal Dialog above Sheet; editor inert                                                                         | `계속 편집`, destructive confirm                        | Cancel/confirm            |
 
 Field errors returned by the approved API contract map to the matching visible
 row and control when possible. A request-level message remains present for any
@@ -541,18 +541,18 @@ layers.
 
 ### Available and preferred existing primitives
 
-| Existing primitive | Planned use |
-| --- | --- |
-| `Button` | Launch, add, cancel, save, retry, reload, and confirmation actions |
-| `Sheet` | URL-owned world editor; existing mobile context Sheet remains unchanged |
-| `Dialog` | Product-composed discard/latest-reload confirmation |
-| `Alert` | Validation summary, fetch/save failure, unavailable, and revision conflict feedback |
-| `Badge` | Read-card kind and `기존 항목`/`새 항목` distinction |
-| `Card` | Existing compact read cards and bounded editor entry sections |
-| `Input`, `Label`, `Textarea` | Title and description controls and labeling |
-| `ScrollArea` | Scrollable Sheet body while header/footer remain reachable |
-| `Skeleton` | Direct-link/query initialization state |
-| `Tabs`, `Tooltip` | Existing context navigation; no new tab system |
+| Existing primitive           | Planned use                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| `Button`                     | Launch, add, cancel, save, retry, reload, and confirmation actions                  |
+| `Sheet`                      | URL-owned world editor; existing mobile context Sheet remains unchanged             |
+| `Dialog`                     | Product-composed discard/latest-reload confirmation                                 |
+| `Alert`                      | Validation summary, fetch/save failure, unavailable, and revision conflict feedback |
+| `Badge`                      | Read-card kind and `기존 항목`/`새 항목` distinction                                |
+| `Card`                       | Existing compact read cards and bounded editor entry sections                       |
+| `Input`, `Label`, `Textarea` | Title and description controls and labeling                                         |
+| `ScrollArea`                 | Scrollable Sheet body while header/footer remain reachable                          |
+| `Skeleton`                   | Direct-link/query initialization state                                              |
+| `Tabs`, `Tooltip`            | Existing context navigation; no new tab system                                      |
 
 ### Adoption candidates
 
@@ -574,17 +574,17 @@ agent/frontend specialist's approval.
 
 ### Page and feature composition
 
-| Unit | Classification | Responsibility | Required data | Owned local/application state | Emitted events |
-| --- | --- | --- | --- | --- | --- |
-| Writing workspace route search contract | Route concern | Validate `tab` and `panel`; produce/canonicalize the one editor URL while preserving unrelated search | Raw search values | None | Validated search; replacement canonicalization |
-| `WritingWorkspacePage` / loaded composition | Page composition | Compose tab context, authoritative Story Bible query, world read panel, editor workflow, focus fallback, and mounted success live region | Project ID, validated search, Story Bible query state | Transient mobile context visibility only; no duplicate editor visibility state | Select world, open/close editor through typed navigation |
-| World-edit workflow hook/state machine | Product feature | Create immutable draft from authoritative data, track baseline/dirty state, append rows, validate, serialize approved command, own mutation/conflict/reload phases, update query cache | Story Bible value and revision; approved API adapter | Discriminated phase, draft rows, validation results, request error, pending navigation intent | Draft change, add, save, retry, request close, confirm/cancel discard, reload latest |
-| `StoryContextPanel` world mode | Story Bible module UI | Render heading/action, populated cards, empty, loading, and read-error states | Authoritative world entries/query state | None | `onEditWorld` and `onRetryLoad` |
-| `WorldEntryCard` | Product composition of Card + Badge | Show kind, title, description from the authoritative response | One world entry | None | None |
-| `WorldEditorSheet` | Product composition of Sheet | Own focus trap/presentation, header, scrolling body, footer, pending close interception, and visible editor state | Draft view model, workflow phase/errors | Last-focused control for restoration only | Field changes, add, save, retry, reload-latest request, close request |
-| `WorldEntryFields` | Product composition of Card + Label/Input/Textarea + native select | Render one existing/new fieldset with unique labels and inline errors; distinguish origin without color | Stable draft key, origin, kind/title/description, field errors | None; controlled fields | `onKindChange`, `onTitleChange`, `onDescriptionChange` |
-| `WorldEditorFeedback` | Product composition of Alert | Render exactly one priority feedback state: validation summary, conflict, unavailable, or retryable request error | Error/state union and error count | None | Retry or latest-reload request |
-| `WorldDiscardDialog` | Product composition of Dialog | Confirm close/navigation discard or conflict reload; maintain safe initial focus | Confirmation reason and pending intent | Open state remains local/transient, not URL-owned | Continue editing, confirm discard/reload |
+| Unit                                        | Classification                                                     | Responsibility                                                                                                                                                                         | Required data                                                  | Owned local/application state                                                                 | Emitted events                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Writing workspace route search contract     | Route concern                                                      | Validate `tab` and `panel`; produce/canonicalize the one editor URL while preserving unrelated search                                                                                  | Raw search values                                              | None                                                                                          | Validated search; replacement canonicalization                                       |
+| `WritingWorkspacePage` / loaded composition | Page composition                                                   | Compose tab context, authoritative Story Bible query, world read panel, editor workflow, focus fallback, and mounted success live region                                               | Project ID, validated search, Story Bible query state          | Transient mobile context visibility only; no duplicate editor visibility state                | Select world, open/close editor through typed navigation                             |
+| World-edit workflow hook/state machine      | Product feature                                                    | Create immutable draft from authoritative data, track baseline/dirty state, append rows, validate, serialize approved command, own mutation/conflict/reload phases, update query cache | Story Bible value and revision; approved API adapter           | Discriminated phase, draft rows, validation results, request error, pending navigation intent | Draft change, add, save, retry, request close, confirm/cancel discard, reload latest |
+| `StoryContextPanel` world mode              | Story Bible module UI                                              | Render heading/action, populated cards, empty, loading, and read-error states                                                                                                          | Authoritative world entries/query state                        | None                                                                                          | `onEditWorld` and `onRetryLoad`                                                      |
+| `WorldEntryCard`                            | Product composition of Card + Badge                                | Show kind, title, description from the authoritative response                                                                                                                          | One world entry                                                | None                                                                                          | None                                                                                 |
+| `WorldEditorSheet`                          | Product composition of Sheet                                       | Own focus trap/presentation, header, scrolling body, footer, pending close interception, and visible editor state                                                                      | Draft view model, workflow phase/errors                        | Last-focused control for restoration only                                                     | Field changes, add, save, retry, reload-latest request, close request                |
+| `WorldEntryFields`                          | Product composition of Card + Label/Input/Textarea + native select | Render one existing/new fieldset with unique labels and inline errors; distinguish origin without color                                                                                | Stable draft key, origin, kind/title/description, field errors | None; controlled fields                                                                       | `onKindChange`, `onTitleChange`, `onDescriptionChange`                               |
+| `WorldEditorFeedback`                       | Product composition of Alert                                       | Render exactly one priority feedback state: validation summary, conflict, unavailable, or retryable request error                                                                      | Error/state union and error count                              | None                                                                                          | Retry or latest-reload request                                                       |
+| `WorldDiscardDialog`                        | Product composition of Dialog                                      | Confirm close/navigation discard or conflict reload; maintain safe initial focus                                                                                                       | Confirmation reason and pending intent                         | Open state remains local/transient, not URL-owned                                             | Continue editing, confirm discard/reload                                             |
 
 ### Primitive responsibility boundaries
 
@@ -603,18 +603,18 @@ agent/frontend specialist's approval.
 
 ## 16. Requirement Traceability Matrix
 
-| Requirement | IA / flow | Wireframe or state | Component responsibility | Verification focus |
-| --- | --- | --- | --- | --- |
-| `REQ-WORLD-001` | IA-1 → IA-2 | Desktop/mobile context, empty state | `StoryContextPanel`, Button | Action exists in populated/empty states; accessible name; opens canonical URL |
-| `REQ-WORLD-002` | IA-2 | Default editor | `WorldEditorSheet`, `WorldEntryFields` | Every existing entry and all three editable fields render; IDs are not editable |
-| `REQ-WORLD-003` | IA-2 add loop | Default/mobile editor | Workflow hook, `WorldEntryFields` | Multiple additions append; origin label visible; focus lands on each new kind |
-| `REQ-WORLD-004` | Validation branch | Validation state | Pure Story Bible validation, workflow hook, feedback, fields | Trim rules; all blanks reported; first invalid focused; existing IDs preserved; response IDs used |
-| `REQ-WORLD-005` | Save success/failure/retry | Saving, success, retryable error | Workflow hook, feedback, query cache, page live region | Success list/close/focus/announcement; failures retain exact draft and retry |
-| `REQ-WORLD-006` | IA-2 → IA-3 | Discard confirmation | Workflow hook, Sheet interception, `WorldDiscardDialog` | Dirty vs pristine for button/Escape/overlay/navigation; cancel and confirm focus behavior |
-| `REQ-WORLD-007` | Route/direct/history flow | All editor/context layouts | Route search contract, page typed navigation | Direct URL, canonicalization, open/close history, Back/Forward, unrelated search preserved |
-| `REQ-WORLD-008` | Conflict → latest confirmation/refetch | Conflict alert, reload confirmation | Workflow hook, feedback, dialog | Stale revision preserves draft; no overwrite; latest reload requires confirmation |
-| `REQ-WORLD-009` | Save outcome branches | Saving/error/success | Backend operation (outside UI), workflow error handling | No partial-success copy or speculative cache update; only response commits visible list |
-| `REQ-WORLD-010` | All IA and flows | Desktop/mobile, validation, errors | All listed components/primitives | Keyboard, focus, labels, live feedback, touch layout, equivalent recovery at breakpoints |
+| Requirement     | IA / flow                              | Wireframe or state                  | Component responsibility                                     | Verification focus                                                                                |
+| --------------- | -------------------------------------- | ----------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `REQ-WORLD-001` | IA-1 → IA-2                            | Desktop/mobile context, empty state | `StoryContextPanel`, Button                                  | Action exists in populated/empty states; accessible name; opens canonical URL                     |
+| `REQ-WORLD-002` | IA-2                                   | Default editor                      | `WorldEditorSheet`, `WorldEntryFields`                       | Every existing entry and all three editable fields render; IDs are not editable                   |
+| `REQ-WORLD-003` | IA-2 add loop                          | Default/mobile editor               | Workflow hook, `WorldEntryFields`                            | Multiple additions append; origin label visible; focus lands on each new kind                     |
+| `REQ-WORLD-004` | Validation branch                      | Validation state                    | Pure Story Bible validation, workflow hook, feedback, fields | Trim rules; all blanks reported; first invalid focused; existing IDs preserved; response IDs used |
+| `REQ-WORLD-005` | Save success/failure/retry             | Saving, success, retryable error    | Workflow hook, feedback, query cache, page live region       | Success list/close/focus/announcement; failures retain exact draft and retry                      |
+| `REQ-WORLD-006` | IA-2 → IA-3                            | Discard confirmation                | Workflow hook, Sheet interception, `WorldDiscardDialog`      | Dirty vs pristine for button/Escape/overlay/navigation; cancel and confirm focus behavior         |
+| `REQ-WORLD-007` | Route/direct/history flow              | All editor/context layouts          | Route search contract, page typed navigation                 | Direct URL, canonicalization, open/close history, Back/Forward, unrelated search preserved        |
+| `REQ-WORLD-008` | Conflict → latest confirmation/refetch | Conflict alert, reload confirmation | Workflow hook, feedback, dialog                              | Stale revision preserves draft; no overwrite; latest reload requires confirmation                 |
+| `REQ-WORLD-009` | Save outcome branches                  | Saving/error/success                | Backend operation (outside UI), workflow error handling      | No partial-success copy or speculative cache update; only response commits visible list           |
+| `REQ-WORLD-010` | All IA and flows                       | Desktop/mobile, validation, errors  | All listed components/primitives                             | Keyboard, focus, labels, live feedback, touch layout, equivalent recovery at breakpoints          |
 
 ## 17. Implementation Considerations
 
