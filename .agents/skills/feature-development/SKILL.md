@@ -42,11 +42,11 @@ constraints.
 
 ## 2. Approve the implementation brief
 
-Obtain approval for an implementation brief that records user value, scope,
+Present an implementation brief that records user value, scope,
 exclusions, UI target, domain behavior and invariants, persistence and
 dependency decisions, API need and semantics, validation ownership, acceptance
 criteria, verification commands, file ownership, and domain-document impact.
-Do not draft OpenAPI or implement before this approval.
+The user approves it before OpenAPI drafting or implementation.
 
 ## 3. Produce and approve the UI plan
 
