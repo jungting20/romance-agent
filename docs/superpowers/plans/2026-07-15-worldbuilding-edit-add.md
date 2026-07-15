@@ -12,7 +12,7 @@
 
 - Work only in `/Users/in05908_mac/Documents/romance-agent/.worktrees/feature-worldbuilding-edit-add` on `feature/worldbuilding-edit-add`.
 - Approved design: `docs/superpowers/specs/2026-07-15-worldbuilding-edit-add-design.md` at commit `1e0ae1ac4634acb6644d91fa7fe3f5ba76d9d0a6`.
-- Approved UI plan: `frontend/docs/ui-plans/worldbuilding-edit-add.md` at commit `70385eb0d4edd500e9f2c6ac0c428df216a74843`, blob `93f73646b4999ac7d5c68afdab2da3e265db2ada`.
+- Approved UI plan: `frontend/docs/ui-plans/worldbuilding-edit-add.md` at commit `00a066636a41c971c92dd78ca33bf46069453c55`, blob `574318607e381cd035894f1e2e37e5d9aba22c50` (format-only replacement of the semantically approved artifact).
 - Approved API baseline: `docs/api/openapi.yaml` at commit `dfabc8a4f5274737e08ef43036b154b3417fc5f3`, blob `69d64146d62ab12b7462839a1f3ef0f76133374d`.
 - Assigned operations are exactly `getStoryBible` and `saveWorldEntries`; frontend and backend never edit or reinterpret the approved OpenAPI file.
 - Assigned requirements are exactly `REQ-WORLD-001` through `REQ-WORLD-010`.
