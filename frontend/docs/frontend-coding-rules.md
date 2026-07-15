@@ -165,6 +165,10 @@ conflict before editing.
 
 ## Testing Rules
 
+- Vitest owns unit and component tests under `src/` matching
+  `src/**/*.test.{ts,tsx}`.
+- Playwright owns browser and E2E tests matching `**/*.spec.ts`. Do not use the
+  `.test.ts` or `.test.tsx` suffix for Playwright tests.
 - For behavior changes, add or update a focused test before the implementation
   when practical, then confirm the test fails for the missing behavior and
   passes after the change.
