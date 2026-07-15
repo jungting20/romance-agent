@@ -24,15 +24,17 @@ The main agent owns the end-to-end result. It must:
 2. Treat the implementation and its matching domain-document update as one
    indivisible change whenever domain content changes.
 3. Define scope, acceptance criteria, and cross-boundary contracts.
-4. Decide whether frontend or backend work is substantial and independent
-   enough to delegate.
-5. Integrate delegated work and resolve contract or implementation conflicts.
-6. Run the final checks for every affected application.
+4. Decide whether frontend or backend implementation and review work is
+   substantial and independent enough to delegate.
+5. Approve the exact OpenAPI baseline used by implementers and reviewers.
+6. Triage review findings and resolve contract or implementation conflicts.
+7. Integrate delegated work and verify frontend-backend behavior.
+8. Run the final checks for every affected application.
 
 Delegation does not transfer responsibility for architecture, integration, or
 verification away from the main agent.
 
-## Frontend, OpenAPI, and Backend Subagents
+## UI, OpenAPI, Implementation, and Review Subagents
 
 Use task-scoped subagents when multi-agent support is available.
 
@@ -45,10 +47,21 @@ Use task-scoped subagents when multi-agent support is available.
   or edits the OpenAPI contract.
 - Delegate substantial, independently testable work under `backend/` to a
   backend subagent.
+- After substantial frontend implementation stops, assign the complete affected
+  screen to the project-scoped read-only agent named `frontend-review`, defined
+  in `.codex/agents/frontend-review.toml`. Supply the approved UI plan when UI
+  work is involved and the approved OpenAPI baseline when the screen consumes
+  an API.
+- After substantial backend implementation stops, assign the complete affected
+  operation to the project-scoped read-only agent named `backend-review`,
+  defined in `.codex/agents/backend-review.toml`.
 - For cross-stack features, the main agent must define the contract scope and
   acceptance criteria before assigning the OpenAPI draft. Frontend and backend
   implementation may run in parallel only after the main agent approves the
   same OpenAPI baseline and their file ownership does not overlap.
+- Frontend and backend review may run in parallel only after implementation
+  agents have stopped editing their respective application boundaries. Review
+  must not inspect a moving implementation target.
 - Do not create a subagent for a trivial edit, a tightly coupled change, or a
   task whose boundary is still unclear.
 
@@ -56,6 +69,20 @@ Every delegated task must state the owned paths, expected deliverable,
 constraints, and verification commands. A subagent must not edit another
 application or shared documentation unless that work is explicitly assigned.
 Two agents must not modify the same file concurrently.
+
+Review agents never edit files. Every review assignment must state the affected
+screen routes or operation IDs, implementation handoff, acceptance criteria,
+relevant domain contracts, approved UI plan and OpenAPI baseline when
+applicable, accepted deviations, review boundary, and safe verification
+commands. Reviewers return evidence-based findings with severity,
+introduced/pre-existing classification, source location, impact, repair
+direction, and re-review requirement.
+
+The main agent validates and triages every finding. Accepted findings return to
+the owning implementation agent for repair when practical. Dispatch the same
+reviewer for re-review when a blocking or high finding requires confirmation or
+when a fix materially changes the reviewed behavior. `No blocking findings`
+from a reviewer is not approval or permission to merge.
 
 If delegated work can change domain content, the task must also assign the
 matching `docs/domains/*.md` update to that subagent or explicitly retain that
@@ -115,14 +142,28 @@ Use this workflow for every new or changed API operation:
 6. **OpenAPI revises:** The main agent resolves each proposal and, when a spec
    change is approved, assigns the affected operations back to the OpenAPI
    agent. Any edit creates a new proposed baseline requiring main approval.
-7. **Main verifies:** The main agent confirms that the final spec, frontend
-   consumer, backend behavior, contract tests, and domain documents agree.
+7. **Implementers finish:** Frontend and Backend complete their focused and full
+   checks and stop editing the assigned application boundaries.
+8. **Reviewers inspect:** The main agent dispatches `frontend-review` and
+   `backend-review` as applicable. They independently inspect the approved
+   baseline and complete affected screen or operation without editing files.
+9. **Main resolves findings:** The main agent accepts, rejects with rationale, or
+   escalates each finding. Accepted implementation findings return to the owning
+   implementer; accepted contract changes return to the OpenAPI agent and create
+   a new proposed baseline. Material fixes receive re-review.
+10. **Main verifies:** The main agent confirms that the final spec, frontend
+    consumer, backend behavior, contract tests, domain documents, and resolved
+    review findings agree.
 
 Frontend and backend tasks may proceed in parallel only after Main approves
 the same approved spec baseline for both tasks. Any spec change invalidates
 that baseline until Main approves a replacement. The OpenAPI agent is the sole
 editor of `docs/api/openapi.yaml`; frontend and backend agents must never edit
 it.
+
+Reviewers use only the same exact OpenAPI baseline approved for implementation.
+A later spec edit invalidates the affected review baseline until Main approves
+its replacement. Review agents must never edit or approve the API spec.
 
 ## Frontend Guidance
 
@@ -157,6 +198,14 @@ it.
 - Before completing a domain-affecting task, compare the implementation diff
   with the relevant `docs/domains/*.md` diff and confirm they describe the same
   behavior and boundaries.
+- Run the applicable read-only review wave after implementation editing stops
+  and before final integration verification.
+- Keep introduced findings separate from pre-existing debt and shadcn/ui
+  adoption candidates. Pre-existing findings do not block the feature unless
+  the change worsened them, acceptance criteria require repair, or they expose
+  a blocking correctness or safety problem in affected behavior.
+- Confirm every accepted blocking and high finding is resolved or explicitly
+  rejected with main-agent rationale; re-review material repairs.
 - The main agent must review delegated diffs and integration behavior before
   claiming the task is complete.
 

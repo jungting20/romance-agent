@@ -80,12 +80,55 @@ infeasible or unsafe operation with its impact and a concrete change proposal.
 Resolve the proposal, send accepted changes to `openapi`, and approve the new
 exact baseline before affected implementation resumes.
 
-## 7. Integrate and verify
+## 7. Dispatch read-only review
 
-Review every delegated diff and confirm the OpenAPI request, response, status,
-and error behavior matches frontend consumers and backend handlers. Confirm
-implementation and domain documents describe identical behavior and
-boundaries.
+Wait until implementation agents complete their checks and stop editing. For
+substantial frontend work, dispatch `frontend-review` with the complete affected
+screen boundary, implementer handoff, approved UI plan, relevant domain
+contracts, acceptance criteria, accepted deviations, and approved OpenAPI
+baseline and operation IDs when applicable. It must review the
+whole affected screen and explicitly check whether
+available shadcn/ui components or established compositions were unnecessarily
+reimplemented.
+
+For substantial backend work, dispatch `backend-review` with the complete
+affected operation boundary, implementer handoff, relevant domain contracts,
+acceptance criteria, accepted deviations, and approved OpenAPI baseline and
+operation IDs. Frontend and backend review may run in parallel, but neither may
+run while its implementation boundary is still being edited.
+
+Reviewers are read-only. Require evidence-based findings with severity,
+introduced/pre-existing classification, source location, impact, repair
+direction, and re-review requirement. Use only the relevant reviewer for
+single-application work. The main agent may retain review of a trivial change
+when specialist dispatch would not add meaningful coverage, and must state that
+decision in the final handoff.
+
+## 8. Triage, fix, and re-review
+
+Validate every finding against the diff, requirements, domain contracts, UI
+plan, approved OpenAPI baseline, and repository instructions. Accept it, reject
+it with concrete rationale, or escalate a real contract or product decision.
+Send accepted implementation findings to the original owning implementation
+agent when practical. Review agents never make fixes.
+
+Re-dispatch the matching reviewer with original finding IDs and the fix diff
+when a blocking or high finding requires confirmation or when a fix materially
+changes reviewed behavior. A reviewer result of `No blocking findings` is an
+input to main-agent judgment, not approval or permission to merge.
+
+Keep pre-existing debt and unapproved shadcn/ui adoption candidates separate
+from introduced defects. They do not block the feature unless the change made
+them worse, acceptance criteria require repair, or they expose a blocking
+correctness or safety failure in affected behavior.
+
+## 9. Integrate and verify
+
+Review every delegated implementation diff and every review finding. Confirm
+the OpenAPI request, response, status, and error behavior matches frontend
+consumers and backend handlers. Confirm implementation and domain documents
+describe identical behavior and boundaries. Confirm accepted blocking and high
+findings are resolved or explicitly rejected with rationale.
 
 Require focused agent checks, then run all checks for each affected app. From
 `frontend/`, run:
@@ -99,5 +142,5 @@ For backend work, run commands defined by `backend/README.md` and nested
 `backend/AGENTS.md`; do not invent a new toolchain for an unrelated feature.
 
 Report implemented behavior, changed files, the approved OpenAPI baseline and
-operations, domain updates, verification commands and results, and remaining
-risks.
+operations, domain updates, review scope and finding resolution, verification
+commands and results, and remaining risks.
