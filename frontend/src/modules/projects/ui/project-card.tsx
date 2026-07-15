@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, Clock3, Feather } from "lucide-react";
-import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,8 @@ interface ProjectCardProps {
 export function ProjectCard({ project, tropeTitle }: ProjectCardProps) {
   return (
     <Link
-      to={`/projects/${project.id}/write`}
+      to="/projects/$projectId/write"
+      params={{ projectId: project.id }}
       className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <Card className="h-full overflow-hidden border-border/70 bg-card/90 py-0 shadow-[0_18px_60px_-42px_rgba(75,48,36,0.55)] transition duration-300 group-hover:-translate-y-1 group-hover:border-primary/30 group-hover:shadow-[0_22px_70px_-40px_rgba(139,80,59,0.5)]">

@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import { ArrowRight, Plus } from "lucide-react";
-import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { useProjectsQuery } from "@/features/project-persistence";

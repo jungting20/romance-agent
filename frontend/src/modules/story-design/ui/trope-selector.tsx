@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import { ArrowRight, Handshake, HeartHandshake, RefreshCcw, Swords } from "lucide-react";
-import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,8 @@ export function TropeSelector() {
         return (
           <Link
             key={trope.id}
-            to={`/new/setup?trope=${trope.id}`}
+            to="/new/setup"
+            search={{ trope: trope.id }}
             aria-label={`${trope.title} 선택`}
             className="group rounded-2xl focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >

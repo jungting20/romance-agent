@@ -1,8 +1,8 @@
+import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { RouterProvider } from "react-router-dom";
 
-import { createAppBrowserRouter } from "@/app/app";
+import { router } from "@/app/app";
 import { QueryProvider } from "@/app/query/query-provider";
 import { enableMocking } from "@/mocks/enable-mocking";
 
@@ -19,7 +19,7 @@ await enableMocking();
 createRoot(root).render(
   <StrictMode>
     <QueryProvider>
-      <RouterProvider router={createAppBrowserRouter()} />
+      <RouterProvider router={router} />
     </QueryProvider>
   </StrictMode>,
 );

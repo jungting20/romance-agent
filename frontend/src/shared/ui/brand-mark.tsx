@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import { Feather } from "lucide-react";
-import { Link } from "react-router-dom";
 
 export function BrandMark() {
   return (

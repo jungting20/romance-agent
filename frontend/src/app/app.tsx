@@ -1,42 +1,23 @@
-import {
-  createBrowserRouter,
-  createMemoryRouter,
-  Navigate,
-  Outlet,
-  type RouteObject,
-} from "react-router-dom";
+import { createMemoryHistory, createRouter, type RouterHistory } from "@tanstack/react-router";
 
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { LibraryPage } from "@/pages/library/library-page";
-import { SetupPage } from "@/pages/new-project/setup-page";
-import { TropePage } from "@/pages/new-project/trope-page";
-import { WritingWorkspacePage } from "@/pages/writing-workspace/writing-workspace-page";
+import { routeTree } from "@/routeTree.gen";
 
-const appRoutes: RouteObject[] = [
-  {
-    element: <AppLayout />,
-    children: [
-      { index: true, element: <LibraryPage /> },
-      { path: "new", element: <TropePage /> },
-      { path: "new/setup", element: <SetupPage /> },
-      { path: "projects/:projectId/write", element: <WritingWorkspacePage /> },
-      { path: "*", element: <Navigate to="/" replace /> },
-    ],
-  },
-];
-
-function AppLayout() {
-  return (
-    <TooltipProvider>
-      <Outlet />
-    </TooltipProvider>
-  );
-}
-
-export function createAppBrowserRouter() {
-  return createBrowserRouter(appRoutes);
+export function createAppRouter(options: { history?: RouterHistory } = {}) {
+  return createRouter({
+    routeTree,
+    history: options.history,
+    defaultPreload: "intent",
+  });
 }
 
 export function createAppMemoryRouter(initialEntries: string[]) {
-  return createMemoryRouter(appRoutes, { initialEntries });
+  return createAppRouter({ history: createMemoryHistory({ initialEntries }) });
+}
+
+export const router = createAppRouter();
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
 }

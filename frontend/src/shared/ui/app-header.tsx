@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import { BookOpenText, Settings2 } from "lucide-react";
-import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 
