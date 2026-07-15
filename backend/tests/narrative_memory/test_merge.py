@@ -56,6 +56,58 @@ def test_merge_deduplicates_relationship_overlap_and_retains_distinct_evidence()
     ]
 
 
+def test_merge_keeps_disjoint_identical_relationship_occurrences_distinct() -> None:
+    analysis = _analysis(
+        "scene-01:r1:0000",
+        relationship_events=(
+            _relationship(
+                event_id="relationship-later",
+                evidence=(_evidence("scene-01:r1:0000", 30, 50, "믿는다고 말했다."),),
+            ),
+            _relationship(
+                event_id="relationship-earlier",
+                evidence=(_evidence("scene-01:r1:0000", 10, 30, "믿는다고 말했다."),),
+            ),
+        ),
+    )
+
+    snapshot = merge_chunk_analyses("scene-01", 1, 7, (analysis,))
+
+    assert [event.event_id for event in snapshot.relationship_events] == [
+        "relationship-earlier",
+        "relationship-later",
+    ]
+
+
+def test_merge_clusters_relationship_overlap_transitively() -> None:
+    analysis = _analysis(
+        "scene-01:r1:0000",
+        relationship_events=(
+            _relationship(
+                event_id="relationship-later",
+                evidence=(_evidence("scene-01:r1:0000", 20, 30, "믿는다고 말했다."),),
+            ),
+            _relationship(
+                event_id="relationship-bridge",
+                evidence=(_evidence("scene-01:r1:0000", 8, 22, "믿는다고 말했다."),),
+            ),
+            _relationship(
+                event_id="relationship-earliest",
+                evidence=(_evidence("scene-01:r1:0000", 0, 10, "믿는다고 말했다."),),
+            ),
+        ),
+    )
+
+    snapshot = merge_chunk_analyses("scene-01", 1, 7, (analysis,))
+
+    assert len(snapshot.relationship_events) == 1
+    assert snapshot.relationship_events[0].event_id == "relationship-earliest"
+    assert [
+        (evidence.start_offset, evidence.end_offset)
+        for evidence in snapshot.relationship_events[0].evidence
+    ] == [(0, 10), (8, 22), (20, 30)]
+
+
 def test_merge_keeps_relationship_events_with_different_descriptions_distinct() -> None:
     analysis = _analysis(
         "scene-01:r1:0000",
@@ -110,6 +162,58 @@ def test_merge_deduplicates_location_overlap_and_sorts_by_identity() -> None:
         (250, 265),
         (255, 270),
     ]
+
+
+def test_merge_keeps_disjoint_identical_location_occurrences_distinct() -> None:
+    analysis = _analysis(
+        "scene-01:r1:0000",
+        location_events=(
+            _location(
+                event_id="location-later",
+                evidence=(_evidence("scene-01:r1:0000", 90, 110, "카페에 도착했다."),),
+            ),
+            _location(
+                event_id="location-earlier",
+                evidence=(_evidence("scene-01:r1:0000", 40, 60, "카페에 도착했다."),),
+            ),
+        ),
+    )
+
+    snapshot = merge_chunk_analyses("scene-01", 1, 7, (analysis,))
+
+    assert [event.event_id for event in snapshot.location_events] == [
+        "location-earlier",
+        "location-later",
+    ]
+
+
+def test_merge_clusters_location_overlap_transitively() -> None:
+    analysis = _analysis(
+        "scene-01:r1:0000",
+        location_events=(
+            _location(
+                event_id="location-later",
+                evidence=(_evidence("scene-01:r1:0000", 70, 90, "카페에 도착했다."),),
+            ),
+            _location(
+                event_id="location-earliest",
+                evidence=(_evidence("scene-01:r1:0000", 50, 72, "카페에 도착했다."),),
+            ),
+            _location(
+                event_id="location-bridge",
+                evidence=(_evidence("scene-01:r1:0000", 68, 75, "카페에 도착했다."),),
+            ),
+        ),
+    )
+
+    snapshot = merge_chunk_analyses("scene-01", 1, 7, (analysis,))
+
+    assert len(snapshot.location_events) == 1
+    assert snapshot.location_events[0].event_id == "location-earliest"
+    assert [
+        (evidence.start_offset, evidence.end_offset)
+        for evidence in snapshot.location_events[0].evidence
+    ] == [(50, 72), (68, 75), (70, 90)]
 
 
 def test_merge_combines_entity_and_place_aliases_and_evidence_deterministically() -> None:
@@ -281,6 +385,24 @@ def test_merge_validates_evidence_for_every_candidate_type(field: str) -> None:
     analysis = _analysis("scene-01:r1:0000", **{field: (invalid_candidate,)})
 
     with pytest.raises(MergeInvariantError, match="evidence"):
+        merge_chunk_analyses("scene-01", 1, 7, (analysis,))
+
+
+@pytest.mark.parametrize("field", ["entities", "places", "relationship_events", "location_events"])
+def test_merge_rejects_evidence_from_another_chunk_source(field: str) -> None:
+    candidate = {
+        "entities": _entity(),
+        "places": _place(),
+        "relationship_events": _relationship(),
+        "location_events": _location(),
+    }[field]
+    mismatched_source = replace(
+        candidate,
+        evidence=(_evidence("scene-01:r1:0001", 4, 8, "wrong source"),),
+    )
+    analysis = _analysis("scene-01:r1:0000", **{field: (mismatched_source,)})
+
+    with pytest.raises(MergeInvariantError, match="chunk.*source"):
         merge_chunk_analyses("scene-01", 1, 7, (analysis,))
 
 
