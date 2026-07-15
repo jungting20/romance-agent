@@ -5,6 +5,14 @@ description: Use when adding, building, or implementing product functionality in
 
 # Feature Development
 
+## Mandatory: create a worktree first
+
+Every feature-development task must be performed in a dedicated Git worktree.
+Before inspecting, planning, delegating, or editing feature work, create and
+enter a new worktree using `superpowers:using-git-worktrees`. Do not perform
+feature development in the primary checkout. If creating a worktree is blocked,
+stop and report the blocker before proceeding.
+
 ## Overview
 
 Coordinate substantial feature work through this conditional pipeline:
