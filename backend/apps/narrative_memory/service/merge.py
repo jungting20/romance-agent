@@ -5,7 +5,6 @@ from dataclasses import replace
 
 from apps.narrative_memory.service.models import (
     CHUNK_ANALYSIS_SCHEMA_VERSION,
-    PROJECT_SNAPSHOT_SCHEMA_VERSION,
     SCENE_SNAPSHOT_SCHEMA_VERSION,
     CandidateStatus,
     ChunkAnalysis,
@@ -16,6 +15,13 @@ from apps.narrative_memory.service.models import (
     ProjectRelationshipSnapshot,
     RelationshipEventCandidate,
     SceneRelationshipSnapshot,
+)
+from apps.narrative_memory.service.validation import (
+    ProjectInvariantError,
+    build_canonical_reference_map,
+    downgrade_invalid_approvals,
+    normalize_reference,
+    validate_project_snapshot,
 )
 
 
@@ -85,6 +91,7 @@ def merge_chunk_analyses(
         raise MergeInvariantError("chunk ordinals must be unique")
     if len({analysis.chunk_id for analysis in ordered_analyses}) != len(ordered_analyses):
         raise MergeInvariantError("chunk IDs must be unique")
+    _validate_chunk_set(ordered_analyses)
     for analysis in ordered_analyses:
         _validate_analysis(analysis, scene_id, scene_revision, scene_sequence)
 
@@ -113,17 +120,49 @@ def merge_scene_into_project(
     project: ProjectRelationshipSnapshot,
     scene: SceneRelationshipSnapshot,
 ) -> ProjectRelationshipSnapshot:
-    _validate_project_snapshot(project)
+    try:
+        project = downgrade_invalid_approvals(project)
+    except ProjectInvariantError as error:
+        raise MergeInvariantError(str(error)) from error
+    _require_valid_project(project)
     _validate_scene_snapshot(scene)
     active_revisions = dict(project.active_scene_revisions)
     previous_revision = active_revisions.get(scene.scene_id)
     if previous_revision is not None and scene.scene_revision <= previous_revision:
         raise MergeInvariantError("scene revision must advance")
 
-    relationships = _replace_scene_relationships(project.relationship_events, scene)
-    locations = _replace_scene_locations(project.location_events, scene)
-    entities = _merge_project_identities(project.entities, scene.entities, scene)
-    places = _merge_project_identities(project.places, scene.places, scene)
+    entities, entity_id_map = _merge_project_identities(project.entities, scene.entities, scene)
+    places, place_id_map = _merge_project_identities(project.places, scene.places, scene)
+    entity_references = build_canonical_reference_map(entities, entity_id_map)
+    place_references = build_canonical_reference_map(places, place_id_map)
+    previous_relationships = _rewrite_relationship_references(
+        project.relationship_events, entity_references
+    )
+    replacement_relationships = _rewrite_relationship_references(
+        scene.relationship_events, entity_references
+    )
+    previous_locations = _rewrite_location_references(
+        project.location_events, entity_references, place_references
+    )
+    replacement_locations = _rewrite_location_references(
+        scene.location_events, entity_references, place_references
+    )
+    relationships = _replace_scene_candidates(
+        previous_relationships,
+        replacement_relationships,
+        scene.scene_id,
+        scene.scene_revision,
+        _relationship_replacement_key,
+        _relationship_output_key,
+    )
+    locations = _replace_scene_candidates(
+        previous_locations,
+        replacement_locations,
+        scene.scene_id,
+        scene.scene_revision,
+        _location_replacement_key,
+        _location_output_key,
+    )
     active_revisions[scene.scene_id] = scene.scene_revision
 
     result = ProjectRelationshipSnapshot(
@@ -136,9 +175,16 @@ def merge_scene_into_project(
         relationship_events=relationships,
         location_events=locations,
     )
-    _validate_project_snapshot(result)
-    _validate_reference_integrity(result)
+    result = downgrade_invalid_approvals(result)
+    _require_valid_project(result)
     return result
+
+
+def _require_valid_project(project: ProjectRelationshipSnapshot) -> None:
+    try:
+        validate_project_snapshot(project)
+    except ProjectInvariantError as error:
+        raise MergeInvariantError(str(error)) from error
 
 
 def _replace_scene_relationships(
@@ -182,7 +228,7 @@ def _merge_project_identities[
     previous: Iterable[Candidate],
     replacement_candidates: Iterable[Candidate],
     scene: SceneRelationshipSnapshot,
-) -> tuple[Candidate, ...]:
+) -> tuple[tuple[Candidate, ...], dict[str, str]]:
     prior_records: list[tuple[Candidate, tuple[Evidence, ...], bool]] = []
     for candidate in previous:
         changed_evidence = tuple(
@@ -210,38 +256,53 @@ def _merge_project_identities[
     candidates = tuple(record[0] for record in prior_records) + replacements
     clusters = _identity_clusters(candidates)
     merged: list[Candidate] = []
+    candidate_id_map: dict[str, str] = {}
     prior_count = len(prior_records)
     for cluster in clusters:
-        stable = [
-            candidates[index]
-            for index in cluster
-            if index < prior_count
-            and candidates[index].status in (CandidateStatus.APPROVED, CandidateStatus.NEEDS_REVIEW)
-        ]
+        stable = sorted(
+            (
+                candidates[index]
+                for index in cluster
+                if candidates[index].status
+                in (CandidateStatus.APPROVED, CandidateStatus.NEEDS_REVIEW)
+            ),
+            key=_identity_representative_key,
+        )
         stable_ids = {candidate.candidate_id for candidate in stable}
         if len(stable_ids) > 1:
             raise MergeInvariantError("conflicting stable identities would collapse")
 
-        cluster_replacements = [candidates[index] for index in cluster if index >= prior_count]
-        cluster_priors = [candidates[index] for index in cluster if index < prior_count]
+        cluster_replacements = sorted(
+            (candidates[index] for index in cluster if index >= prior_count),
+            key=_identity_representative_key,
+        )
+        cluster_priors = sorted(
+            (candidates[index] for index in cluster if index < prior_count),
+            key=_identity_representative_key,
+        )
         stable_candidate = stable[0] if stable else None
-        base = cluster_replacements[0] if cluster_replacements else candidates[cluster[0]]
+        base = cluster_replacements[0] if cluster_replacements else cluster_priors[0]
         evidence_values = [evidence for index in cluster for evidence in candidates[index].evidence]
-        status = CandidateStatus.PENDING
+        status = base.status
         if stable_candidate is not None:
-            stable_index = next(
-                index
-                for index in cluster
-                if index < prior_count
-                and candidates[index].candidate_id == stable_candidate.candidate_id
+            stable_prior_index = next(
+                (
+                    index
+                    for index in cluster
+                    if index < prior_count
+                    and candidates[index].candidate_id == stable_candidate.candidate_id
+                ),
+                None,
             )
-            old_changed_evidence = prior_records[stable_index][1]
-            belongs_to_changed_scene = prior_records[stable_index][2]
+            old_changed_evidence = (
+                prior_records[stable_prior_index][1] if stable_prior_index is not None else ()
+            )
+            belongs_to_changed_scene = (
+                prior_records[stable_prior_index][2] if stable_prior_index is not None else False
+            )
             supported = any(
-                _has_materially_equivalent_evidence(
-                    old_changed_evidence,
-                    candidate.evidence,
-                )
+                (not old_changed_evidence and not candidate.evidence)
+                or _has_materially_equivalent_evidence(old_changed_evidence, candidate.evidence)
                 for candidate in cluster_replacements
             )
             if belongs_to_changed_scene and not supported:
@@ -251,8 +312,15 @@ def _merge_project_identities[
             else:
                 status = stable_candidate.status
             base = replace(base, candidate_id=stable_candidate.candidate_id)
-        elif cluster_priors and cluster_replacements:
+        elif cluster_priors:
             base = replace(base, candidate_id=cluster_priors[0].candidate_id)
+        else:
+            base = replace(base, candidate_id=cluster_replacements[0].candidate_id)
+
+        representative_id = base.candidate_id
+        candidate_id_map.update(
+            {candidates[index].candidate_id: representative_id for index in cluster}
+        )
 
         if not cluster_replacements and base.scene_id == scene.scene_id:
             base = replace(base, scene_revision=scene.scene_revision)
@@ -260,14 +328,40 @@ def _merge_project_identities[
             replace(
                 base,
                 aliases=_merge_aliases(
-                    alias for index in cluster for alias in candidates[index].aliases
+                    value
+                    for index in cluster
+                    for value in (
+                        candidates[index].normalized_name,
+                        *candidates[index].aliases,
+                    )
+                    if normalize_text(value) != normalize_text(base.normalized_name)
                 ),
                 status=status,
                 evidence=_merge_evidence(evidence_values),
             )
         )
 
-    return tuple(sorted(merged, key=lambda candidate: candidate.candidate_id))
+    return (
+        tuple(sorted(merged, key=lambda candidate: candidate.candidate_id)),
+        candidate_id_map,
+    )
+
+
+def _identity_representative_key(
+    candidate: EntityCandidate | PlaceCandidate,
+) -> tuple[int, str, str, str]:
+    status_rank = {
+        CandidateStatus.APPROVED: 0,
+        CandidateStatus.NEEDS_REVIEW: 1,
+        CandidateStatus.PENDING: 2,
+        CandidateStatus.REJECTED: 3,
+    }
+    return (
+        status_rank[candidate.status],
+        candidate.candidate_id,
+        normalize_text(candidate.normalized_name),
+        candidate.display_name,
+    )
 
 
 def _identity_clusters[
@@ -368,9 +462,7 @@ def _replace_scene_candidates[
         merged.append(_retain_stable_id(replace(replacement, status=retained_status), prior))
 
     merged.extend(
-        replace(candidate, status=CandidateStatus.PENDING)
-        for index, candidate in enumerate(replacements)
-        if index not in consumed
+        candidate for index, candidate in enumerate(replacements) if index not in consumed
     )
     return tuple(sorted(merged, key=output_key))
 
@@ -455,6 +547,50 @@ def _location_replacement_key(event: LocationEventCandidate) -> CandidateKey:
     )
 
 
+def _rewrite_relationship_references(
+    events: Iterable[RelationshipEventCandidate],
+    entity_references: dict[str, str],
+) -> tuple[RelationshipEventCandidate, ...]:
+    return tuple(
+        replace(
+            event,
+            subject_key=entity_references.get(
+                normalize_reference(event.subject_key), event.subject_key
+            ),
+            object_key=entity_references.get(
+                normalize_reference(event.object_key), event.object_key
+            ),
+        )
+        for event in events
+    )
+
+
+def _rewrite_location_references(
+    events: Iterable[LocationEventCandidate],
+    entity_references: dict[str, str],
+    place_references: dict[str, str],
+) -> tuple[LocationEventCandidate, ...]:
+    return tuple(
+        replace(
+            event,
+            character_key=entity_references.get(
+                normalize_reference(event.character_key), event.character_key
+            ),
+            place_key=place_references.get(normalize_reference(event.place_key), event.place_key),
+        )
+        for event in events
+    )
+
+
+def _validate_chunk_set(analyses: tuple[ChunkAnalysis, ...]) -> None:
+    ordinals = tuple(analysis.chunk_ordinal for analysis in analyses)
+    if ordinals != tuple(range(len(analyses))):
+        raise MergeInvariantError("chunk ordinals must be contiguous and start at zero")
+    for analysis in analyses[:-1]:
+        if analysis.chunk_end - analysis.chunk_start != 300:
+            raise MergeInvariantError("nonfinal chunk width must be 300")
+
+
 def _validate_analysis(
     analysis: ChunkAnalysis,
     scene_id: str,
@@ -465,8 +601,15 @@ def _validate_analysis(
         raise MergeInvariantError("unsupported chunk analysis schema")
     if analysis.chunk_ordinal < 0:
         raise MergeInvariantError("chunk ordinal must be non-negative")
-    if not 0 <= analysis.chunk_start <= analysis.chunk_end:
-        raise MergeInvariantError("chunk bounds are invalid")
+    expected_chunk_id = f"{scene_id}:r{scene_revision}:{analysis.chunk_ordinal:04d}"
+    if analysis.chunk_id != expected_chunk_id:
+        raise MergeInvariantError("chunk ID does not match scene, revision, and ordinal")
+    expected_start = analysis.chunk_ordinal * 250
+    if analysis.chunk_start != expected_start:
+        raise MergeInvariantError("chunk start does not match numeric ordinal stride")
+    chunk_width = analysis.chunk_end - analysis.chunk_start
+    if not 1 <= chunk_width <= 300:
+        raise MergeInvariantError("chunk width must be between 1 and 300")
     if len(analysis.source_text) != analysis.chunk_end - analysis.chunk_start:
         raise MergeInvariantError("source chunk text does not match chunk bounds")
     if analysis.scene_id != scene_id:
@@ -512,7 +655,16 @@ def _validate_analysis(
 def _validate_scene_snapshot(scene: SceneRelationshipSnapshot) -> None:
     if scene.schema_version != SCENE_SNAPSHOT_SCHEMA_VERSION:
         raise MergeInvariantError("unsupported scene snapshot schema")
-    for candidate in _all_candidates(scene):
+    candidates = _all_candidates(scene)
+    candidate_ids = tuple(candidate.candidate_id for candidate in (*scene.entities, *scene.places))
+    event_ids = tuple(
+        event.event_id for event in (*scene.relationship_events, *scene.location_events)
+    )
+    if len(candidate_ids) != len(set(candidate_ids)):
+        raise MergeInvariantError("scene candidate IDs must be unique")
+    if len(event_ids) != len(set(event_ids)):
+        raise MergeInvariantError("scene event IDs must be unique")
+    for candidate in candidates:
         if candidate.scene_id != scene.scene_id or candidate.scene_revision != scene.scene_revision:
             raise MergeInvariantError("candidate provenance does not match scene snapshot")
         if isinstance(candidate, (RelationshipEventCandidate, LocationEventCandidate)):
@@ -520,30 +672,6 @@ def _validate_scene_snapshot(scene: SceneRelationshipSnapshot) -> None:
                 raise MergeInvariantError("event sequence does not match containing scene")
             _validate_confidence(candidate.confidence)
         _validate_candidate_evidence(candidate)
-
-
-def _validate_project_snapshot(project: ProjectRelationshipSnapshot) -> None:
-    if project.schema_version != PROJECT_SNAPSHOT_SCHEMA_VERSION:
-        raise MergeInvariantError("unsupported project snapshot schema")
-    active_revisions: dict[str, int] = {}
-    for scene_id, revision in project.active_scene_revisions:
-        if scene_id in active_revisions:
-            raise MergeInvariantError("active scene revisions must contain unique scene IDs")
-        active_revisions[scene_id] = revision
-
-    scene_sequences: dict[str, int] = {}
-    for candidate in _all_candidates(project):
-        active_revision = active_revisions.get(candidate.scene_id)
-        if active_revision is None or candidate.scene_revision != active_revision:
-            raise MergeInvariantError("candidate provenance does not match active scene revision")
-        if isinstance(candidate, (RelationshipEventCandidate, LocationEventCandidate)):
-            existing_sequence = scene_sequences.setdefault(
-                candidate.scene_id, candidate.scene_sequence
-            )
-            if existing_sequence != candidate.scene_sequence:
-                raise MergeInvariantError("event sequences conflict within containing scene")
-            _validate_confidence(candidate.confidence)
-        _validate_candidate_evidence(candidate, active_revisions)
 
 
 def _all_candidates(
@@ -559,50 +687,20 @@ def _all_candidates(
 
 def _validate_candidate_evidence(
     candidate: ProjectCandidate,
-    active_revisions: dict[str, int] | None = None,
 ) -> None:
     for evidence in candidate.evidence:
         if not 0 <= evidence.start_offset < evidence.end_offset:
             raise MergeInvariantError("evidence range must satisfy 0 <= start < end")
-        if active_revisions is None:
-            if (
-                evidence.scene_id != candidate.scene_id
-                or evidence.scene_revision != candidate.scene_revision
-            ):
-                raise MergeInvariantError("evidence provenance does not match candidate")
-        else:
-            active_revision = active_revisions.get(evidence.scene_id)
-            if active_revision is None or evidence.scene_revision > active_revision:
-                raise MergeInvariantError("evidence provenance is outside active project scenes")
+        if (
+            evidence.scene_id != candidate.scene_id
+            or evidence.scene_revision != candidate.scene_revision
+        ):
+            raise MergeInvariantError("evidence provenance does not match candidate")
 
 
 def _validate_confidence(confidence: float) -> None:
     if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
         raise MergeInvariantError("confidence must be finite and between 0.0 and 1.0")
-
-
-def _validate_reference_integrity(project: ProjectRelationshipSnapshot) -> None:
-    entity_references = {
-        normalize_text(value)
-        for candidate in project.entities
-        for value in (candidate.candidate_id, candidate.normalized_name, *candidate.aliases)
-    }
-    place_references = {
-        normalize_text(value)
-        for candidate in project.places
-        for value in (candidate.candidate_id, candidate.normalized_name, *candidate.aliases)
-    }
-    for event in project.relationship_events:
-        if (
-            normalize_text(event.subject_key) not in entity_references
-            or normalize_text(event.object_key) not in entity_references
-        ):
-            raise MergeInvariantError("relationship reference is absent from entity catalog")
-    for event in project.location_events:
-        if normalize_text(event.character_key) not in entity_references:
-            raise MergeInvariantError("location character reference is absent from entity catalog")
-        if normalize_text(event.place_key) not in place_references:
-            raise MergeInvariantError("location place reference is absent from place catalog")
 
 
 def _merge_summaries(analyses: Iterable[ChunkAnalysis]) -> str:

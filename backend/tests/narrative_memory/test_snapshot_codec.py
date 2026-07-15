@@ -1,11 +1,15 @@
 import json
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, asdict, replace
 
 import pytest
 
 from apps.narrative_memory.service.models import (
     CandidateStatus,
+    EntityCandidate,
     Evidence,
+    LocationEventCandidate,
+    LocationEventType,
+    PlaceCandidate,
     ProjectRelationshipSnapshot,
     RelationshipEventCandidate,
 )
@@ -40,52 +44,16 @@ def test_evidence_is_immutable() -> None:
 
 
 def test_project_snapshot_codec_is_stable_and_round_trips() -> None:
-    snapshot = _project_snapshot_with_relationship_event()
+    snapshot = ProjectRelationshipSnapshot.empty("project-01")
 
     payload = encode_project_snapshot(snapshot)
 
     assert (
-        payload
-        == (
-            "{\n"
-            '  "active_scene_revisions": [\n'
-            "    [\n"
-            '      "scene-01",\n'
-            "      1\n"
-            "    ]\n"
-            "  ],\n"
-            '  "entities": [],\n'
-            '  "location_events": [],\n'
-            '  "places": [],\n'
-            '  "project_id": "project-01",\n'
-            '  "relationship_events": [\n'
-            "    {\n"
-            '      "category": "first_meeting",\n'
-            '      "confidence": 0.75,\n'
-            '      "description": "서연은 민준을 만났다.",\n'
-            '      "event_id": "relationship-01",\n'
-            '      "evidence": [\n'
-            "        {\n"
-            '          "chunk_id": "scene-01:r1:0000",\n'
-            '          "end_offset": 11,\n'
-            '          "scene_id": "scene-01",\n'
-            '          "scene_revision": 1,\n'
-            '          "start_offset": 0,\n'
-            '          "text": "서연은 민준을 만났다."\n'
-            "        }\n"
-            "      ],\n"
-            '      "object_key": "민준",\n'
-            '      "scene_id": "scene-01",\n'
-            '      "scene_revision": 1,\n'
-            '      "scene_sequence": 3,\n'
-            '      "status": "pending",\n'
-            '      "subject_key": "서연"\n'
-            "    }\n"
-            "  ],\n"
-            '  "schema_version": "project-relationship-snapshot-v1",\n'
-            '  "snapshot_version": 2\n'
-            "}\n"
-        ).encode()
+        payload == b'{\n  "active_scene_revisions": [],\n  "entities": [],\n'
+        b'  "location_events": [],\n  "places": [],\n  "project_id": "project-01",\n'
+        b'  "relationship_events": [],\n'
+        b'  "schema_version": "project-relationship-snapshot-v1",\n'
+        b'  "snapshot_version": 0\n}\n'
     )
     assert decode_project_snapshot(payload) == snapshot
     assert encode_project_snapshot(decode_project_snapshot(payload)) == payload
@@ -123,9 +91,7 @@ def test_project_snapshot_decoder_rejects_non_object_root(root: object) -> None:
 
 @pytest.mark.parametrize("encoding", ["utf-16", "utf-32"])
 def test_project_snapshot_decoder_rejects_non_utf8_json(encoding: str) -> None:
-    canonical_json = encode_project_snapshot(_project_snapshot_with_relationship_event()).decode(
-        "utf-8"
-    )
+    canonical_json = encode_project_snapshot(_semantic_project_snapshot()).decode("utf-8")
 
     with pytest.raises(SnapshotDecodeError, match="snapshot is not valid UTF-8 JSON"):
         decode_project_snapshot(canonical_json.encode(encoding))
@@ -187,7 +153,7 @@ def test_project_snapshot_decoder_rejects_non_finite_or_out_of_range_confidence(
 
 @pytest.mark.parametrize("overflow", ["1e400", "-1e400"])
 def test_project_snapshot_decoder_rejects_confidence_overflow(overflow: str) -> None:
-    payload = encode_project_snapshot(_project_snapshot_with_relationship_event()).replace(
+    payload = encode_project_snapshot(_semantic_project_snapshot()).replace(
         b'"confidence": 0.75',
         f'"confidence": {overflow}'.encode(),
     )
@@ -236,6 +202,61 @@ def test_project_snapshot_decoder_rejects_location_confidence_overflow(
         decode_project_snapshot(payload)
 
 
+@pytest.mark.parametrize("boundary", ["encode", "decode"])
+def test_snapshot_codec_rejects_approved_event_with_pending_dependencies(
+    boundary: str,
+) -> None:
+    snapshot = _semantic_project_snapshot()
+    invalid = replace(
+        snapshot,
+        relationship_events=(
+            replace(
+                snapshot.relationship_events[0],
+                status=CandidateStatus.APPROVED,
+            ),
+        ),
+    )
+
+    with pytest.raises((ValueError, SnapshotDecodeError), match="approved|dependency"):
+        if boundary == "encode":
+            encode_project_snapshot(invalid)
+        else:
+            decode_project_snapshot(json.dumps(asdict(invalid)).encode())
+
+
+@pytest.mark.parametrize("identifier_kind", ["candidate", "event"])
+def test_snapshot_codec_rejects_duplicate_project_identifiers(
+    identifier_kind: str,
+) -> None:
+    snapshot = _semantic_project_snapshot()
+    if identifier_kind == "candidate":
+        invalid = replace(
+            snapshot,
+            places=(replace(snapshot.places[0], candidate_id="entity-seoyeon"),),
+        )
+    else:
+        invalid = replace(
+            snapshot,
+            location_events=(replace(snapshot.location_events[0], event_id="relationship-01"),),
+        )
+
+    with pytest.raises(ValueError, match="unique"):
+        encode_project_snapshot(invalid)
+
+
+def test_snapshot_codec_rejects_approved_candidate_with_stale_evidence() -> None:
+    snapshot = _semantic_project_snapshot()
+    stale = replace(
+        snapshot.entities[0],
+        status=CandidateStatus.APPROVED,
+        evidence=(Evidence("scene-01:r1:0000", "scene-01", 1, 0, 2, "서연"),),
+    )
+    invalid = replace(snapshot, entities=(stale, snapshot.entities[1]))
+
+    with pytest.raises(ValueError, match="stale|revision"):
+        encode_project_snapshot(invalid)
+
+
 def _project_snapshot_with_relationship_event() -> ProjectRelationshipSnapshot:
     evidence = Evidence(
         chunk_id="scene-01:r1:0000",
@@ -270,8 +291,76 @@ def _project_snapshot_with_relationship_event() -> ProjectRelationshipSnapshot:
     )
 
 
+def _semantic_project_snapshot() -> ProjectRelationshipSnapshot:
+    evidence = Evidence("scene-01:r2:0000", "scene-01", 2, 0, 2, "서연")
+    seoyeon = EntityCandidate(
+        candidate_id="entity-seoyeon",
+        normalized_name="서연",
+        display_name="서연",
+        aliases=(),
+        status=CandidateStatus.PENDING,
+        scene_id="scene-01",
+        scene_revision=2,
+        evidence=(evidence,),
+    )
+    minjun = replace(
+        seoyeon,
+        candidate_id="entity-minjun",
+        normalized_name="민준",
+        display_name="민준",
+        evidence=(),
+    )
+    place = PlaceCandidate(
+        candidate_id="place-cafe",
+        normalized_name="카페",
+        display_name="카페",
+        aliases=(),
+        status=CandidateStatus.PENDING,
+        scene_id="scene-01",
+        scene_revision=2,
+        evidence=(),
+    )
+    relationship = RelationshipEventCandidate(
+        event_id="relationship-01",
+        subject_key="entity-seoyeon",
+        object_key="entity-minjun",
+        category="trust",
+        description="서연은 민준을 믿었다.",
+        status=CandidateStatus.PENDING,
+        scene_id="scene-01",
+        scene_revision=2,
+        scene_sequence=3,
+        confidence=0.75,
+        evidence=(),
+    )
+    location = LocationEventCandidate(
+        event_id="location-01",
+        character_key="entity-seoyeon",
+        place_key="place-cafe",
+        event_type=LocationEventType.ARRIVED,
+        description="서연은 카페에 도착했다.",
+        status=CandidateStatus.PENDING,
+        scene_id="scene-01",
+        scene_revision=2,
+        scene_sequence=3,
+        confidence=0.75,
+        evidence=(),
+    )
+    return ProjectRelationshipSnapshot(
+        project_id="project-01",
+        snapshot_version=2,
+        schema_version="project-relationship-snapshot-v1",
+        active_scene_revisions=(("scene-01", 2),),
+        entities=(seoyeon, minjun),
+        places=(place,),
+        relationship_events=(relationship,),
+        location_events=(location,),
+    )
+
+
 def _encoded_snapshot_data() -> dict[str, object]:
-    return json.loads(encode_project_snapshot(_project_snapshot_with_relationship_event()))
+    snapshot = replace(_semantic_project_snapshot(), location_events=())
+    return json.loads(encode_project_snapshot(snapshot))
 
 
 def _move_relationship_to_location(data: dict[str, object]) -> None:

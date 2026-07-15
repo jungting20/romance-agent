@@ -1,7 +1,8 @@
 import hashlib
+import json
 import sqlite3
 import stat
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 
 import pytest
@@ -228,6 +229,83 @@ def test_repository_rejects_dangling_current_pointer(tmp_path) -> None:
         )
 
     with pytest.raises(SnapshotCorruptionError, match="current.*missing"):
+        repository.get_current("project-01")
+
+
+def test_repository_rejects_commit_with_duplicate_candidate_ids(tmp_path) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "audit.sqlite3")
+    repository.initialize()
+    first = EntityCandidate(
+        candidate_id="duplicate",
+        normalized_name="서연",
+        display_name="서연",
+        aliases=(),
+        status=CandidateStatus.PENDING,
+        scene_id="scene-01",
+        scene_revision=1,
+        evidence=(),
+    )
+    duplicate = replace(first, normalized_name="민준", display_name="민준")
+    invalid = replace(
+        ProjectRelationshipSnapshot.empty("project-01"),
+        active_scene_revisions=(("scene-01", 1),),
+        entities=(first, duplicate),
+    )
+
+    with pytest.raises(ValueError, match="unique"):
+        repository.commit(None, invalid)
+
+
+def test_repository_rejects_semantically_invalid_stored_snapshot(tmp_path) -> None:
+    path = tmp_path / "audit.sqlite3"
+    repository = SQLiteSnapshotRepository(path)
+    repository.initialize()
+    first = EntityCandidate(
+        candidate_id="duplicate",
+        normalized_name="서연",
+        display_name="서연",
+        aliases=(),
+        status=CandidateStatus.PENDING,
+        scene_id="scene-01",
+        scene_revision=1,
+        evidence=(),
+    )
+    invalid = replace(
+        ProjectRelationshipSnapshot.empty("project-01"),
+        active_scene_revisions=(("scene-01", 1),),
+        entities=(first, replace(first, normalized_name="민준", display_name="민준")),
+    )
+    payload = (
+        json.dumps(
+            asdict(invalid),
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+            separators=(",", ": "),
+        )
+        + "\n"
+    ).encode()
+    content_hash = f"sha256:{hashlib.sha256(payload).hexdigest()}"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            INSERT INTO project_snapshots VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "project-01",
+                0,
+                invalid.schema_version,
+                content_hash,
+                payload,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO current_project_snapshots VALUES (?, ?)",
+            ("project-01", 0),
+        )
+
+    with pytest.raises(SnapshotCorruptionError, match="decoded|payload"):
         repository.get_current("project-01")
 
 

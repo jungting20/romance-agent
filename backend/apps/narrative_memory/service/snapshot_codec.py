@@ -1,10 +1,8 @@
 import json
-import math
 from dataclasses import asdict
 from typing import Any
 
 from apps.narrative_memory.service.models import (
-    PROJECT_SNAPSHOT_SCHEMA_VERSION,
     CandidateStatus,
     EntityCandidate,
     Evidence,
@@ -14,6 +12,7 @@ from apps.narrative_memory.service.models import (
     ProjectRelationshipSnapshot,
     RelationshipEventCandidate,
 )
+from apps.narrative_memory.service.validation import validate_project_snapshot
 
 
 class SnapshotDecodeError(ValueError):
@@ -21,9 +20,7 @@ class SnapshotDecodeError(ValueError):
 
 
 def encode_project_snapshot(snapshot: ProjectRelationshipSnapshot) -> bytes:
-    if snapshot.schema_version != PROJECT_SNAPSHOT_SCHEMA_VERSION:
-        raise ValueError(f"unsupported project snapshot schema: {snapshot.schema_version}")
-    _validate_project_confidences(snapshot)
+    validate_project_snapshot(snapshot)
     data = asdict(snapshot)
     return (
         json.dumps(
@@ -112,10 +109,7 @@ def _require_integer(value: Any, label: str) -> int:
 def _require_number(value: Any, label: str) -> float:
     if type(value) not in (int, float):
         raise TypeError(f"{label} must be a number")
-    result = float(value)
-    if not math.isfinite(result) or not 0.0 <= result <= 1.0:
-        raise ValueError(f"{label} must be finite and between 0.0 and 1.0")
-    return result
+    return float(value)
 
 
 def _string_tuple(value: Any, label: str) -> tuple[str, ...]:
@@ -277,8 +271,6 @@ def _active_scene_revision(value: Any) -> tuple[str, int]:
 
 def _decode_nested_project_fields(data: dict[str, Any]) -> ProjectRelationshipSnapshot:
     schema_version = _require_string(data["schema_version"], "schema_version")
-    if schema_version != PROJECT_SNAPSHOT_SCHEMA_VERSION:
-        raise ValueError(f"unsupported project snapshot schema: {schema_version}")
     snapshot = ProjectRelationshipSnapshot(
         project_id=_require_string(data["project_id"], "project_id"),
         snapshot_version=_require_integer(data["snapshot_version"], "snapshot_version"),
@@ -297,11 +289,5 @@ def _decode_nested_project_fields(data: dict[str, Any]) -> ProjectRelationshipSn
             _location(item) for item in _require_array(data["location_events"], "location_events")
         ),
     )
-    _validate_project_confidences(snapshot)
+    validate_project_snapshot(snapshot)
     return snapshot
-
-
-def _validate_project_confidences(snapshot: ProjectRelationshipSnapshot) -> None:
-    for event in (*snapshot.relationship_events, *snapshot.location_events):
-        if not math.isfinite(event.confidence) or not 0.0 <= event.confidence <= 1.0:
-            raise ValueError("event confidence must be finite and between 0.0 and 1.0")
