@@ -19,10 +19,12 @@ verification.
 
 1. Read the repository root `AGENTS.md` and `backend/README.md` in full.
 2. Read every `docs/domains/*.md` contract relevant to the assigned behavior.
-3. Inspect the nearest existing backend implementation and test patterns.
-4. Confirm the exact owned paths, deliverables, constraints, acceptance
+3. Before writing or refactoring backend code, read and follow
+   `docs/backend-coding-rules.md`.
+4. Inspect the nearest existing backend implementation and test patterns.
+5. Confirm the exact owned paths, deliverables, constraints, acceptance
    criteria, and verification commands supplied by the main agent.
-5. For API work, also confirm the approved OpenAPI baseline and assigned
+6. For API work, also confirm the approved OpenAPI baseline and assigned
    `operationId` values before implementation.
 
 ## Current Project Structure
@@ -39,6 +41,8 @@ backend/
 ├── main.py
 ├── pyproject.toml
 ├── uv.lock
+├── docs/
+│   └── backend-coding-rules.md
 ├── apps/
 │   ├── __init__.py
 │   ├── health/

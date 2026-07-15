@@ -1,0 +1,94 @@
+# Backend Coding Rules
+
+## Purpose and Scope
+
+These rules apply when writing or refactoring code under `backend/`. They
+supplement `AGENTS.md`; they do not replace its domain-contract, OpenAPI,
+architecture, ownership, testing, or verification requirements. If the two
+documents appear to conflict, follow `AGENTS.md` and raise the conflict before
+editing.
+
+## Request Handling and Workflow Ownership
+
+- Routers translate HTTP input into typed application inputs, invoke a service
+  or application use case, and translate its result into the approved response.
+  They must not implement domain rules or access repositories directly.
+- Services and application use cases coordinate domain operations and ports.
+  When one request spans multiple domains or infrastructure boundaries, keep
+  that workflow in an explicit application use case rather than hiding it in a
+  router, repository, schema, or provider adapter.
+- Keep domain behavior independent of FastAPI, Pydantic, persistence
+  technology, process globals, and external providers.
+- Keep request and response shapes, validation ownership, status codes, and
+  error semantics aligned with the main-agent-approved OpenAPI baseline.
+
+## Dependencies and Interfaces
+
+- Make dependencies explicit through typed parameters, constructors, or ports.
+  Do not let domain or service code acquire repositories, clients, settings, or
+  process state through hidden globals.
+- Define a port when application or domain behavior depends on persistence,
+  time, identifier generation, messaging, or an external provider. Keep the
+  port focused on the consumer's needs rather than mirroring a vendor API.
+- Group closely related inputs and results into cohesive, named types when a
+  caller would otherwise pass or unpack many related values. Do not group
+  unrelated values merely to shorten a signature.
+- Keep transaction and state ownership explicit. A lower layer must not commit,
+  mutate, or coordinate state owned by another domain unless its contract
+  assigns that responsibility.
+- Return domain or application results from services. Convert them to transport
+  schemas and HTTP errors at the router boundary.
+
+## Module and Unit Extraction
+
+- Extract a function, class, or module when it has an independent
+  responsibility, a meaningful interface, or behavior that can be tested in
+  isolation.
+- Keep domain-specific code within its owning `apps/<domain>/` package. Move
+  code to shared infrastructure only when it is genuinely cross-cutting and
+  contains no domain policy.
+- Prefer a small number of cohesive modules over splitting every schema,
+  helper, constant, or single function into a separate file.
+- Keep small domain-specific constants and pure helpers near their only
+  consumer. Extract them when they are reused, independently tested, or
+  represent a distinct responsibility.
+- Do not introduce a generic base repository, service, schema, or exception
+  hierarchy before multiple concrete consumers demonstrate the same stable
+  abstraction.
+
+## Validation and Defensive Handling
+
+- Validate transport syntax and shape in schemas or routers. Enforce business
+  invariants in domain or service code owned by the authoritative domain.
+- Do not duplicate a business rule across schemas, services, and repositories.
+  Make its authoritative owner explicit and translate failures at boundaries.
+- Do not add `None` handling, fallback values, broad exception catches, or
+  unchecked casts to values that types and invariants guarantee. Defensive
+  handling must correspond to a reachable boundary or documented failure.
+- When a supposedly required value can be absent at runtime, correct the
+  authoritative type, validation boundary, or domain invariant before adding
+  scattered fallbacks.
+- Catch exceptions only where the code can add context, translate them into a
+  defined application or transport error, or perform required cleanup. Do not
+  silently swallow failures.
+
+## Refactoring and Verification
+
+- Prefer incremental extraction over rewriting an entire workflow. Preserve
+  observable API and domain behavior and keep focused tests passing after each
+  extraction.
+- Define refactoring success by clearer responsibilities, narrower interfaces,
+  explicit dependencies, and preserved behavior, not by a target file length.
+- Before extracting code, identify the current owners of validation, domain
+  policy, orchestration, transactions, persistence, and transport conversion.
+  Preserve or deliberately improve those ownership boundaries.
+- Test domain and service behavior without HTTP or real infrastructure when the
+  boundary permits it. Test routers through observable request, response, and
+  documented error behavior.
+- When one large test module covers independent responsibilities, split it by
+  user-visible operation or application workflow after implementation
+  boundaries are stable.
+- A responsibility-preserving refactor does not require a domain-document or
+  OpenAPI update. If behavior, ownership, invariants, workflow semantics, or
+  consumer-facing API behavior changes, update the required authoritative
+  contract in the same change through the repository's assigned workflow.

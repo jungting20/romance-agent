@@ -19,12 +19,14 @@ approval.
 ## Before Editing
 
 1. Read the root `AGENTS.md` and every relevant `docs/domains/*.md` contract.
-2. Inspect the nearest existing module, feature, page, and test patterns before
+2. Before writing or refactoring frontend code, read and follow
+   `docs/frontend-coding-rules.md`.
+3. Inspect the nearest existing module, feature, page, and test patterns before
    introducing a new pattern.
-3. Confirm the assigned paths, acceptance criteria, and verification commands.
-4. For API-consuming work, confirm the main-agent-approved OpenAPI baseline
+4. Confirm the assigned paths, acceptance criteria, and verification commands.
+5. For API-consuming work, confirm the main-agent-approved OpenAPI baseline
    and affected `operationId` values. Never edit `docs/api/openapi.yaml`.
-5. Preserve unrelated user changes and report a file-ownership conflict before
+6. Preserve unrelated user changes and report a file-ownership conflict before
    editing an overlapping file.
 
 ## Architecture Boundaries
