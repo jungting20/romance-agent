@@ -216,6 +216,28 @@ describe("WritingWorkspacePage", () => {
     expect(screen.queryByRole("dialog", { name: "세계관 수정 및 추가" })).not.toBeInTheDocument();
   });
 
+  test("replays a successful confirmed navigation with a fresh authoritative world draft", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?tab=world");
+    await user.click(await screen.findByRole("button", { name: "세계관 수정 및 추가" }));
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    const original = (title as HTMLInputElement).value;
+    await user.clear(title);
+    await user.type(title, "탐색에서 폐기할 초안");
+
+    void router.navigate({
+      to: "/projects/$projectId/write",
+      params: { projectId: "silver-garden" },
+      search: { tab: "world" },
+    });
+    await user.click(await screen.findByRole("button", { name: "변경사항 버리기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+
+    router.history.back();
+    expect(await screen.findByRole("textbox", { name: "기존 항목 1 제목" })).toHaveValue(original);
+  });
+
   test("warns before unloading while the world editor has a dirty draft", async () => {
     setViewportWidth(1024);
     const user = userEvent.setup();
@@ -244,6 +266,27 @@ describe("WritingWorkspacePage", () => {
       "이 세계관을 더 이상 편집할 수 없어요",
     );
     expect(screen.getByRole("button", { name: "세계관 보기로 돌아가기" })).toBeInTheDocument();
+  });
+
+  test("returns initializing error close focus to the world tab for a direct editor URL", async () => {
+    setViewportWidth(1024);
+    server.use(
+      http.get("/api/projects/:projectId/story-bible", () =>
+        HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "실패", fieldErrors: [] },
+          { status: 500 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    expect(await screen.findByRole("alert")).toHaveTextContent("세계관을 불러오지 못했어요");
+
+    await user.click(screen.getByRole("button", { name: "닫기" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "세계관 보기", selected: true })).toHaveFocus(),
+    );
   });
 
   test("guards a dirty explicit editor close and preserves the draft when cancelled", async () => {

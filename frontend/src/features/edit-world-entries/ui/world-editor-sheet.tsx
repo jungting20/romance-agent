@@ -176,11 +176,13 @@ export function WorldEditorInitializingSheet({
   error,
   onRetry,
   onClose,
+  onCloseAutoFocus,
 }: {
   open: boolean;
   error?: ApiRequestError;
   onRetry: () => void;
   onClose: () => void;
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   const unavailable =
     error?.status === 404 &&
@@ -192,7 +194,11 @@ export function WorldEditorInitializingSheet({
         if (!next) onClose();
       }}
     >
-      <SheetContent side="right" className="z-[60] w-full sm:max-w-2xl">
+      <SheetContent
+        side="right"
+        className="z-[60] w-full sm:max-w-2xl"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <SheetHeader>
           <SheetTitle>세계관 수정 및 추가</SheetTitle>
           <SheetDescription>세계관 편집 정보를 준비합니다.</SheetDescription>

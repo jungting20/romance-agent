@@ -55,9 +55,7 @@ export function useWorldEntryEditor({
 
   useEffect(() => {
     if (open && query.data && !state) setState(createWorldEditorState(query.data));
-    if (!open && state && !isWorldEditorDirty(state)) {
-      setState(undefined);
-    }
+    if (!open && state) setState(undefined);
   }, [open, query.data, state]);
 
   useEffect(() => {
