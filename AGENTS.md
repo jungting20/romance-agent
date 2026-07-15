@@ -137,8 +137,8 @@ Use this workflow for every UI-affecting feature:
 4. **Main aligns:** The main agent keeps the implementation brief's UI target
    consistent with the approved UI plan. Any material UI-plan change requires
    main-agent approval of the replacement before affected work proceeds.
-5. **Main delegates:** The main agent gives the same exact approved UI plan to
-   frontend implementation and `frontend-review`.
+5. **Main delegates:** When UI behavior changes, the main agent gives the same
+   exact approved UI plan to frontend implementation and `frontend-review`.
 
 Skip this workflow when no UI behavior changes. UI planning does not replace
 main-agent approval of domain behavior, API scope, or the implementation brief.

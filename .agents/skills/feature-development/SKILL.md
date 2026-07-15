@@ -61,8 +61,8 @@ states, accessibility, responsive behavior, shadcn/ui decisions, requirement
 traceability, and unresolved questions. The main agent must
 approve the exact UI plan before OpenAPI drafting or implementation. If the
 plan materially changes the implementation brief's UI target, reconcile and
-reapprove the brief and plan before downstream work. Hand the
-same exact approved UI plan to frontend implementation and later to
+reapprove the brief and plan before downstream work. When UI behavior changes,
+hand the same exact approved UI plan to frontend implementation and later to
 `frontend-review`.
 
 Skip this section when no UI behavior changes. UI planning does not replace
@@ -110,12 +110,13 @@ exact baseline before affected implementation resumes.
 
 Wait until implementation agents complete their checks and stop editing. For
 substantial frontend work, dispatch `frontend-review` with the complete affected
-screen boundary, implementer handoff, approved UI plan, relevant domain
-contracts, acceptance criteria, accepted deviations, and approved OpenAPI
-baseline and operation IDs when applicable. It must review the
-whole affected screen and explicitly check whether
-available shadcn/ui components or established compositions were unnecessarily
-reimplemented.
+screen boundary, implementer handoff, relevant domain contracts, acceptance
+criteria, accepted deviations, and approved OpenAPI baseline and operation IDs
+when applicable. When UI behavior changes, also provide the same exact approved
+UI plan used for frontend implementation; `frontend-review` must check it.
+Absence of a UI plan does not block non-UI frontend review. It must review the
+whole affected screen and explicitly check whether available shadcn/ui
+components or established compositions were unnecessarily reimplemented.
 
 For substantial backend work, dispatch `backend-review` with the complete
 affected operation boundary, implementer handoff, relevant domain contracts,
@@ -133,10 +134,11 @@ decision in the final handoff.
 ## 9. Triage, fix, and re-review
 
 Validate every finding against the diff, requirements, domain contracts, UI
-plan, approved OpenAPI baseline, and repository instructions. Accept it, reject
-it with concrete rationale, or escalate a real contract or product decision.
-Send accepted implementation findings to the original owning implementation
-agent when practical. Review agents never make fixes.
+plan when applicable, approved OpenAPI baseline when applicable, and repository
+instructions. Accept it, reject it with concrete rationale, or escalate a real
+contract or product decision. Send accepted implementation findings to the
+original owning implementation agent when practical. Review agents never make
+fixes.
 
 Re-dispatch the matching reviewer with original finding IDs and the fix diff
 when a blocking or high finding requires confirmation or when a fix materially
