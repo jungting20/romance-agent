@@ -16,6 +16,39 @@ These instructions apply to the entire repository unless a more specific
 - `docs/superpowers/` contains design and implementation records.
 - Root `mise.toml` and `mise.lock` define the shared toolchain.
 
+## Project Engineering Rule Documentation
+
+Keep persistent application engineering knowledge in the owning project's
+documentation rather than accumulating detailed rules in nested agent
+instructions.
+
+- Put frontend-specific coding, architecture, TypeScript, React, component,
+  state-management, dependency, accessibility, testing, mocking, and other
+  implementation-convention rules under `frontend/docs/`. Update
+  `frontend/docs/frontend-coding-rules.md` when the topic fits that document.
+- Put backend-specific coding, architecture, Python, framework, package,
+  persistence, provider, dependency, error-handling, testing, and other
+  implementation-convention rules under `backend/docs/`. Update
+  `backend/docs/backend-coding-rules.md` when the topic fits that document.
+- When a topic is distinct or large enough for a focused document, create it
+  under the same project's `docs/` directory and link it from that project's
+  existing coding-rules document so the complete rule set remains discoverable
+  from one entry point.
+- Do not add or duplicate those detailed rule bodies in `frontend/AGENTS.md` or
+  `backend/AGENTS.md`. Nested `AGENTS.md` files may define agent scope, file
+  ownership, required reading, authority, workflow, verification, and handoff
+  behavior, and may point to the authoritative project documents.
+- When implementation introduces, changes, or reveals a reusable engineering
+  rule, the implementation and its matching project-document update are one
+  indivisible change. Do not defer the documentation or leave the rule only in
+  an agent handoff or conversation. Work that only follows existing documented
+  rules does not require a documentation rewrite.
+
+Keep repository-wide delegation, OpenAPI approval, domain-document ownership,
+review, and working-tree policy in this root `AGENTS.md`. Keep domain meaning
+and boundaries in `docs/domains/*.md` under the existing synchronization rules;
+project engineering documentation does not replace domain contracts.
+
 ## Main Agent Responsibilities
 
 The main agent owns the end-to-end result. It must:
