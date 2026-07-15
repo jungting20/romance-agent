@@ -137,8 +137,8 @@ Validate every finding against the diff, requirements, domain contracts, UI
 plan when applicable, approved OpenAPI baseline when applicable, and repository
 instructions. Accept it, reject it with concrete rationale, or escalate a real
 contract or product decision. Send accepted implementation findings to the
-original owning implementation agent when practical. Review agents never make
-fixes.
+original owning implementation agent when practical.
+Review agents never make fixes.
 
 Re-dispatch the matching reviewer with original finding IDs and the fix diff
 when a blocking or high finding requires confirmation or when a fix materially
