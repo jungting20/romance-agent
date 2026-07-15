@@ -35,13 +35,21 @@ logger = logging.getLogger(__name__)
 ProjectIdPath = Annotated[str, PathParameter(alias="projectId", min_length=1)]
 
 
+class StoryBibleDependencyError(Exception):
+    """The Story Bible service could not be composed for a request."""
+
+
 def get_story_bible_service() -> StoryBibleService:
-    data_root = Path(os.environ["ROMANCE_AGENT_DATA_ROOT"])
-    repository = FileStoryBibleRepository(data_root)
-    return StoryBibleService(
-        repository,
-        lambda project_id: f"{project_id}-world-{uuid.uuid4().hex}",
-    )
+    try:
+        data_root = Path(os.environ["ROMANCE_AGENT_DATA_ROOT"])
+        repository = FileStoryBibleRepository(data_root)
+        return StoryBibleService(
+            repository,
+            lambda project_id: f"{project_id}-world-{uuid.uuid4().hex}",
+        )
+    except Exception as error:
+        logger.exception("Could not compose Story Bible service")
+        raise StoryBibleDependencyError from error
 
 
 @router.get(

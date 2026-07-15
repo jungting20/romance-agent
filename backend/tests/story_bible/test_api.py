@@ -3,6 +3,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.story_bible.router import story_bible as router_module
 from apps.story_bible.router.story_bible import get_story_bible_service
 from apps.story_bible.service.story_bible import (
     Character,
@@ -261,6 +262,38 @@ def test_save_world_entries_maps_unexpected_failure_to_internal_error(client: Te
     response = client.put("/projects/silver-garden/story-bible/world-entries", json=valid_request())
 
     assert response.status_code == 500
+    assert response.json() == error("INTERNAL_ERROR", "잠시 후 다시 시도해 주세요.")
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "request_kwargs"),
+    [
+        ("GET", "/projects/silver-garden/story-bible", {}),
+        (
+            "PUT",
+            "/projects/silver-garden/story-bible/world-entries",
+            {"json": valid_request()},
+        ),
+    ],
+)
+def test_dependency_construction_failure_maps_to_internal_error(
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    path: str,
+    request_kwargs: dict[str, object],
+) -> None:
+    monkeypatch.setenv("ROMANCE_AGENT_DATA_ROOT", "/configured/data")
+
+    def fail_repository_construction(_data_root: object) -> None:
+        raise OSError("resolve failed")
+
+    monkeypatch.setattr(router_module, "FileStoryBibleRepository", fail_repository_construction)
+
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        response = test_client.request(method, path, **request_kwargs)
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
     assert response.json() == error("INTERNAL_ERROR", "잠시 후 다시 시도해 주세요.")
 
 
