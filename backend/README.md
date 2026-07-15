@@ -8,6 +8,7 @@ FastAPI application code is organized by domain under `apps/`.
 backend/
 ├── main.py                 # FastAPI application entry point
 ├── apps/                   # Domain-owned backend packages
+│   ├── narrative_memory/ # Versioned narrative analysis snapshots
 │   └── <domain>/
 │       ├── router/         # HTTP request and response boundary
 │       ├── service/        # Application workflows and domain coordination
@@ -24,6 +25,9 @@ backend/
 Keep domain-specific code inside its owning `apps/<domain>/` package. Update
 this map when a structural change alters the responsibilities or major packages
 shown here; individual files do not need to be listed.
+
+The Narrative Memory repository persists immutable, versioned canonical JSON
+snapshots in SQLite.
 
 ## Setup
 
