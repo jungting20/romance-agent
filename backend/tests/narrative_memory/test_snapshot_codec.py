@@ -117,6 +117,16 @@ def test_project_snapshot_decoder_rejects_non_object_root(root: object) -> None:
         decode_project_snapshot(json.dumps(root).encode())
 
 
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-32"])
+def test_project_snapshot_decoder_rejects_non_utf8_json(encoding: str) -> None:
+    canonical_json = encode_project_snapshot(_project_snapshot_with_relationship_event()).decode(
+        "utf-8"
+    )
+
+    with pytest.raises(SnapshotDecodeError, match="snapshot is not valid UTF-8 JSON"):
+        decode_project_snapshot(canonical_json.encode(encoding))
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

@@ -35,7 +35,8 @@ def encode_project_snapshot(snapshot: ProjectRelationshipSnapshot) -> bytes:
 
 def decode_project_snapshot(payload: bytes) -> ProjectRelationshipSnapshot:
     try:
-        data = json.loads(payload, parse_constant=_reject_json_constant)
+        text = payload.decode("utf-8")
+        data = json.loads(text, parse_constant=_reject_json_constant)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
         raise SnapshotDecodeError("snapshot is not valid UTF-8 JSON") from error
     if not isinstance(data, dict):
