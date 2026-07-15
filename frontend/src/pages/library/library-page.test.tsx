@@ -1,14 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
-import { MemoryRouter } from "react-router-dom";
 import { describe, expect, test } from "vitest";
 
+import { createAppMemoryRouter } from "@/app/app";
 import type { ProjectListResponse } from "@/app/infrastructure/api/contracts";
 import { server } from "@/mocks/server";
-
-import { LibraryPage } from "./library-page";
 
 const projects: ProjectListResponse = {
   items: [
@@ -30,7 +29,7 @@ const projects: ProjectListResponse = {
 };
 
 describe("LibraryPage", () => {
-  test("shows a loading status while projects are being fetched", () => {
+  test("shows a loading status while projects are being fetched", async () => {
     server.use(
       http.get("/api/projects", async () => {
         await delay("infinite");
@@ -40,7 +39,7 @@ describe("LibraryPage", () => {
 
     renderLibrary();
 
-    expect(screen.getByRole("status")).toHaveTextContent("작품을 불러오는 중이에요.");
+    expect(await screen.findByRole("status")).toHaveTextContent("작품을 불러오는 중이에요.");
   });
 
   test("retries a failed project request", async () => {
@@ -96,12 +95,11 @@ function renderLibrary() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  const router = createAppMemoryRouter(["/"]);
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <LibraryPage />
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
 }

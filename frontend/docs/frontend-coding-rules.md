@@ -74,18 +74,22 @@ conflict before editing.
   and callbacks over child components that independently acquire hidden
   application state.
 
-## TanStack Router
+## Routing
 
-- Use TanStack Router (`@tanstack/react-router`) as the frontend's only
-  application router. Do not add new `react-router-dom` usage or introduce a
-  compatibility wrapper that imitates React Router APIs.
-- Define routes with TanStack Router's file-based routing under `src/routes`.
-  Route files own route declarations, search-parameter validation, and minimal
-  page adapters; pages remain responsible for screen composition and reachable
-  UI states.
-- Configure the TanStack Router Vite plugin before the React plugin and commit
-  the generated `src/routeTree.gen.ts`. Never edit the generated route tree by
-  hand.
+- Use TanStack Router for application routing. Route declarations live under
+  `src/routes/`, and application components use typed destinations, path
+  parameters, and search objects from `@tanstack/react-router`.
+- Keep route files focused on route declarations, search validation, and thin
+  page adapters. Pages remain responsible for screen composition and TanStack
+  Query remains responsible for server state unless an approved design assigns
+  a route loader.
+- Treat `src/routeTree.gen.ts` as generated source. Commit it so a checkout is
+  buildable, regenerate it through the TanStack Router Vite plugin, and never
+  edit it by hand.
+- Tests use the application route tree with memory history through
+  `createAppMemoryRouter`; do not introduce a second test-only route model when
+  the production route expresses the behavior under test.
+- Configure the TanStack Router Vite plugin before the React plugin.
 - Register the application router type through TanStack Router module
   augmentation. Use typed `Link`, navigation options, path parameters, and
   validated search parameters instead of assembling route strings or casting
@@ -105,12 +109,6 @@ conflict before editing.
 - Keep router construction and provider composition in `src/app`. Domain
   modules and reusable presentation primitives must not own router setup or
   depend on route-tree internals.
-- Keep server-state ownership in TanStack Query and feature-level application
-  workflows. Do not move API fetching, mutations, or domain rules into route
-  loaders solely because the router supports them.
-- Tests must create isolated TanStack Router instances with memory history and
-  the same generated route tree used by the application. Prefer shared test
-  router helpers over mounting ad hoc routing contexts in individual tests.
 - Test URL-owned page state through direct links, reload-equivalent initial
   navigation, and browser Back and Forward transitions. Assert both the visible
   state and the resulting search parameters.
