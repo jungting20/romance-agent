@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Link, useBlocker, useParams } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useBlocker, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Check,
@@ -43,7 +43,7 @@ import { SceneTree } from "@/modules/manuscript/ui/scene-tree";
 import { StoryContextPanel } from "@/modules/story-bible/ui/story-context-panel";
 import { WritingToolPanel } from "@/modules/writing-assistant/ui/writing-tool-panel";
 
-type ContextMode = "manuscript" | "characters" | "world";
+import type { ContextMode } from "./writing-workspace-tabs";
 
 const contextTools: Array<{
   mode: ContextMode;
@@ -57,7 +57,31 @@ const contextTools: Array<{
 
 export function WritingWorkspacePage() {
   const { projectId } = useParams({ from: "/projects/$projectId/write" });
+  const { tab } = useSearch({ from: "/projects/$projectId/write" });
+  const navigate = useNavigate({ from: "/projects/$projectId/write" });
+  const contextMode: ContextMode = tab ?? "manuscript";
   const workspaceQuery = useProjectWorkspaceQuery(projectId);
+
+  useEffect(() => {
+    if (tab !== "manuscript") return;
+
+    void navigate({
+      replace: true,
+      search: (previous) => {
+        const { tab: _tab, ...search } = previous;
+        return search;
+      },
+    });
+  }, [navigate, tab]);
+
+  function handleContextModeChange(mode: ContextMode) {
+    void navigate({
+      search: (previous) => {
+        const { tab: _tab, ...search } = previous;
+        return mode === "manuscript" ? search : { ...search, tab: mode };
+      },
+    });
+  }
 
   if (workspaceQuery.isPending) {
     return (
@@ -122,11 +146,24 @@ export function WritingWorkspacePage() {
     );
   }
 
-  return <LoadedWritingWorkspace workspace={workspaceQuery.data} />;
+  return (
+    <LoadedWritingWorkspace
+      workspace={workspaceQuery.data}
+      contextMode={contextMode}
+      onContextModeChange={handleContextModeChange}
+    />
+  );
 }
 
-function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResponse }) {
-  const [contextMode, setContextMode] = useState<ContextMode>("manuscript");
+function LoadedWritingWorkspace({
+  workspace,
+  contextMode,
+  onContextModeChange,
+}: {
+  workspace: ProjectWorkspaceResponse;
+  contextMode: ContextMode;
+  onContextModeChange: (mode: ContextMode) => void;
+}) {
   const [contextOpen, setContextOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [selection, setSelection] = useState<TextRange | null>(null);
@@ -233,7 +270,7 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
       <Tabs
         value={contextMode}
         orientation="vertical"
-        onValueChange={(value) => setContextMode(value as ContextMode)}
+        onValueChange={(value) => onContextModeChange(value as ContextMode)}
         className="min-h-0 flex-1 flex-row gap-0"
       >
         <nav className="flex w-14 shrink-0 flex-col items-center border-r border-border bg-sidebar py-3">
@@ -247,7 +284,6 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
                       value={tool.mode}
                       aria-label={tool.label}
                       onClick={() => {
-                        setContextMode(tool.mode);
                         if (!contextIsInline) setContextOpen(true);
                       }}
                       className="size-8 justify-center p-0 text-muted-foreground data-active:text-primary"
