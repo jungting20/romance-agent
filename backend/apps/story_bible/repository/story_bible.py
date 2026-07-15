@@ -55,6 +55,8 @@ class FileStoryBibleRepository:
         if (
             not project_id
             or Path(project_id).name != project_id
+            or not projects_root.is_relative_to(self._data_root)
+            or not candidate.is_relative_to(self._data_root)
             or not candidate.is_relative_to(projects_root)
         ):
             raise StoryBiblePersistenceError("Project path escapes the configured data root")

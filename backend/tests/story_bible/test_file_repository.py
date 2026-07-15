@@ -133,6 +133,29 @@ def test_project_id_cannot_escape_data_root(tmp_path: Path, project_id: str) -> 
         FileStoryBibleRepository(tmp_path).get(project_id)
 
 
+@pytest.mark.parametrize("operation", ["get", "replace"])
+def test_projects_symlink_cannot_escape_data_root_without_touching_external_files(
+    tmp_path: Path, operation: str
+) -> None:
+    data_root = tmp_path / "data"
+    external_root = tmp_path / "external"
+    data_root.mkdir()
+    canonical = write_story_bible(external_root)
+    original = canonical.read_bytes()
+    (data_root / "projects").symlink_to(external_root / "projects", target_is_directory=True)
+    repository = FileStoryBibleRepository(data_root)
+
+    with pytest.raises(StoryBiblePersistenceError):
+        if operation == "get":
+            repository.get("silver-garden")
+        else:
+            repository.replace("silver-garden", 1, story_bible(title="변경"))
+
+    assert canonical.read_bytes() == original
+    assert not canonical.with_suffix(".lock").exists()
+    assert list(canonical.parent.glob(".story-bible.*.tmp")) == []
+
+
 @pytest.mark.parametrize("expected_revision", [0, 2])
 def test_replace_requires_exact_revision_and_preserves_bytes(
     tmp_path: Path, expected_revision: int
