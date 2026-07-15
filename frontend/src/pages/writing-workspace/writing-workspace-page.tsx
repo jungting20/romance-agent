@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { Link, useBlocker, useParams } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Check,
@@ -10,7 +11,6 @@ import {
   Users,
   WandSparkles,
 } from "lucide-react";
-import { Link, useBeforeUnload, useBlocker, useParams } from "react-router-dom";
 
 import { ApiRequestError } from "@/app/infrastructure/api/api-client";
 import type { ProjectWorkspaceResponse } from "@/app/infrastructure/api/contracts";
@@ -56,8 +56,8 @@ const contextTools: Array<{
 ];
 
 export function WritingWorkspacePage() {
-  const { projectId } = useParams();
-  const workspaceQuery = useProjectWorkspaceQuery(projectId ?? "");
+  const { projectId } = useParams({ from: "/projects/$projectId/write" });
+  const workspaceQuery = useProjectWorkspaceQuery(projectId);
 
   if (workspaceQuery.isPending) {
     return (
@@ -388,37 +388,24 @@ function useManuscriptNavigationGuard(
   flush: () => Promise<boolean>,
 ) {
   const shouldBlock = status !== "saved";
-  const blocker = useBlocker(shouldBlock);
   const isHandlingBlockedNavigationRef = useRef(false);
 
-  useBeforeUnload(
-    useCallback(
-      (event) => {
-        if (shouldBlock) {
-          event.preventDefault();
-          event.returnValue = "";
-        }
-      },
-      [shouldBlock],
-    ),
-    { capture: true },
-  );
-
-  useEffect(() => {
-    if (blocker.state !== "blocked" || isHandlingBlockedNavigationRef.current) {
-      return;
-    }
-
-    isHandlingBlockedNavigationRef.current = true;
-    void flush().then((saved) => {
-      isHandlingBlockedNavigationRef.current = false;
-      if (saved) {
-        blocker.proceed();
-      } else {
-        blocker.reset();
+  useBlocker({
+    disabled: !shouldBlock,
+    enableBeforeUnload: shouldBlock,
+    shouldBlockFn: async () => {
+      if (isHandlingBlockedNavigationRef.current) {
+        return true;
       }
-    });
-  }, [blocker, flush]);
+
+      isHandlingBlockedNavigationRef.current = true;
+      try {
+        return !(await flush());
+      } finally {
+        isHandlingBlockedNavigationRef.current = false;
+      }
+    },
+  });
 }
 
 function AutosaveIndicator({

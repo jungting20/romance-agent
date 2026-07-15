@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
-import { RouterProvider } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type {
@@ -36,7 +36,7 @@ function setViewportWidth(width: number) {
 }
 
 describe("WritingWorkspacePage", () => {
-  test("shows a workspace skeleton while the workspace is being fetched", () => {
+  test("shows a workspace skeleton while the workspace is being fetched", async () => {
     server.use(
       http.get("/api/projects/:projectId/workspace", async () => {
         await delay("infinite");
@@ -46,7 +46,7 @@ describe("WritingWorkspacePage", () => {
 
     const { container } = renderWorkspace();
 
-    expect(screen.getByRole("status")).toHaveTextContent("작업 공간을 불러오는 중이에요.");
+    expect(await screen.findByRole("status")).toHaveTextContent("작업 공간을 불러오는 중이에요.");
     expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(3);
   });
 
@@ -355,16 +355,13 @@ describe("WritingWorkspacePage", () => {
   });
 
   test("warns before unloading while the manuscript has unsaved work", async () => {
-    renderWorkspace();
+    const { router } = renderWorkspace();
     const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
       name: "원고 본문",
     });
     fireEvent.change(editor, { target: { value: "닫기 전에 지킬 원고" } });
 
-    const beforeUnload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(beforeUnload);
-
-    expect(beforeUnload.defaultPrevented).toBe(true);
+    await expectUnloadProtection(router);
   });
 
   test("cancels internal navigation when the immediate save fails and exposes retry", async () => {
@@ -377,7 +374,7 @@ describe("WritingWorkspacePage", () => {
       ),
     );
     const user = userEvent.setup();
-    renderWorkspace();
+    const { router } = renderWorkspace();
     const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
       name: "원고 본문",
     });
@@ -388,9 +385,7 @@ describe("WritingWorkspacePage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
     expect(screen.getByRole("button", { name: "원고 저장 다시 시도" })).toBeInTheDocument();
     expect(editor.value).toBe("실패해도 지킬 원고");
-    const beforeUnload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(beforeUnload);
-    expect(beforeUnload.defaultPrevented).toBe(true);
+    await expectUnloadProtection(router);
   });
 
   test("cancels internal navigation when saving finds a conflict", async () => {
@@ -415,7 +410,7 @@ describe("WritingWorkspacePage", () => {
       }),
     );
     const user = userEvent.setup();
-    renderWorkspace();
+    const { router } = renderWorkspace();
     const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
       name: "원고 본문",
     });
@@ -425,9 +420,7 @@ describe("WritingWorkspacePage", () => {
 
     expect(await screen.findByRole("dialog", { name: "원고 저장 충돌 해결" })).toBeInTheDocument();
     expect(editor.value).toBe("충돌해도 지킬 원고");
-    const beforeUnload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(beforeUnload);
-    expect(beforeUnload.defaultPrevented).toBe(true);
+    await expectUnloadProtection(router);
   });
 
   test("opens the conflict comparison and Escape closes it without discarding the draft", async () => {
@@ -559,12 +552,25 @@ function renderWorkspace(projectId = "silver-garden") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  const router = createAppMemoryRouter([`/projects/${projectId}/write`]);
+  vi.spyOn(router.history, "block");
 
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={createAppMemoryRouter([`/projects/${projectId}/write`])} />
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+    router,
+  };
+}
+
+async function expectUnloadProtection(router: ReturnType<typeof createAppMemoryRouter>) {
+  await waitFor(() => {
+    expect(router.history.block).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enableBeforeUnload: true }),
+    );
+  });
 }
 
 function getWorkspace(): ProjectWorkspaceResponse {
