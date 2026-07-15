@@ -13,7 +13,20 @@ from apps.narrative_memory.repository.snapshot_repository import (
 from apps.narrative_memory.repository.sqlite_snapshot_repository import (
     SQLiteSnapshotRepository,
 )
-from apps.narrative_memory.service.models import ProjectRelationshipSnapshot
+from apps.narrative_memory.service.chunking import chunk_scene
+from apps.narrative_memory.service.merge import (
+    merge_chunk_analyses,
+    merge_scene_into_project,
+)
+from apps.narrative_memory.service.models import (
+    CandidateStatus,
+    ChunkAnalysis,
+    Evidence,
+    LocationEventCandidate,
+    LocationEventType,
+    ProjectRelationshipSnapshot,
+    RelationshipEventCandidate,
+)
 from apps.narrative_memory.service.snapshot_codec import encode_project_snapshot
 
 
@@ -199,3 +212,104 @@ def test_repository_rejects_stored_hash_corruption(tmp_path) -> None:
 
     with pytest.raises(SnapshotCorruptionError, match="content hash"):
         repository.get_current("project-01")
+
+
+def test_scene_analysis_json_reaches_immutable_project_snapshot(tmp_path) -> None:
+    relationship_text = "서연은민준을믿었다"
+    location_text = "서연은카페에도착했다"
+    scene_text = (
+        "가" * 250
+        + relationship_text
+        + "나" * (50 - len(relationship_text))
+        + location_text
+        + "다" * (50 - len(location_text))
+    )
+    chunks = chunk_scene("scene-01", 1, scene_text)
+    relationship_evidence = (Evidence(chunks[0].chunk_id, 250, 259, relationship_text),)
+    duplicate_relationship_evidence = (Evidence(chunks[1].chunk_id, 250, 259, relationship_text),)
+    location_evidence = (Evidence(chunks[1].chunk_id, 300, 310, location_text),)
+    analyses = (
+        ChunkAnalysis(
+            chunk_id=chunks[0].chunk_id,
+            scene_id="scene-01",
+            scene_revision=1,
+            summary="서연은 민준을 믿었다.",
+            entities=(),
+            places=(),
+            relationship_events=(
+                RelationshipEventCandidate(
+                    event_id="relationship-01",
+                    subject_key="서연",
+                    object_key="민준",
+                    category="trust",
+                    description="서연은 민준을 믿었다.",
+                    status=CandidateStatus.PENDING,
+                    scene_id="scene-01",
+                    scene_revision=1,
+                    scene_sequence=7,
+                    confidence=0.8,
+                    evidence=relationship_evidence,
+                ),
+            ),
+            location_events=(),
+        ),
+        ChunkAnalysis(
+            chunk_id=chunks[1].chunk_id,
+            scene_id="scene-01",
+            scene_revision=1,
+            summary="서연은 카페에 도착했다.",
+            entities=(),
+            places=(),
+            relationship_events=(
+                RelationshipEventCandidate(
+                    event_id="relationship-overlap",
+                    subject_key="서연",
+                    object_key="민준",
+                    category="trust",
+                    description="서연은 민준을 믿었다.",
+                    status=CandidateStatus.PENDING,
+                    scene_id="scene-01",
+                    scene_revision=1,
+                    scene_sequence=7,
+                    confidence=0.8,
+                    evidence=duplicate_relationship_evidence,
+                ),
+            ),
+            location_events=(
+                LocationEventCandidate(
+                    event_id="location-01",
+                    character_key="서연",
+                    place_key="카페",
+                    event_type=LocationEventType.ARRIVED,
+                    description="서연은 카페에 도착했다.",
+                    status=CandidateStatus.PENDING,
+                    scene_id="scene-01",
+                    scene_revision=1,
+                    scene_sequence=7,
+                    confidence=0.9,
+                    evidence=location_evidence,
+                ),
+            ),
+        ),
+    )
+
+    assert len(scene_text) == 350
+    assert [(chunk.start_offset, chunk.end_offset) for chunk in chunks] == [
+        (0, 300),
+        (250, 350),
+    ]
+    scene_snapshot = merge_chunk_analyses("scene-01", 1, 7, analyses)
+    empty_snapshot = ProjectRelationshipSnapshot.empty("project-01")
+    project_snapshot = merge_scene_into_project(empty_snapshot, scene_snapshot)
+    repository = SQLiteSnapshotRepository(tmp_path / "audit.sqlite3")
+    repository.initialize()
+    repository.commit(expected_version=None, snapshot=empty_snapshot)
+    repository.commit(expected_version=0, snapshot=project_snapshot)
+
+    stored = repository.get_version("project-01", 1)
+
+    assert stored is not None
+    assert len(stored.snapshot.relationship_events) == 1
+    assert len(stored.snapshot.location_events) == 1
+    assert stored.payload == encode_project_snapshot(project_snapshot)
+    assert stored.snapshot.active_scene_revisions == (("scene-01", 1),)
