@@ -8,7 +8,12 @@
 Projects
    └─ Story Design
         ├─ Story Bible
-        └─ Manuscript ── Writing Assistant
+        └─ Manuscript ─┬─ Narrative Memory
+                       └─ Writing Assistant
+
+Story Bible ──────────────┐
+Narrative Memory ───────├─ Writing Assistant 일관성 검사
+Manuscript ───────────────┘
 ```
 
 화살표는 작업 흐름에서 정보가 전달되는 방향을 나타내며 다른 도메인의 상태를 직접 변경할 수 있다는 뜻이 아니다. 여러 도메인이 필요한 작업은 애플리케이션 유스케이스가 조정한다.
@@ -21,6 +26,7 @@ Projects
 | Story Design      | 트로프와 초기 이야기 콘셉트     | [story-design.md](./story-design.md)           |
 | Story Bible       | 인물과 세계관의 기준 정보       | [story-bible.md](./story-bible.md)             |
 | Manuscript        | 장면과 원고 텍스트              | [manuscript.md](./manuscript.md)               |
+| Narrative Memory  | 재생성 가능한 분석과 JSON 스냅샷 | [narrative-memory.md](./narrative-memory.md)    |
 | Writing Assistant | 명시적 집필 요청과 제안         | [writing-assistant.md](./writing-assistant.md) |
 
 ## 도메인 간 유스케이스
@@ -39,10 +45,31 @@ Projects
 3. 사용자가 적용을 요청한 삽입 또는 교체 제안만 Manuscript에 전달한다.
 4. Manuscript가 커서 또는 선택 범위를 검증하고 원고를 변경한다.
 
+### Narrative Memory 장면 재분석
+
+1. 명시적 애플리케이션 유스케이스가 Manuscript의 장면 리비전과 본문을 Narrative Memory에 전달한다.
+2. Narrative Memory가 해당 장면의 `pending` 후보를 대체하고 장면 요약, 근거, 관계 사건과 장소 사건
+   후보, 새 스냅샷을 반환한다.
+3. 기존 확인 사실의 근거가 사라진 경우, 애플리케이션 유스케이스가 Story Bible에 `needs_review`
+   전환을 요청한다.
+4. Narrative Memory는 Manuscript나 Story Bible을 직접 변경하지 않는다.
+
+### 명시적 일관성 검사
+
+1. 사용자가 일관성 검사를 명시적으로 요청한다.
+2. 애플리케이션 유스케이스가 Manuscript의 요청 장면, Story Bible의 확인된 관계 사건과 장소 사건,
+   Narrative Memory의 제한된 장면 요약을 Writing Assistant에 전달한다.
+3. Writing Assistant가 진단 제안을 반환하며, 확인된 사실을 근거로 삼은 진단은 Story Bible 확인 사실
+   식별자를 인용한다.
+4. 미해결 또는 `needs_review` 후보는 확정 사실로 전달되지 않는다.
+
 ## 의존 규칙
 
 - 도메인은 다른 도메인의 상태를 직접 변경해서는 안 된다.
 - 원고 텍스트는 Manuscript만 소유하고 변경해야 한다.
 - Writing Assistant는 요청받기 전에 원고 문맥을 읽거나 제안을 생성해서는 안 된다.
+- Narrative Memory는 Manuscript에서 파생된 재생성 가능한 기억을 소유하며 Manuscript를 직접 변경하지 않는다.
+- Narrative Memory 후보는 자동 승인되지 않으며 `needs_review` 후보는 Story Bible 사실이 아니다.
+- Writing Assistant는 명시적 일관성 검사에서만 제한된 Narrative Memory 요약을 읽을 수 있다.
 - 여러 도메인을 조합하는 흐름은 애플리케이션 유스케이스가 담당해야 한다.
 - 이 문서들은 화면, 저장소, API, 프레임워크와 무관한 계약이어야 한다.
