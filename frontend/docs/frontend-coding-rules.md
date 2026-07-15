@@ -74,6 +74,50 @@ conflict before editing.
   and callbacks over child components that independently acquire hidden
   application state.
 
+## TanStack Router
+
+- Use TanStack Router (`@tanstack/react-router`) as the frontend's only
+  application router. Do not add new `react-router-dom` usage or introduce a
+  compatibility wrapper that imitates React Router APIs.
+- Define routes with TanStack Router's file-based routing under `src/routes`.
+  Route files own route declarations, search-parameter validation, and minimal
+  page adapters; pages remain responsible for screen composition and reachable
+  UI states.
+- Configure the TanStack Router Vite plugin before the React plugin and commit
+  the generated `src/routeTree.gen.ts`. Never edit the generated route tree by
+  hand.
+- Register the application router type through TanStack Router module
+  augmentation. Use typed `Link`, navigation options, path parameters, and
+  validated search parameters instead of assembling route strings or casting
+  router values.
+- Represent every user-visible page state transition in validated URL search
+  parameters. Tabs, modals, drawers, filters, sorting, pagination, and selected
+  subviews must derive their state from the URL rather than component-local
+  state alone.
+- Write each user-initiated page state transition as a new browser history
+  entry so Back and Forward replay the same sequence of tabs, modals, and other
+  page states. Use replacement navigation only for canonicalization, invalid
+  search-value recovery, or another transition that is not a user navigation
+  step.
+- Define a canonical URL representation and validated default for each
+  URL-owned state. Reloading or opening a shared URL must reconstruct the same
+  visible page state without relying on prior in-memory state.
+- Keep router construction and provider composition in `src/app`. Domain
+  modules and reusable presentation primitives must not own router setup or
+  depend on route-tree internals.
+- Keep server-state ownership in TanStack Query and feature-level application
+  workflows. Do not move API fetching, mutations, or domain rules into route
+  loaders solely because the router supports them.
+- Tests must create isolated TanStack Router instances with memory history and
+  the same generated route tree used by the application. Prefer shared test
+  router helpers over mounting ad hoc routing contexts in individual tests.
+- Test URL-owned page state through direct links, reload-equivalent initial
+  navigation, and browser Back and Forward transitions. Assert both the visible
+  state and the resulting search parameters.
+- Implement application navigation blocking and browser-unload warnings with
+  TanStack Router's supported blocker APIs. Preserve the underlying workflow's
+  success and failure semantics instead of allowing navigation unconditionally.
+
 ## State and Hook Interfaces
 
 - A feature-level application hook must own one primary workflow or state
@@ -89,9 +133,10 @@ conflict before editing.
   an asynchronous callback, make its distinct role and synchronization point
   explicit.
 - Do not let one hook accumulate draft ownership, network requests, request
-  serialization, error recovery, and dialog presentation state. Keep UI-only
-  visibility state near its presentation owner and keep persistence workflows
-  in feature-level application hooks.
+  serialization, error recovery, and dialog presentation state. Keep transient
+  component mechanics near their presentation owner, derive modal and other
+  user-visible page state from URL search parameters, and keep persistence
+  workflows in feature-level application hooks.
 - Group closely related hook results into cohesive, named interfaces when a
   consumer would otherwise destructure many fields. Examples include `draft`,
   `save`, `conflict`, and `navigation`.
