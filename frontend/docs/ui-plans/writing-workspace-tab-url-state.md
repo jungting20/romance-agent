@@ -91,12 +91,16 @@ return to or share that selected context through browser navigation.
    not duplicated in React local state.
 6. Search navigation preserves unrelated search keys so this behavior composes
    with future URL-owned workspace state.
-7. Mobile `contextOpen` remains local transient state. Closing the sheet does
+7. Search validation and any required replacement canonicalization run in the
+   route/page search layer before the page branches on workspace-query status.
+   Canonicalization is therefore initiated for loaded, loading, generic-error,
+   and project-not-found screens alike.
+8. Mobile `contextOpen` remains local transient state. Closing the sheet does
    not change tab selection or navigation state.
-8. The current installed shadcn/ui `Tabs`, `Sheet`, `Tooltip`, `ScrollArea`,
+9. The current installed shadcn/ui `Tabs`, `Sheet`, `Tooltip`, `ScrollArea`,
    and responsive panel composition remain in place.
-9. This change does not alter Manuscript or Story Bible domain behavior and
-   does not require an API operation.
+10. This change does not alter Manuscript or Story Bible domain behavior and
+    does not require an API operation.
 
 ### Considered approaches
 
@@ -119,9 +123,10 @@ return to or share that selected context through browser navigation.
 - **Selecting the already-selected tab does not need a duplicate history
   entry.** No visible selected-context transition occurred. On mobile, its
   existing click behavior may still open the context sheet.
-- **Loading and project-error states do not need tab-specific variants.** The
-  workspace must load successfully before contextual content is available;
-  validated search state remains ready for the successful screen.
+- **Loading and project-error states do not need tab-specific visual variants.**
+  Search validation and replacement canonicalization still run independently
+  of the workspace query, so a loading skeleton, generic error, or not-found
+  screen can coexist briefly with an already-initiated canonical URL recovery.
 - **Breakpoint behavior remains `md` for inline context and `xl` for
   resizable desktop panels.** These thresholds are evidenced by the current
   screen and are outside this feature's scope.
@@ -140,16 +145,22 @@ transient and would change existing overlay behavior.
 
 ### Screen and overlay inventory
 
-| ID   | Surface/state                         | Purpose and entry                                                 | Content and actions                                                                                                       | Requirements               |
-| ---- | ------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| IA-1 | Writing workspace — loaded            | Main route after workspace data succeeds.                         | Header, context navigation, manuscript editor, optional AI tools and conflict dialog. Context selection derives from URL. | REQ-1–REQ-7                |
-| IA-2 | Inline context panel (`md` and wider) | Permanently visible left of the editor.                           | Scene tree, character context, or world context according to selected tab. Tab triggers change URL selection.             | REQ-1–REQ-5, REQ-7         |
-| IA-3 | Mobile context sheet (below `md`)     | Existing left sheet opened by activating a context tab.           | Title matches selected tab; panel content matches URL selection; Close dismisses only the sheet.                          | REQ-2, REQ-3, REQ-6, REQ-7 |
-| IA-4 | Canonicalization recovery state       | Route receives explicit default, unsupported, or malformed `tab`. | Manuscript is the valid selected state; route replaces the URL with the canonical no-`tab` form.                          | REQ-1, REQ-5               |
-| IA-5 | Existing loading/error states         | Workspace query is pending, failed, or project is missing.        | Existing skeleton, retry, and return-to-library actions; no new tab-specific UI.                                          | REQ-7                      |
-| IA-6 | Existing AI and conflict overlays     | Existing user actions or autosave conflict.                       | Behavior and transient ownership remain unchanged by tab URL navigation.                                                  | REQ-7                      |
+| ID   | Surface/state                         | Purpose and entry                                                                                                    | Content and actions                                                                                                          | Requirements               |
+| ---- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| IA-1 | Writing workspace — loaded            | Main route after workspace data succeeds.                                                                            | Header, context navigation, manuscript editor, optional AI tools and conflict dialog. Context selection derives from URL.    | REQ-1–REQ-7                |
+| IA-2 | Inline context panel (`md` and wider) | Permanently visible left of the editor.                                                                              | Scene tree, character context, or world context according to selected tab. Tab triggers change URL selection.                | REQ-1–REQ-5, REQ-7         |
+| IA-3 | Mobile context sheet (below `md`)     | Existing left sheet opened by activating a context tab.                                                              | Title matches selected tab; panel content matches URL selection; Close dismisses only the sheet.                             | REQ-2, REQ-3, REQ-6, REQ-7 |
+| IA-4 | Canonicalization recovery state       | Route/page search layer receives explicit default, unsupported, or malformed `tab`, independently of workspace data. | Manuscript is the valid selected state; replacement removes only `tab` while preserving unrelated search keys.               | REQ-1, REQ-5               |
+| IA-5 | Existing loading/error states         | Workspace query is pending, failed, or project is missing.                                                           | Existing skeleton, retry, and return-to-library actions; any required URL replacement is still initiated before this branch. | REQ-5, REQ-7               |
+| IA-6 | Existing AI and conflict overlays     | Existing user actions or autosave conflict.                                                                          | Behavior and transient ownership remain unchanged by tab URL navigation.                                                     | REQ-7                      |
 
 ### Canonical URL mapping
+
+The examples below show only `tab` to make the selected-context contract
+readable. Other search keys are not removed: canonicalization deletes or
+rewrites only `tab`. For example, `?tab=manuscript&view=dense` replacement-
+canonicalizes to `?view=dense`, and changing to World produces
+`?tab=world&view=dense` (ordering is serializer-defined and not significant).
 
 | Selected context    | Accepted input                          | Canonical result                             | History treatment                         |
 | ------------------- | --------------------------------------- | -------------------------------------------- | ----------------------------------------- |
@@ -159,34 +170,53 @@ transient and would change existing overlay behavior.
 | World               | `tab=world`                             | `/projects/{projectId}/write?tab=world`      | Direct load as-is; user selection pushes. |
 | Manuscript recovery | unknown, malformed, or non-string `tab` | `/projects/{projectId}/write`                | Replace.                                  |
 
+### Raw parsing and validation cases
+
+TanStack Router's installed default search parser first decodes query keys and
+then JSON-parses scalar strings when possible. The route validator must accept
+only one scalar string equal to `manuscript`, `characters`, or `world` (with
+`manuscript` then treated as non-canonical). Representative raw inputs are:
+
+| Raw URL search               | Value presented to route validation            | Result                                                                   |
+| ---------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| no `tab`                     | `undefined`                                    | Valid default Manuscript; no replacement.                                |
+| `?tab=`                      | empty scalar string `""`                       | Invalid; select Manuscript and replacement-remove only `tab`.            |
+| `?tab=characters&tab=world`  | array `['characters', 'world']`                | Invalid non-scalar; select Manuscript and replacement-remove only `tab`. |
+| `?tab=true`                  | boolean `true`                                 | Invalid non-string; select Manuscript and replacement-remove only `tab`. |
+| `?tab=manuscript&view=dense` | scalar string `"manuscript"`; `view` preserved | Non-canonical default; replace to `?view=dense`.                         |
+| `?tab=characters&view=dense` | scalar string `"characters"`; `view` preserved | Valid Characters; no recovery navigation.                                |
+
 ### State table
 
-| Route state           | Selected trigger                                 | Inline content            | Mobile sheet                                                    | URL effect            |
-| --------------------- | ------------------------------------------------ | ------------------------- | --------------------------------------------------------------- | --------------------- |
-| No `tab`              | `원고 보기`                                      | Scene tree                | Closed initially; opens Scene tree on trigger activation        | None                  |
-| `characters`          | `인물 보기`                                      | Character context         | Closed initially; opens Character context on trigger activation | None                  |
-| `world`               | `세계관 보기`                                    | World context             | Closed initially; opens World context on trigger activation     | None                  |
-| Explicit `manuscript` | `원고 보기`                                      | Scene tree                | Same as default                                                 | Replace to omit `tab` |
-| Invalid `tab`         | `원고 보기`; no invalid trigger is ever selected | Scene tree                | Same as default                                                 | Replace to omit `tab` |
-| Mobile sheet closes   | Unchanged                                        | Not applicable below `md` | Closed                                                          | Unchanged             |
-| Back/Forward          | Matches destination entry                        | Matches destination entry | Open/closed transient state is not reconstructed                | No new entry          |
+| Route state                                                       | Selected trigger                                 | Inline content                            | Mobile sheet                                                    | URL effect                                            |
+| ----------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------- |
+| No `tab`                                                          | `원고 보기`                                      | Scene tree                                | Closed initially; opens Scene tree on trigger activation        | None                                                  |
+| `characters`                                                      | `인물 보기`                                      | Character context                         | Closed initially; opens Character context on trigger activation | None                                                  |
+| `world`                                                           | `세계관 보기`                                    | World context                             | Closed initially; opens World context on trigger activation     | None                                                  |
+| Explicit `manuscript`                                             | `원고 보기`                                      | Scene tree                                | Same as default                                                 | Replace to omit `tab`                                 |
+| Invalid `tab`                                                     | `원고 보기`; no invalid trigger is ever selected | Scene tree                                | Same as default                                                 | Replace to omit `tab`                                 |
+| Invalid/default `tab` while data is pending, failed, or not found | Context UI is not rendered in that data state    | Existing skeleton/error/not-found content | Not applicable                                                  | Replacement is still initiated; only `tab` is removed |
+| Mobile sheet closes                                               | Unchanged                                        | Not applicable below `md`                 | Closed                                                          | Unchanged                                             |
+| Back/Forward                                                      | Matches destination entry                        | Matches destination entry                 | Open/closed transient state is not reconstructed                | No new entry                                          |
 
 ## 9. User Flow
 
 ```mermaid
 flowchart TD
-  A[Open writing-workspace URL] --> B{Workspace data result}
-  B -->|Pending| L[IA-5 Existing loading state]
-  B -->|Error or not found| E[IA-5 Existing error state]
-  B -->|Loaded| V{Validate tab search value}
-  V -->|Missing| M[IA-1 Select Manuscript]
-  V -->|characters| C[IA-1 Select Characters]
-  V -->|world| W[IA-1 Select World]
-  V -->|Explicit manuscript or invalid| R[IA-4 Select Manuscript and replace canonical URL]
-  M --> D{Viewport at least md?}
-  C --> D
-  W --> D
-  R --> D
+  A[Open writing-workspace URL] --> P[TanStack parses raw search]
+  P --> V{Route validates one allowed scalar tab string}
+  V -->|Missing| M[Select Manuscript; no replacement]
+  V -->|characters| C[Select Characters]
+  V -->|world| W[Select World]
+  V -->|Explicit manuscript, empty, array, or other invalid value| R[IA-4 Select Manuscript; initiate replacement removing only tab]
+  M --> Q{Workspace data result}
+  C --> Q
+  W --> Q
+  R --> Q
+  Q -->|Pending| L[IA-5 Existing loading state; replacement remains independent]
+  Q -->|Generic error or not found| E[IA-5 Existing error state; replacement remains independent]
+  Q -->|Loaded| B[IA-1 Loaded workspace]
+  B --> D{Viewport at least md?}
   D -->|Yes| I[IA-2 Render matching inline context]
   D -->|No| S[IA-1 Show matching selected trigger; sheet stays closed]
   S --> T[User activates context tab]
@@ -270,11 +300,20 @@ Close behavior:
 
 ```text
 Input:  /projects/{id}/write?tab=manuscript
+        /projects/{id}/write?tab=
+        /projects/{id}/write?tab=characters&tab=world
         /projects/{id}/write?tab=unsupported
 
 Visible state: Manuscript selected; no invalid panel or error flash
 URL:           /projects/{id}/write
 History:       current entry replaced
+
+With unrelated state:
+Input:         /projects/{id}/write?tab=manuscript&view=dense
+URL:           /projects/{id}/write?view=dense
+
+The replacement is initiated before workspace-query loading/error/not-found
+rendering branches; those existing screens do not postpone URL recovery.
 ```
 
 ## 11. Responsive Behavior
@@ -291,19 +330,19 @@ planned.
 
 ## 12. UI States
 
-| State category           | Planned behavior                                                                                                                    |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Default/success          | Manuscript selected at the canonical URL with no `tab`.                                                                             |
-| Characters/World success | Matching trigger and panel selected from canonical search state.                                                                    |
-| Canonicalizing           | Manuscript is the safe visible state while replacement removes explicit default or invalid input. No separate spinner or message.   |
-| Loading                  | Existing workspace skeleton remains; no new tab skeleton.                                                                           |
-| Empty                    | Not introduced. Existing domain panels own any current empty presentation.                                                          |
-| Error                    | Existing workspace load, not-found, autosave, and conflict errors remain. Invalid `tab` is recovered rather than shown as an error. |
-| Disabled                 | No new disabled tab state. Existing controls retain their semantics.                                                                |
-| Validation               | Route validates `tab`; unsupported/non-string values resolve to Manuscript and replacement-canonicalize.                            |
-| Mobile Sheet open        | Sheet title and body match selected URL context.                                                                                    |
-| Mobile Sheet closed      | Selected tab and URL persist; editor remains visible.                                                                               |
-| History replay           | Trigger and contextual content update from the destination search state without creating another entry.                             |
+| State category           | Planned behavior                                                                                                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Default/success          | Manuscript selected at the canonical URL with no `tab`.                                                                                                                                 |
+| Characters/World success | Matching trigger and panel selected from canonical search state.                                                                                                                        |
+| Canonicalizing           | Route/page search handling initiates replacement before the workspace-query result branch. It removes only `tab`, preserves unrelated keys, and needs no separate spinner or message.   |
+| Loading                  | Existing workspace skeleton remains; no new tab skeleton. Explicit-default or invalid `tab` recovery still starts while loading.                                                        |
+| Empty                    | Not introduced. Existing domain panels own any current empty presentation.                                                                                                              |
+| Error                    | Existing generic load, not-found, autosave, and conflict errors remain. Search recovery is independent: an invalid `tab` is replacement-removed even when a query error screen renders. |
+| Disabled                 | No new disabled tab state. Existing controls retain their semantics.                                                                                                                    |
+| Validation               | Accept only one allowed scalar string. Empty string, repeated-key arrays, booleans/numbers, objects, and unsupported strings resolve to Manuscript and replacement-remove only `tab`.   |
+| Mobile Sheet open        | Sheet title and body match selected URL context.                                                                                                                                        |
+| Mobile Sheet closed      | Selected tab and URL persist; editor remains visible.                                                                                                                                   |
+| History replay           | Trigger and contextual content update from the destination search state without creating another entry.                                                                                 |
 
 ## 13. Accessibility
 
@@ -347,43 +386,49 @@ installed, restyled, or moved for this feature.
 
 ## 15. Component Structure
 
-| Layer/component                                     | Classification                            | Responsibility                                                                                 | Required data/state                                                      | Emitted event                                      |
-| --------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
-| Writing-workspace route                             | Route declaration                         | Validate `tab`, provide typed search state, and recover non-canonical values.                  | Raw search input; validated `ContextMode`.                               | Replacement navigation for canonicalization.       |
-| `WritingWorkspacePage` / loaded composition         | Product composition                       | Read selected context from route and coordinate context navigation with existing workspace UI. | Workspace response; selected context; existing transient/workflow state. | Typed tab search navigation.                       |
-| Context navigation rail                             | Product composition                       | Present the three existing context tools and AI entry point.                                   | Context tool metadata; URL-selected value; viewport behavior.            | Context-tab activation; existing AI open.          |
-| `Tabs`                                              | Available shadcn/ui primitive             | Controlled vertical selected-context structure.                                                | URL-selected value and orientation. No independent selected state.       | Value change from pointer/keyboard activation.     |
-| `TabsList` / `TabsTrigger`                          | Available shadcn/ui primitives            | Accessible labeled context navigation and active indication.                                   | Existing labels, icons, selected value.                                  | Tab activation; on mobile also request Sheet open. |
-| `TabsContent` / `ContextPanelContent`               | Available primitive + product composition | Render Scene tree, Character context, or World context according to the controlled tab value.  | Manuscript draft; Story Bible; selected Tabs context.                    | Existing child events only.                        |
-| Mobile context `Sheet`                              | Available shadcn/ui primitive             | Transiently display the selected contextual panel below `md`.                                  | Local `contextOpen`; URL-selected title/content.                         | Open/close only; never tab navigation on close.    |
-| Inline/resizable layout                             | Existing product composition              | Display selected context beside editor at wider widths.                                        | Existing media-query and panel-size state.                               | Existing resize events only.                       |
-| AI Sheet/panel, autosave indicator, conflict dialog | Existing product compositions             | Preserve assistant, save feedback, and conflict workflows.                                     | Existing local/workflow state.                                           | Existing events unchanged.                         |
+| Layer/component                                          | Classification                            | Responsibility                                                                                                   | Required data/state                                                                   | Emitted event                                                   |
+| -------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Writing-workspace route                                  | Route declaration                         | Validate raw `tab` as one allowed scalar string and provide typed selected context before data-result rendering. | Raw parsed search input; validated `ContextMode`; unrelated search keys.              | Canonicalization signal/state.                                  |
+| `WritingWorkspacePage` search layer / loaded composition | Product composition                       | Initiate replacement independent of workspace-query status, then coordinate loaded-screen tab navigation.        | Validated search; workspace query status/response; existing transient/workflow state. | Replacement that removes only `tab`; typed user tab navigation. |
+| Context navigation rail                                  | Product composition                       | Present the three existing context tools and AI entry point.                                                     | Context tool metadata; URL-selected value; viewport behavior.                         | Context-tab activation; existing AI open.                       |
+| `Tabs`                                                   | Available shadcn/ui primitive             | Controlled vertical selected-context structure.                                                                  | URL-selected value and orientation. No independent selected state.                    | Value change from pointer/keyboard activation.                  |
+| `TabsList` / `TabsTrigger`                               | Available shadcn/ui primitives            | Accessible labeled context navigation and active indication.                                                     | Existing labels, icons, selected value.                                               | Tab activation; on mobile also request Sheet open.              |
+| `TabsContent` / `ContextPanelContent`                    | Available primitive + product composition | Render Scene tree, Character context, or World context according to the controlled tab value.                    | Manuscript draft; Story Bible; selected Tabs context.                                 | Existing child events only.                                     |
+| Mobile context `Sheet`                                   | Available shadcn/ui primitive             | Transiently display the selected contextual panel below `md`.                                                    | Local `contextOpen`; URL-selected title/content.                                      | Open/close only; never tab navigation on close.                 |
+| Inline/resizable layout                                  | Existing product composition              | Display selected context beside editor at wider widths.                                                          | Existing media-query and panel-size state.                                            | Existing resize events only.                                    |
+| AI Sheet/panel, autosave indicator, conflict dialog      | Existing product compositions             | Preserve assistant, save feedback, and conflict workflows.                                                       | Existing local/workflow state.                                                        | Existing events unchanged.                                      |
 
-The route owns validation; the page owns the concise typed navigation callback;
-the reusable shadcn/ui primitives remain unaware of route-tree internals.
+The route owns validation; the page search layer initiates canonicalization
+before branching on query status and owns the concise typed navigation
+callback. The reusable shadcn/ui primitives remain unaware of route-tree
+internals.
 
 ## 16. Requirement Traceability Matrix
 
-| Requirement | IA/state/flow                         | Wireframe or component                         | Verification focus                                                                                                             |
-| ----------- | ------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| REQ-1       | IA-1, IA-2; no-`tab` state            | Desktop default; route + controlled Tabs       | Initial canonical URL shows Manuscript and omits `tab`.                                                                        |
-| REQ-2       | IA-1–IA-3; Characters/World states    | Desktop/mobile; Tabs + contextual content      | Direct initial URLs and reload-equivalent navigation select matching trigger/content.                                          |
-| REQ-3       | IA-1–IA-3; tab-choice flow            | Context rail; typed page navigation            | Click each tab; assert visible selection and canonical search, including removal for Manuscript.                               |
-| REQ-4       | History flow; history-replay state    | Route + controlled Tabs                        | Characters → World → Back/Forward; assert URL, trigger, and panel together.                                                    |
-| REQ-5       | IA-4; canonicalization flow           | Canonicalization wireframe; route              | Explicit Manuscript and invalid inputs render default and replace rather than push.                                            |
-| REQ-6       | IA-3; mobile close flow               | Mobile Sheet wireframe                         | Select tab, close Sheet, assert dialog closed while URL/selected trigger stay unchanged.                                       |
-| REQ-7       | IA-1, IA-5, IA-6; all retained states | Existing Tabs/Sheet and workspace compositions | Existing focused screen suite plus full frontend checks; no visual, domain, API, autosave, AI, conflict, or layout regression. |
+| Requirement | IA/state/flow                                | Wireframe or component                              | Verification focus                                                                                                                                                                                                            |
+| ----------- | -------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| REQ-1       | IA-1, IA-2; no-`tab` state                   | Desktop default; route + controlled Tabs            | Initial canonical URL shows Manuscript and omits `tab`.                                                                                                                                                                       |
+| REQ-2       | IA-1–IA-3; Characters/World states           | Desktop/mobile; Tabs + contextual content           | Direct initial URLs and reload-equivalent navigation select matching trigger/content.                                                                                                                                         |
+| REQ-3       | IA-1–IA-3; tab-choice flow                   | Context rail; typed page navigation                 | Click each tab; assert visible selection and canonical search, including removal for Manuscript.                                                                                                                              |
+| REQ-4       | History flow; history-replay state           | Route + controlled Tabs                             | Characters → World → Back/Forward; assert URL, trigger, and panel together.                                                                                                                                                   |
+| REQ-5       | IA-4, IA-5; validation/canonicalization flow | Canonicalization wireframe; route/page search layer | Test explicit Manuscript, empty `?tab=`, repeated keys, non-string and unsupported inputs across loaded/loading/error/not-found states; assert replace, default selection where rendered, and preservation of unrelated keys. |
+| REQ-6       | IA-3; mobile close flow                      | Mobile Sheet wireframe                              | Select tab, close Sheet, assert dialog closed while URL/selected trigger stay unchanged.                                                                                                                                      |
+| REQ-7       | IA-1, IA-5, IA-6; all retained states        | Existing Tabs/Sheet and workspace compositions      | Existing focused screen suite plus full frontend checks; no visual, domain, API, autosave, AI, conflict, or layout regression.                                                                                                |
 
 ## 17. Implementation Considerations
 
 - Keep search validation in
   `frontend/src/routes/projects.$projectId.write.tsx`; keep the route adapter
   thin.
+- Place the replacement-canonicalization owner in the route/page search layer
+  above the workspace-query pending/error/not-found branches. Do not defer it
+  to `LoadedWritingWorkspace` or condition it on query success.
 - Derive the controlled `Tabs` value in the page from typed validated search
   state. Remove local ownership of `contextMode`; do not mirror route state in
   an effect or ref.
-- Use typed TanStack Router search navigation. Update only `tab` and preserve
-  other search keys. Omit `tab` for Manuscript.
+- Use typed TanStack Router search navigation. Update or remove only `tab` and
+  preserve all unrelated search keys. Canonical URL examples in this plan omit
+  other keys only for readability. Omit `tab` for Manuscript.
 - Use normal push behavior for a changed user selection. Use replacement only
   for explicit default or invalid-value canonicalization.
 - Preserve the mobile trigger's existing ability to open the context Sheet,
@@ -397,6 +442,17 @@ the reusable shadcn/ui primitives remain unaware of route-tree internals.
   route tree and memory history. Assert both observable tab/panel state and
   router search state for direct URLs, clicks, canonicalization, and
   Back/Forward.
+- Construct memory-history entries from representative raw URLs so validation
+  receives the real TanStack-parsed shapes: `?tab=` produces `""`, and
+  `?tab=characters&tab=world` produces an array. Also cover a non-string parsed
+  value such as `?tab=true` and an unsupported scalar string.
+- Prove canonicalization does not depend on workspace-query success: assert the
+  canonical router location while the existing loading skeleton is visible,
+  while the generic loading-error view is visible, and while the project-
+  not-found view is visible.
+- Include an unrelated key in click and recovery cases. Assert valid tab
+  navigation preserves it and invalid/explicit-Manuscript recovery removes
+  only `tab` (for example, `?tab=&view=dense` becomes `?view=dense`).
 - Focused tests should distinguish push navigation from replacement by proving
   history replay and ensuring recovery does not create an extra invalid/default
   step.
