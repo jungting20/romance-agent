@@ -28,7 +28,8 @@ The main agent owns the end-to-end result. It must:
    substantial and independent enough to delegate.
 5. Approve the exact UI plan used by frontend implementers and reviewers when
    UI behavior changes.
-6. Approve the exact OpenAPI baseline used by implementers and reviewers.
+6. Approve the exact OpenAPI baseline used by implementers and reviewers when
+   a consumer-facing API is involved.
 7. Triage review findings and resolve contract or implementation conflicts.
 8. Integrate delegated work and verify frontend-backend behavior.
 9. Run the final checks for every affected application.
@@ -79,18 +80,23 @@ application or shared documentation unless that work is explicitly assigned.
 Two agents must not modify the same file concurrently.
 
 Review agents never edit files. Every review assignment must state the affected
-screen routes or operation IDs, implementation handoff, acceptance criteria,
-relevant domain contracts, approved UI plan and OpenAPI baseline when
-applicable, accepted deviations, review boundary, and safe verification
-commands. Reviewers return evidence-based findings with severity,
+screen routes, API operation IDs when applicable, or backend entry points;
+implementation handoff; acceptance criteria; relevant domain contracts;
+approved UI plan and OpenAPI baseline when applicable; accepted deviations;
+review boundary; and safe verification commands. Reviewers return
+evidence-based findings with severity,
 introduced/pre-existing classification, source location, impact, repair
 direction, and re-review requirement.
 
-The main agent validates and triages every finding. Accepted findings return to
-the owning implementation agent for repair when practical. Dispatch the same
-reviewer for re-review when a blocking or high finding requires confirmation or
-when a fix materially changes the reviewed behavior. `No blocking findings`
-from a reviewer is not approval or permission to merge.
+The main agent validates and triages every finding. Every accepted finding must
+be resolved before completion, regardless of severity. Accepted findings return
+to the owning implementation agent for repair when practical; this preference
+selects the fixer and never makes resolution optional. Every rejected finding
+retains concrete main-agent rationale. Dispatch the same reviewer for re-review
+when a blocking or high finding requires confirmation or when any fix materially
+changes the reviewed behavior. Medium and low resolutions do not otherwise
+require re-review. `No blocking findings` from a reviewer is not approval or
+permission to merge.
 
 If delegated work can change domain content, the task must also assign the
 matching `docs/domains/*.md` update to that subagent or explicitly retain that
@@ -238,8 +244,9 @@ its replacement. Review agents must never edit or approve the API spec.
   adoption candidates. Pre-existing findings do not block the feature unless
   the change worsened them, acceptance criteria require repair, or they expose
   a blocking correctness or safety problem in affected behavior.
-- Confirm every accepted blocking and high finding is resolved; re-review
-  material repairs.
+- Confirm every accepted finding is resolved, regardless of severity; re-review
+  blocking or high findings that require confirmation and any repair that
+  materially changes reviewed behavior.
 - Record concrete main-agent rationale for every rejected finding.
 - The main agent must review delegated diffs and integration behavior before
   claiming the task is complete.
