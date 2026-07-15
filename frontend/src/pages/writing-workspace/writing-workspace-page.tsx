@@ -14,12 +14,20 @@ import { Link, useBeforeUnload, useBlocker, useParams } from "react-router-dom";
 
 import { ApiRequestError } from "@/app/infrastructure/api/api-client";
 import type { ProjectWorkspaceResponse } from "@/app/infrastructure/api/contracts";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { applyWritingSuggestion } from "@/features/apply-writing-suggestion";
 import { ManuscriptConflictDialog } from "@/features/manuscript-conflict";
 import {
@@ -27,6 +35,7 @@ import {
   useManuscriptAutosave,
 } from "@/features/manuscript-autosave";
 import { useProjectWorkspaceQuery } from "@/features/project-persistence";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import type { TextRange } from "@/modules/manuscript";
 import { updateSceneContent } from "@/modules/manuscript";
 import { ManuscriptEditor } from "@/modules/manuscript/ui/manuscript-editor";
@@ -52,13 +61,26 @@ export function WritingWorkspacePage() {
 
   if (workspaceQuery.isPending) {
     return (
-      <main className="grid min-h-svh place-items-center bg-[#ede6dd] p-6">
-        <p
-          role="status"
-          className="rounded-2xl border border-border bg-card p-8 shadow-sm"
-        >
-          작업 공간을 불러오는 중이에요.
-        </p>
+      <main role="status" className="flex min-h-svh flex-col overflow-hidden bg-[#ede6dd]">
+        <span className="sr-only">작업 공간을 불러오는 중이에요.</span>
+        <header aria-hidden="true" className="flex h-16 items-center gap-3 border-b bg-card px-5">
+          <Skeleton className="size-8 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        </header>
+        <div aria-hidden="true" className="flex min-h-0 flex-1">
+          <div className="w-14 border-r bg-sidebar p-3">
+            <Skeleton className="h-32 w-full" />
+          </div>
+          <div className="hidden w-64 border-r bg-sidebar/90 p-4 md:block">
+            <Skeleton className="h-full w-full" />
+          </div>
+          <div className="flex-1 p-6">
+            <Skeleton className="mx-auto h-full max-w-3xl bg-card" />
+          </div>
+        </div>
       </main>
     );
   }
@@ -67,39 +89,35 @@ export function WritingWorkspacePage() {
     if (isProjectNotFound(workspaceQuery.error)) {
       return (
         <main className="grid min-h-svh place-items-center bg-[#ede6dd] p-6 text-center">
-          <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
-            <h1 className="font-heading text-2xl font-semibold">
-              프로젝트를 찾을 수 없어요
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
+          <Alert className="max-w-md p-8 shadow-sm">
+            <AlertTitle>
+              <h1 className="font-heading text-2xl font-semibold">프로젝트를 찾을 수 없어요</h1>
+            </AlertTitle>
+            <AlertDescription className="mt-2">
               작품 서재에서 다른 프로젝트를 선택해 주세요.
-            </p>
-            <Button asChild className="mt-5">
-              <Link to="/" aria-label="작품 서재로 돌아가기">
-                <ArrowLeft data-icon="inline-start" /> 작품 서재로 돌아가기
-              </Link>
-            </Button>
-          </div>
+            </AlertDescription>
+            <AlertAction className="static mt-5">
+              <Button asChild>
+                <Link to="/" aria-label="작품 서재로 돌아가기">
+                  <ArrowLeft data-icon="inline-start" /> 작품 서재로 돌아가기
+                </Link>
+              </Button>
+            </AlertAction>
+          </Alert>
         </main>
       );
     }
 
     return (
       <main className="grid min-h-svh place-items-center bg-[#ede6dd] p-6 text-center">
-        <div
-          role="alert"
-          className="rounded-2xl border border-destructive/30 bg-card p-8 shadow-sm"
-        >
-          <p>작업 공간을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-4"
-            onClick={() => void workspaceQuery.refetch()}
-          >
-            작업 공간 다시 불러오기
-          </Button>
-        </div>
+        <Alert variant="destructive" className="max-w-md p-8 shadow-sm">
+          <AlertTitle>작업 공간을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</AlertTitle>
+          <AlertAction className="static mt-4">
+            <Button type="button" variant="outline" onClick={() => void workspaceQuery.refetch()}>
+              작업 공간 다시 불러오기
+            </Button>
+          </AlertAction>
+        </Alert>
       </main>
     );
   }
@@ -107,14 +125,13 @@ export function WritingWorkspacePage() {
   return <LoadedWritingWorkspace workspace={workspaceQuery.data} />;
 }
 
-function LoadedWritingWorkspace({
-  workspace,
-}: {
-  workspace: ProjectWorkspaceResponse;
-}) {
+function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResponse }) {
   const [contextMode, setContextMode] = useState<ContextMode>("manuscript");
+  const [contextOpen, setContextOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [selection, setSelection] = useState<TextRange | null>(null);
+  const contextIsInline = useMediaQuery("(min-width: 768px)");
+  const desktopIsResizable = useMediaQuery("(min-width: 1280px)");
   const { project, storyBible: bible } = workspace;
   const {
     draft,
@@ -144,21 +161,54 @@ function LoadedWritingWorkspace({
   if (!scene) {
     return (
       <main className="grid min-h-svh place-items-center bg-[#ede6dd] p-6">
-        <p
-          role="alert"
-          className="rounded-2xl border border-destructive/30 bg-card p-8"
-        >
-          현재 집필할 장면을 찾을 수 없어요.
-        </p>
+        <Alert variant="destructive" className="max-w-md p-8">
+          <AlertTitle>현재 집필할 장면을 찾을 수 없어요.</AlertTitle>
+        </Alert>
       </main>
     );
   }
 
-  const selectedRange =
-    selection && selection.start !== selection.end ? selection : null;
+  const selectedRange = selection && selection.start !== selection.end ? selection : null;
   const selectedText = selectedRange
     ? scene.content.slice(selectedRange.start, selectedRange.end)
     : "";
+  const selectedContextTool =
+    contextTools.find(({ mode }) => mode === contextMode) ?? contextTools[0];
+  const assistantPanel = (
+    <WritingToolPanel
+      sceneContent={scene.content}
+      selectedText={selectedText}
+      characterNames={bible.characters.map(({ name }) => name)}
+      onClose={() => setAssistantOpen(false)}
+      onApply={(suggestion) => {
+        const updated = applyWritingSuggestion({
+          manuscript: draft,
+          sceneId: scene.id,
+          suggestion,
+          cursorPosition: selection?.end ?? scene.content.length,
+          selectedRange,
+        });
+        const updatedScene = updated.scenes.find(({ id }) => id === scene.id);
+        updateDraft(updated);
+        if (updatedScene) {
+          setSelection({
+            start: updatedScene.content.length,
+            end: updatedScene.content.length,
+          });
+        }
+      }}
+    />
+  );
+
+  const editor = (
+    <main className="h-full min-w-0 overflow-y-auto p-3 sm:p-5 lg:p-6">
+      <ManuscriptEditor
+        scene={scene}
+        onChange={(content) => updateDraft(updateSceneContent(draft, scene.id, content))}
+        onSelectionChange={setSelection}
+      />
+    </main>
+  );
 
   return (
     <div className="flex min-h-svh flex-col overflow-hidden bg-[#ede6dd]">
@@ -173,49 +223,43 @@ function LoadedWritingWorkspace({
             <Feather className="size-3.5" />
           </span>
           <div className="min-w-0">
-            <h1 className="truncate font-heading text-base font-semibold">
-              {project.title}
-            </h1>
-            <p className="truncate text-[11px] text-muted-foreground">
-              제1장 · {scene.title}
-            </p>
+            <h1 className="truncate font-heading text-base font-semibold">{project.title}</h1>
+            <p className="truncate text-[11px] text-muted-foreground">제1장 · {scene.title}</p>
           </div>
         </div>
-        <AutosaveIndicator
-          status={status}
-          onRetry={retry}
-          onOpenConflict={openConflictDialog}
-        />
+        <AutosaveIndicator status={status} onRetry={retry} onOpenConflict={openConflictDialog} />
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <nav
-          aria-label="집필 도메인"
-          className="flex w-14 shrink-0 flex-col items-center gap-2 border-r border-border bg-sidebar py-3"
-        >
-          {contextTools.map((tool) => {
-            const Icon = tool.icon;
-            return (
-              <Tooltip key={tool.mode}>
-                <TooltipTrigger asChild>
-                  <Button
-                    aria-label={tool.label}
-                    variant={contextMode === tool.mode ? "secondary" : "ghost"}
-                    size="icon"
-                    onClick={() => setContextMode(tool.mode)}
-                    className={
-                      contextMode === tool.mode
-                        ? "text-primary shadow-sm"
-                        : "text-muted-foreground"
-                    }
-                  >
-                    <Icon />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="right">{tool.label}</TooltipContent>
-              </Tooltip>
-            );
-          })}
+      <Tabs
+        value={contextMode}
+        orientation="vertical"
+        onValueChange={(value) => setContextMode(value as ContextMode)}
+        className="min-h-0 flex-1 flex-row gap-0"
+      >
+        <nav className="flex w-14 shrink-0 flex-col items-center border-r border-border bg-sidebar py-3">
+          <TabsList aria-label="집필 도메인" variant="line" className="flex-col gap-2 p-0">
+            {contextTools.map((tool) => {
+              const Icon = tool.icon;
+              return (
+                <Tooltip key={tool.mode}>
+                  <TooltipTrigger asChild>
+                    <TabsTrigger
+                      value={tool.mode}
+                      aria-label={tool.label}
+                      onClick={() => {
+                        setContextMode(tool.mode);
+                        if (!contextIsInline) setContextOpen(true);
+                      }}
+                      className="size-8 justify-center p-0 text-muted-foreground data-active:text-primary"
+                    >
+                      <Icon />
+                    </TabsTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{tool.label}</TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </TabsList>
 
           <div className="mt-auto">
             <Tooltip>
@@ -235,54 +279,71 @@ function LoadedWritingWorkspace({
           </div>
         </nav>
 
-        <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-border bg-sidebar/90 md:block">
-          {contextMode === "manuscript" ? (
-            <SceneTree manuscript={draft} />
-          ) : (
-            <StoryContextPanel bible={bible} mode={contextMode} />
-          )}
-        </aside>
-
-        <main className="min-w-0 flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6">
-          <ManuscriptEditor
-            scene={scene}
-            onChange={(content) =>
-              updateDraft(updateSceneContent(draft, scene.id, content))
-            }
-            onSelectionChange={setSelection}
-          />
-        </main>
-
-        {assistantOpen && (
-          <div className="fixed inset-y-16 right-0 z-30 shadow-2xl xl:static xl:inset-auto xl:z-auto xl:shadow-none">
-            <WritingToolPanel
-              sceneContent={scene.content}
-              selectedText={selectedText}
-              characterNames={bible.characters.map(({ name }) => name)}
-              onClose={() => setAssistantOpen(false)}
-              onApply={(suggestion) => {
-                const updated = applyWritingSuggestion({
-                  manuscript: draft,
-                  sceneId: scene.id,
-                  suggestion,
-                  cursorPosition: selection?.end ?? scene.content.length,
-                  selectedRange,
-                });
-                const updatedScene = updated.scenes.find(
-                  ({ id }) => id === scene.id,
-                );
-                updateDraft(updated);
-                if (updatedScene) {
-                  setSelection({
-                    start: updatedScene.content.length,
-                    end: updatedScene.content.length,
-                  });
-                }
-              }}
-            />
-          </div>
+        {!contextIsInline ? (
+          <>
+            <Sheet open={contextOpen} onOpenChange={setContextOpen}>
+              <SheetContent side="left" className="w-full gap-0 p-0 sm:max-w-sm">
+                <SheetHeader>
+                  <SheetTitle asChild>
+                    <span>{selectedContextTool.label}</span>
+                  </SheetTitle>
+                  <SheetDescription>현재 장면과 관련된 집필 정보를 확인합니다.</SheetDescription>
+                </SheetHeader>
+                <ScrollArea className="min-h-0 flex-1">
+                  <ContextPanelContent draft={draft} bible={bible} />
+                </ScrollArea>
+              </SheetContent>
+            </Sheet>
+            <div className="min-w-0 flex-1">{editor}</div>
+          </>
+        ) : desktopIsResizable ? (
+          <ResizablePanelGroup orientation="horizontal" className="min-w-0 flex-1">
+            <ResizablePanel defaultSize={20} minSize={15}>
+              <ScrollArea className="h-full bg-sidebar/90">
+                <ContextPanelContent draft={draft} bible={bible} />
+              </ScrollArea>
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={55} minSize={40}>
+              {editor}
+            </ResizablePanel>
+            {assistantOpen && (
+              <>
+                <ResizableHandle withHandle />
+                <ResizablePanel defaultSize={25} minSize={20} className="[&>aside]:w-full">
+                  {assistantPanel}
+                </ResizablePanel>
+              </>
+            )}
+          </ResizablePanelGroup>
+        ) : (
+          <>
+            <aside className="w-64 shrink-0 overflow-y-auto border-r border-border bg-sidebar/90">
+              <ContextPanelContent draft={draft} bible={bible} />
+            </aside>
+            <div className="min-w-0 flex-1">{editor}</div>
+          </>
         )}
-      </div>
+        {!desktopIsResizable && (
+          <Sheet open={assistantOpen} onOpenChange={setAssistantOpen}>
+            <SheetContent
+              side="right"
+              showCloseButton={false}
+              className="w-full gap-0 p-0 sm:max-w-md"
+            >
+              <SheetHeader className="sr-only">
+                <SheetTitle asChild>
+                  <span>AI 집필 도구</span>
+                </SheetTitle>
+                <SheetDescription>
+                  현재 장면을 바탕으로 집필 제안을 만들고 원고에 적용합니다.
+                </SheetDescription>
+              </SheetHeader>
+              {assistantPanel}
+            </SheetContent>
+          </Sheet>
+        )}
+      </Tabs>
       <ManuscriptConflictDialog
         open={isConflictDialogOpen}
         comparison={conflictComparison}
@@ -297,6 +358,28 @@ function LoadedWritingWorkspace({
         onRetryKeepLocal={() => void retryKeepLocal()}
       />
     </div>
+  );
+}
+
+function ContextPanelContent({
+  draft,
+  bible,
+}: {
+  draft: ProjectWorkspaceResponse["manuscript"];
+  bible: ProjectWorkspaceResponse["storyBible"];
+}) {
+  return (
+    <>
+      <TabsContent value="manuscript">
+        <SceneTree manuscript={draft} />
+      </TabsContent>
+      <TabsContent value="characters">
+        <StoryContextPanel bible={bible} mode="characters" />
+      </TabsContent>
+      <TabsContent value="world">
+        <StoryContextPanel bible={bible} mode="world" />
+      </TabsContent>
+    </>
   );
 }
 
@@ -349,10 +432,7 @@ function AutosaveIndicator({
 }) {
   if (status === "error") {
     return (
-      <div
-        role="alert"
-        className="flex shrink-0 items-center gap-2 text-xs text-destructive"
-      >
+      <div role="alert" className="flex shrink-0 items-center gap-2 text-xs text-destructive">
         <CircleAlert className="size-3.5" />
         <span>저장 실패</span>
         <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
@@ -364,30 +444,17 @@ function AutosaveIndicator({
 
   if (status === "conflict") {
     return (
-      <div
-        role="alert"
-        className="flex shrink-0 items-center gap-1.5 text-xs text-destructive"
-      >
+      <div role="alert" className="flex shrink-0 items-center gap-1.5 text-xs text-destructive">
         <CircleAlert className="size-3.5" />
         <span>저장 충돌</span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onOpenConflict}
-        >
+        <Button type="button" variant="ghost" size="sm" onClick={onOpenConflict}>
           충돌 해결 열기
         </Button>
       </div>
     );
   }
 
-  const label =
-    status === "editing"
-      ? "편집 중"
-      : status === "saving"
-        ? "저장 중"
-        : "자동 저장됨";
+  const label = status === "editing" ? "편집 중" : status === "saving" ? "저장 중" : "자동 저장됨";
 
   return (
     <span
@@ -398,9 +465,7 @@ function AutosaveIndicator({
       {status === "saved" ? (
         <Check className="size-3.5 text-primary" />
       ) : (
-        <LoaderCircle
-          className={status === "saving" ? "size-3.5 animate-spin" : "size-3.5"}
-        />
+        <LoaderCircle className={status === "saving" ? "size-3.5 animate-spin" : "size-3.5"} />
       )}
       <span className="hidden sm:inline">{label}</span>
     </span>

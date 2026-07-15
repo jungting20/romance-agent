@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { RouterProvider } from "react-router-dom";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type {
   CompareManuscriptSceneResponse,
@@ -14,8 +14,28 @@ import { createAppMemoryRouter } from "@/app/app";
 import { findMockWorkspace } from "@/mocks/data/project-workspaces";
 import { server } from "@/mocks/server";
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+function setViewportWidth(width: number) {
+  vi.stubGlobal("matchMedia", (query: string) => {
+    const minimumWidth = Number(query.match(/min-width:\s*(\d+)px/)?.[1] ?? 0);
+    return {
+      matches: width >= minimumWidth,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    } satisfies MediaQueryList;
+  });
+}
+
 describe("WritingWorkspacePage", () => {
-  test("shows a loading status while the workspace is being fetched", () => {
+  test("shows a workspace skeleton while the workspace is being fetched", () => {
     server.use(
       http.get("/api/projects/:projectId/workspace", async () => {
         await delay("infinite");
@@ -23,9 +43,10 @@ describe("WritingWorkspacePage", () => {
       }),
     );
 
-    renderWorkspace();
+    const { container } = renderWorkspace();
 
     expect(screen.getByRole("status")).toHaveTextContent("작업 공간을 불러오는 중이에요.");
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(3);
   });
 
   test("retries a transient workspace loading error", async () => {
@@ -65,17 +86,52 @@ describe("WritingWorkspacePage", () => {
     expect(screen.getByRole("link", { name: "작품 서재로 돌아가기" })).toBeInTheDocument();
   });
 
-  test("switches the contextual panel between manuscript and characters", async () => {
+  test("opens the selected contextual tab in a mobile sheet", async () => {
+    setViewportWidth(375);
     const user = userEvent.setup();
     renderWorkspace();
 
-    expect(await screen.findByText("원고 목차")).toBeInTheDocument();
+    const charactersTab = await screen.findByRole("tab", { name: "인물 보기" });
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
 
-    await user.click(screen.getByRole("button", { name: "인물 보기" }));
+    await user.click(charactersTab);
 
-    expect(screen.getByText("등장인물")).toBeInTheDocument();
-    expect(screen.getByText("서윤")).toBeInTheDocument();
-    expect(screen.getByText("도현")).toBeInTheDocument();
+    const contextSheet = screen.getByRole("dialog", { name: "인물 보기" });
+    expect(contextSheet).toHaveTextContent("등장인물");
+    expect(contextSheet).toHaveTextContent("서윤");
+    expect(charactersTab).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "인물 보기" })).not.toBeInTheDocument();
+  });
+
+  test("opens and closes the AI tool as a sheet below the desktop breakpoint", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    renderWorkspace();
+
+    await user.click(await screen.findByRole("button", { name: "AI 도구 열기" }));
+    expect(screen.getByRole("dialog", { name: "AI 집필 도구" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "AI 집필 도구" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "원고 본문" })).toBeInTheDocument();
+  });
+
+  test("adds a resize handle only for each visible adjacent desktop panel", async () => {
+    setViewportWidth(1280);
+    const user = userEvent.setup();
+    renderWorkspace();
+
+    await screen.findByRole("textbox", { name: "원고 본문" });
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "AI 도구 열기" }));
+    expect(screen.queryByRole("dialog", { name: "AI 집필 도구" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("separator")).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: "AI 도구 닫기" }));
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
   });
 
   test("applies a requested continuation to the manuscript", async () => {
