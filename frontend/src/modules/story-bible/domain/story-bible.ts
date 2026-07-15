@@ -13,6 +13,17 @@ export interface WorldEntry {
   description: string;
 }
 
+export interface WorldEntryDraftValue {
+  kind: WorldEntry["kind"];
+  title: string;
+  description: string;
+}
+
+export interface WorldEntryDraftErrors {
+  title?: string;
+  description?: string;
+}
+
 export interface StoryBible {
   projectId: string;
   characters: Character[];
@@ -66,4 +77,21 @@ export function selectSceneContext(
     characters: bible.characters.filter(({ id }) => reference.characterIds.includes(id)),
     worldEntries: bible.worldEntries.filter(({ id }) => reference.worldEntryIds.includes(id)),
   };
+}
+
+export function validateWorldEntryDraft(value: WorldEntryDraftValue): {
+  value?: WorldEntryDraftValue;
+  errors: WorldEntryDraftErrors;
+} {
+  const normalized = {
+    ...value,
+    title: value.title.trim(),
+    description: value.description.trim(),
+  };
+  const errors: WorldEntryDraftErrors = {};
+
+  if (!normalized.title) errors.title = "제목을 입력해 주세요.";
+  if (!normalized.description) errors.description = "설명을 입력해 주세요.";
+
+  return Object.keys(errors).length > 0 ? { errors } : { value: normalized, errors };
 }
