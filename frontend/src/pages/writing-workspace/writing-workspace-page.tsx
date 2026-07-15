@@ -89,7 +89,7 @@ export function WritingWorkspacePage() {
     if (isProjectNotFound(workspaceQuery.error)) {
       return (
         <main className="grid min-h-svh place-items-center bg-[#ede6dd] p-6 text-center">
-          <Alert className="max-w-md p-8 shadow-sm">
+          <Alert role={undefined} className="max-w-md p-8 shadow-sm">
             <AlertTitle>
               <h1 className="font-heading text-2xl font-semibold">프로젝트를 찾을 수 없어요</h1>
             </AlertTitle>

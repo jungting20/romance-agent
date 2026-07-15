@@ -85,6 +85,7 @@ describe("WritingWorkspacePage", () => {
       await screen.findByRole("heading", { name: "프로젝트를 찾을 수 없어요" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "작품 서재로 돌아가기" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   test("opens the selected contextual tab in a mobile sheet", async () => {
@@ -102,7 +103,7 @@ describe("WritingWorkspacePage", () => {
     expect(contextSheet).toHaveTextContent("서윤");
     expect(charactersTab).toHaveAttribute("aria-selected", "true");
 
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "닫기" }));
     expect(screen.queryByRole("dialog", { name: "인물 보기" })).not.toBeInTheDocument();
   });
 
@@ -135,24 +136,21 @@ describe("WritingWorkspacePage", () => {
     expect(screen.getAllByRole("separator")).toHaveLength(1);
   });
 
-  test("uses explicit percentage defaults for every desktop panel", async () => {
+  test("distributes every visible desktop panel across the resizable layout", async () => {
     setViewportWidth(1280);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(500);
     const user = userEvent.setup();
     const { container } = renderWorkspace();
 
     await screen.findByRole("textbox", { name: "원고 본문" });
-    let panels = container.querySelectorAll<HTMLElement>('[data-slot="resizable-panel"]');
-    expect(panels).toHaveLength(2);
-    expect(panels[0]).toHaveAttribute("data-default-size", "20%");
-    expect(panels[0]).toHaveAttribute("data-min-size", "15%");
-    expect(panels[1]).toHaveAttribute("data-default-size", "55%");
-    expect(panels[1]).toHaveAttribute("data-min-size", "40%");
-
     await user.click(screen.getByRole("button", { name: "AI 도구 열기" }));
-    panels = container.querySelectorAll<HTMLElement>('[data-slot="resizable-panel"]');
+    const panels = container.querySelectorAll<HTMLElement>('[data-slot="resizable-panel"]');
     expect(panels).toHaveLength(3);
-    expect(panels[2]).toHaveAttribute("data-default-size", "25%");
-    expect(panels[2]).toHaveAttribute("data-min-size", "20%");
+    await waitFor(() => {
+      expect(panels[0]).toHaveStyle({ flexGrow: "20" });
+      expect(panels[1]).toHaveStyle({ flexGrow: "55" });
+      expect(panels[2]).toHaveStyle({ flexGrow: "25" });
+    });
   });
 
   test("resizes desktop panels from a focused separator with the keyboard", async () => {
