@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+CHUNK_ANALYSIS_SCHEMA_VERSION = "chunk-analysis-v1"
+SCENE_SNAPSHOT_SCHEMA_VERSION = "scene-relationship-snapshot-v1"
+PROJECT_SNAPSHOT_SCHEMA_VERSION = "project-relationship-snapshot-v1"
+
 
 class CandidateStatus(StrEnum):
     PENDING = "pending"
@@ -18,6 +22,8 @@ class LocationEventType(StrEnum):
 @dataclass(frozen=True, slots=True)
 class Evidence:
     chunk_id: str
+    scene_id: str
+    scene_revision: int
     start_offset: int
     end_offset: int
     text: str
@@ -79,7 +85,12 @@ class LocationEventCandidate:
 
 @dataclass(frozen=True, slots=True)
 class ChunkAnalysis:
+    schema_version: str
     chunk_id: str
+    chunk_ordinal: int
+    chunk_start: int
+    chunk_end: int
+    source_text: str
     scene_id: str
     scene_revision: int
     summary: str
@@ -118,7 +129,7 @@ class ProjectRelationshipSnapshot:
         return cls(
             project_id=project_id,
             snapshot_version=0,
-            schema_version="project-relationship-snapshot-v1",
+            schema_version=PROJECT_SNAPSHOT_SCHEMA_VERSION,
             active_scene_revisions=(),
             entities=(),
             places=(),

@@ -8,6 +8,7 @@ from apps.narrative_memory.service.merge import (
     merge_scene_into_project,
 )
 from apps.narrative_memory.service.models import (
+    CHUNK_ANALYSIS_SCHEMA_VERSION,
     CandidateStatus,
     ChunkAnalysis,
     EntityCandidate,
@@ -244,7 +245,7 @@ def test_merge_combines_entity_and_place_aliases_and_evidence_deterministically(
                 candidate_id="entity-02",
                 aliases=(" 주인공 ", "연이"),
                 evidence=(
-                    _evidence("scene-01:r1:0001", 10, 12, " 서연 "),
+                    _evidence("scene-01:r1:0001", 10, 12, "서연"),
                     _evidence("scene-01:r1:0001", 260, 262, "그녀"),
                 ),
             ),
@@ -459,6 +460,7 @@ def test_project_merge_preserves_approved_event_with_equivalent_replacement_evid
     assert len(result.relationship_events) == 1
     assert result.relationship_events[0] == replace(
         replacement_event,
+        event_id="relationship-01",
         status=CandidateStatus.APPROVED,
     )
 
@@ -488,7 +490,7 @@ def test_project_merge_preserves_disjoint_repeated_relationship_events() -> None
     )
 
     assert [event.event_id for event in result.relationship_events] == [
-        "relationship-supported",
+        "relationship-prior",
         "relationship-repeated",
     ]
     assert [event.status for event in result.relationship_events] == [
@@ -534,7 +536,7 @@ def test_project_merge_replaces_entities_and_preserves_supported_approval() -> N
         candidate_id="entity-reanalyzed",
         status=CandidateStatus.PENDING,
         scene_revision=2,
-        evidence=(_evidence("scene-01:r2:0000", 0, 2, " 서연 "),),
+        evidence=(_evidence("scene-01:r2:0000", 0, 2, "서연"),),
     )
 
     result = merge_scene_into_project(
@@ -542,7 +544,9 @@ def test_project_merge_replaces_entities_and_preserves_supported_approval() -> N
         _scene(scene_revision=2, entities=(replacement,)),
     )
 
-    assert result.entities == (replace(replacement, status=CandidateStatus.APPROVED),)
+    assert result.entities == (
+        replace(replacement, candidate_id="entity-01", status=CandidateStatus.APPROVED),
+    )
 
 
 def test_project_merge_replaces_places_and_reviews_unsupported_approval() -> None:
@@ -568,13 +572,18 @@ def test_project_merge_replaces_places_and_reviews_unsupported_approval() -> Non
 
 
 def test_project_merge_preserves_candidates_from_other_scenes() -> None:
-    entity = replace(_entity(), scene_id="scene-02")
-    place = replace(_place(), scene_id="scene-02")
-    relationship = replace(_relationship(), scene_id="scene-02")
-    location = replace(_location(), scene_id="scene-02")
+    entity = replace(_entity(), scene_id="scene-02", scene_revision=4)
+    minjun = replace(
+        _entity(candidate_id="entity-minjun", normalized_name="민준"),
+        scene_id="scene-02",
+        scene_revision=4,
+    )
+    place = replace(_place(), scene_id="scene-02", scene_revision=4)
+    relationship = replace(_relationship(), scene_id="scene-02", scene_revision=4)
+    location = replace(_location(evidence=()), scene_id="scene-02", scene_revision=4)
     current = _project(
         active_scene_revisions=(("scene-01", 1), ("scene-02", 4)),
-        entities=(entity,),
+        entities=(entity, minjun),
         places=(place,),
         relationship_events=(relationship,),
         location_events=(location,),
@@ -585,7 +594,7 @@ def test_project_merge_preserves_candidates_from_other_scenes() -> None:
         scene_snapshot_for_scene_one_revision_two_without_events(),
     )
 
-    assert result.entities == (entity,)
+    assert set(result.entities) == {entity, minjun}
     assert result.places == (place,)
     assert result.relationship_events == (relationship,)
     assert result.location_events == (location,)
@@ -620,8 +629,333 @@ def test_project_merge_keeps_existing_needs_review_candidate_non_approved() -> N
     )
 
     assert result.relationship_events == (
-        replace(replacement, status=CandidateStatus.NEEDS_REVIEW),
+        replace(
+            replacement,
+            event_id="relationship-01",
+            status=CandidateStatus.NEEDS_REVIEW,
+        ),
     )
+
+
+def test_project_merge_consolidates_cross_scene_entity_identity_and_evidence() -> None:
+    prior = replace(
+        _entity(candidate_id="entity-stable", aliases=("연이",)),
+        status=CandidateStatus.APPROVED,
+        scene_id="scene-02",
+        scene_revision=4,
+        evidence=(
+            _evidence("scene-02:r4:0000", 0, 2, "서연", scene_id="scene-02", scene_revision=4),
+        ),
+    )
+    replacement = replace(
+        _entity(candidate_id="entity-new", aliases=("Seo-yeon",)),
+        scene_revision=2,
+        evidence=(_evidence("scene-01:r2:0000", 0, 2, "서연", scene_revision=2),),
+    )
+
+    result = merge_scene_into_project(
+        _project(active_scene_revisions=(("scene-01", 1), ("scene-02", 4)), entities=(prior,)),
+        _scene(scene_revision=2, entities=(replacement,)),
+    )
+
+    assert len(result.entities) == 1
+    assert result.entities[0].candidate_id == "entity-stable"
+    assert result.entities[0].status is CandidateStatus.APPROVED
+    assert result.entities[0].aliases == ("Seo-yeon", "연이")
+    assert {item.scene_id for item in result.entities[0].evidence} == {"scene-01", "scene-02"}
+
+
+def test_project_merge_rejects_conflicting_stable_entity_identities() -> None:
+    approved = replace(_entity(candidate_id="entity-approved"), status=CandidateStatus.APPROVED)
+    needs_review = replace(
+        _entity(candidate_id="entity-review"),
+        status=CandidateStatus.NEEDS_REVIEW,
+        scene_id="scene-02",
+        scene_revision=3,
+    )
+
+    with pytest.raises(MergeInvariantError, match="conflicting.*identit"):
+        merge_scene_into_project(
+            _project(
+                active_scene_revisions=(("scene-01", 1), ("scene-02", 3)),
+                entities=(approved, needs_review),
+            ),
+            _scene(scene_revision=2),
+        )
+
+
+def test_project_merge_rejects_dangling_relationship_and_location_references() -> None:
+    scene = _scene(
+        scene_revision=2,
+        entities=(
+            replace(
+                _entity(candidate_id="entity-seoyeon", normalized_name="서연"),
+                scene_revision=2,
+            ),
+        ),
+        places=(
+            replace(_place(candidate_id="place-cafe", normalized_name="카페"), scene_revision=2),
+        ),
+        relationship_events=(replace(_relationship(), scene_revision=2),),
+        location_events=(replace(_location(character_key="민준", evidence=()), scene_revision=2),),
+    )
+
+    with pytest.raises(MergeInvariantError, match="reference"):
+        merge_scene_into_project(_project(), scene)
+
+
+def test_chunk_merge_rejects_wrong_schema_sequence_and_confidence() -> None:
+    invalid = replace(
+        _analysis("scene-01:r1:0000"),
+        schema_version="chunk-analysis-v2",
+        relationship_events=(replace(_relationship(), scene_sequence=8, confidence=1.1),),
+    )
+
+    with pytest.raises(MergeInvariantError):
+        merge_chunk_analyses("scene-01", 1, 7, (invalid,))
+
+
+def test_project_merge_rejects_unknown_scene_schema_and_candidate_provenance() -> None:
+    invalid_entity = replace(_entity(), scene_revision=1)
+    scene = replace(
+        _scene(scene_revision=2, entities=(invalid_entity,)),
+        schema_version="scene-relationship-snapshot-v2",
+    )
+
+    with pytest.raises(MergeInvariantError):
+        merge_scene_into_project(_project(), scene)
+
+
+@pytest.mark.parametrize("field", ["entities", "places", "relationship_events", "location_events"])
+def test_project_merge_preserves_stable_id_for_evidence_superset(field: str) -> None:
+    prior = {
+        "entities": _entity(candidate_id="stable"),
+        "places": _place(candidate_id="stable"),
+        "relationship_events": _relationship(event_id="stable"),
+        "location_events": _location(event_id="stable"),
+    }[field]
+    prior = replace(
+        prior,
+        status=CandidateStatus.APPROVED,
+        evidence=(_evidence("scene-01:r1:0000", 0, 2, "서연"),),
+    )
+    replacement = replace(
+        prior,
+        scene_revision=2,
+        status=CandidateStatus.PENDING,
+        evidence=(
+            _evidence("scene-01:r2:0000", 0, 2, "서연", scene_revision=2),
+            _evidence("scene-01:r2:0000", 4, 6, "연이", scene_revision=2),
+        ),
+        **(
+            {"candidate_id": "replacement"}
+            if field in {"entities", "places"}
+            else {"event_id": "replacement"}
+        ),
+    )
+
+    result = merge_scene_into_project(
+        _project(**{field: (prior,)}),
+        _scene(scene_revision=2, **{field: (replacement,)}),
+    )
+    retained = getattr(result, field)
+
+    assert len(retained) == 1
+    stable_id = (
+        retained[0].candidate_id if field in {"entities", "places"} else retained[0].event_id
+    )
+    assert stable_id == "stable"
+    assert retained[0].status is CandidateStatus.APPROVED
+    assert len(retained[0].evidence) == 2
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["entities", "places", "relationship_events", "location_events"],
+)
+def test_project_merge_reviews_one_stable_candidate_when_replacement_loses_evidence(
+    field: str,
+) -> None:
+    prior = {
+        "entities": _entity(candidate_id="stable"),
+        "places": _place(candidate_id="stable"),
+        "relationship_events": _relationship(event_id="stable"),
+        "location_events": _location(event_id="stable"),
+    }[field]
+    prior = replace(
+        prior,
+        status=CandidateStatus.APPROVED,
+        evidence=(
+            _evidence("scene-01:r1:0000", 0, 2, "서연"),
+            _evidence("scene-01:r1:0000", 4, 6, "연이"),
+        ),
+    )
+    replacement = replace(
+        prior,
+        scene_revision=2,
+        status=CandidateStatus.PENDING,
+        evidence=(_evidence("scene-01:r2:0000", 0, 2, "서연", scene_revision=2),),
+        **(
+            {"candidate_id": "replacement"}
+            if field in {"entities", "places"}
+            else {"event_id": "replacement"}
+        ),
+    )
+
+    result = merge_scene_into_project(
+        _project(**{field: (prior,)}),
+        _scene(scene_revision=2, **{field: (replacement,)}),
+    )
+    retained = getattr(result, field)
+
+    assert len(retained) == 1
+    stable_id = (
+        retained[0].candidate_id if field in {"entities", "places"} else retained[0].event_id
+    )
+    assert stable_id == "stable"
+    assert retained[0].status is CandidateStatus.NEEDS_REVIEW
+    assert retained[0].evidence == replacement.evidence
+
+
+def test_chunk_merge_orders_by_numeric_ordinal_not_chunk_id() -> None:
+    later = replace(_analysis("scene-01:r1:10000", summary="later"), chunk_ordinal=10000)
+    earlier = replace(_analysis("scene-01:r1:9999", summary="earlier"), chunk_ordinal=9999)
+
+    result = merge_chunk_analyses("scene-01", 1, 7, (later, earlier))
+
+    assert result.summary == "earlier\nlater"
+
+
+def test_project_merge_consolidates_place_by_alias_across_scenes() -> None:
+    prior = replace(
+        _place(candidate_id="place-stable", normalized_name="카페", aliases=("단골집",)),
+        scene_id="scene-02",
+        scene_revision=3,
+        evidence=(
+            _evidence(
+                "scene-02:r3:0000",
+                10,
+                13,
+                "카페 ",
+                scene_id="scene-02",
+                scene_revision=3,
+            ),
+        ),
+    )
+    replacement = replace(
+        _place(candidate_id="place-new", normalized_name="단골집"),
+        scene_revision=2,
+        evidence=(_evidence("scene-01:r2:0000", 20, 23, "그곳", scene_revision=2),),
+    )
+
+    result = merge_scene_into_project(
+        _project(active_scene_revisions=(("scene-01", 1), ("scene-02", 3)), places=(prior,)),
+        _scene(scene_revision=2, places=(replacement,)),
+    )
+
+    assert len(result.places) == 1
+    assert result.places[0].candidate_id == "place-stable"
+    assert {item.scene_id for item in result.places[0].evidence} == {"scene-01", "scene-02"}
+
+
+def test_chunk_merge_validates_first_overlap_and_final_short_chunk_metadata() -> None:
+    first = _analysis(
+        "scene-01:r1:0000",
+        entities=(_entity(evidence=(_evidence("scene-01:r1:0000", 0, 2, "서연"),)),),
+    )
+    overlap = _analysis(
+        "scene-01:r1:0001",
+        entities=(_entity(evidence=(_evidence("scene-01:r1:0001", 250, 252, "서연"),)),),
+    )
+    final = replace(
+        _analysis("scene-01:r1:0002", summary="final"),
+        chunk_start=500,
+        chunk_end=517,
+        source_text="마지막 청크".ljust(17),
+    )
+
+    snapshot = merge_chunk_analyses("scene-01", 1, 7, (final, overlap, first))
+
+    assert snapshot.summary == "final"
+
+
+@pytest.mark.parametrize("failure", ["bounds", "text"])
+def test_chunk_merge_rejects_evidence_outside_authoritative_source(failure: str) -> None:
+    analysis = _analysis(
+        "scene-01:r1:0000",
+        entities=(_entity(evidence=(_evidence("scene-01:r1:0000", 0, 2, "서연"),)),),
+    )
+    if failure == "bounds":
+        analysis = replace(
+            analysis,
+            chunk_start=3,
+            source_text=analysis.source_text[3:],
+        )
+    else:
+        analysis = replace(analysis, source_text="민준" + analysis.source_text[2:])
+
+    with pytest.raises(MergeInvariantError, match="evidence"):
+        merge_chunk_analyses("scene-01", 1, 7, (analysis,))
+
+
+def test_chunk_merge_rejects_mixed_chunk_schema_versions() -> None:
+    supported = _analysis("scene-01:r1:0000")
+    unknown = replace(
+        _analysis("scene-01:r1:0001"),
+        schema_version="chunk-analysis-v2",
+    )
+
+    with pytest.raises(MergeInvariantError, match="schema"):
+        merge_chunk_analyses("scene-01", 1, 7, (supported, unknown))
+
+
+@pytest.mark.parametrize("field", ["relationship_events", "location_events"])
+@pytest.mark.parametrize("confidence", [-0.01, 1.01, float("inf"), float("-inf")])
+def test_chunk_merge_rejects_invalid_temporal_confidence(
+    field: str,
+    confidence: float,
+) -> None:
+    candidate = _relationship() if field == "relationship_events" else _location(evidence=())
+    analysis = _analysis(
+        "scene-01:r1:0000",
+        **{field: (replace(candidate, confidence=confidence),)},
+    )
+
+    with pytest.raises(MergeInvariantError, match="confidence"):
+        merge_chunk_analyses("scene-01", 1, 7, (analysis,))
+
+
+@pytest.mark.parametrize("confidence", [0.0, 1.0])
+def test_chunk_merge_accepts_closed_confidence_boundaries(confidence: float) -> None:
+    snapshot = merge_chunk_analyses(
+        "scene-01",
+        1,
+        7,
+        (
+            _analysis(
+                "scene-01:r1:0000",
+                relationship_events=(replace(_relationship(), confidence=confidence),),
+                location_events=(replace(_location(evidence=()), confidence=confidence),),
+            ),
+        ),
+    )
+
+    assert snapshot.relationship_events[0].confidence == confidence
+    assert snapshot.location_events[0].confidence == confidence
+
+
+def test_project_merge_rejects_duplicate_active_scene_revisions() -> None:
+    project = _project(active_scene_revisions=(("scene-01", 1), ("scene-01", 1)))
+
+    with pytest.raises(MergeInvariantError, match="unique"):
+        merge_scene_into_project(project, _scene(scene_revision=2))
+
+
+def test_project_merge_rejects_incompatible_project_schema() -> None:
+    project = replace(_project(), schema_version="project-relationship-snapshot-v2")
+
+    with pytest.raises(MergeInvariantError, match="schema"):
+        merge_scene_into_project(project, _scene(scene_revision=2))
 
 
 def project_snapshot_with_pending_scene_one_revision_one() -> ProjectRelationshipSnapshot:
@@ -659,6 +993,36 @@ def _project(
     relationship_events: tuple[RelationshipEventCandidate, ...] = (),
     location_events: tuple[LocationEventCandidate, ...] = (),
 ) -> ProjectRelationshipSnapshot:
+    if not entities and (relationship_events or location_events):
+        references = {
+            (event.scene_id, event.scene_revision, key)
+            for event in relationship_events
+            for key in (event.subject_key, event.object_key)
+        } | {
+            (event.scene_id, event.scene_revision, event.character_key) for event in location_events
+        }
+        entities = tuple(
+            replace(
+                _entity(candidate_id=f"entity-{name}", normalized_name=name),
+                scene_id=source_scene_id,
+                scene_revision=revision,
+                status=CandidateStatus.APPROVED,
+            )
+            for source_scene_id, revision, name in sorted(references)
+        )
+    if not places and location_events:
+        references = {
+            (event.scene_id, event.scene_revision, event.place_key) for event in location_events
+        }
+        places = tuple(
+            replace(
+                _place(candidate_id=f"place-{name}", normalized_name=name),
+                scene_id=source_scene_id,
+                scene_revision=revision,
+                status=CandidateStatus.APPROVED,
+            )
+            for source_scene_id, revision, name in sorted(references)
+        )
     return ProjectRelationshipSnapshot(
         project_id="project-01",
         snapshot_version=3,
@@ -679,6 +1043,25 @@ def _scene(
     relationship_events: tuple[RelationshipEventCandidate, ...] = (),
     location_events: tuple[LocationEventCandidate, ...] = (),
 ) -> SceneRelationshipSnapshot:
+    if not entities and (relationship_events or location_events):
+        references = {
+            key for event in relationship_events for key in (event.subject_key, event.object_key)
+        } | {event.character_key for event in location_events}
+        entities = tuple(
+            replace(
+                _entity(candidate_id=f"entity-{name}", normalized_name=name),
+                scene_revision=scene_revision,
+            )
+            for name in sorted(references)
+        )
+    if not places and location_events:
+        places = tuple(
+            replace(
+                _place(candidate_id=f"place-{name}", normalized_name=name),
+                scene_revision=scene_revision,
+            )
+            for name in sorted({event.place_key for event in location_events})
+        )
     return SceneRelationshipSnapshot(
         scene_id="scene-01",
         scene_revision=scene_revision,
@@ -697,8 +1080,19 @@ def _evidence(
     start_offset: int = 0,
     end_offset: int = 2,
     text: str = "서연",
+    *,
+    scene_id: str = "scene-01",
+    scene_revision: int = 1,
 ) -> Evidence:
-    return Evidence(chunk_id, start_offset, end_offset, text)
+    chunk_scene_id, revision_text, _ = chunk_id.rsplit(":", 2)
+    if scene_id == "scene-01":
+        scene_id = chunk_scene_id
+    if scene_revision == 1 and revision_text.startswith("r"):
+        scene_revision = int(revision_text[1:])
+    if 0 <= start_offset < end_offset:
+        width = end_offset - start_offset
+        text = text[:width].ljust(width)
+    return Evidence(chunk_id, scene_id, scene_revision, start_offset, end_offset, text)
 
 
 def _entity(
@@ -765,7 +1159,14 @@ def _location(
     event_type: LocationEventType = LocationEventType.ARRIVED,
     description: str = "서연은 카페에 도착했다.",
     evidence: tuple[Evidence, ...] = (
-        Evidence("scene-01:r1:0000", 250, 265, "서연은 카페에 도착했다."),
+        Evidence(
+            "scene-01:r1:0000",
+            "scene-01",
+            1,
+            250,
+            265,
+            "서연은 카페에 도착했다.",
+        ),
     ),
 ) -> LocationEventCandidate:
     return LocationEventCandidate(
@@ -791,8 +1192,63 @@ def _analysis(
     relationship_events: tuple[RelationshipEventCandidate, ...] = (),
     location_events: tuple[LocationEventCandidate, ...] = (),
 ) -> ChunkAnalysis:
+    ordinal = int(chunk_id.rsplit(":", 1)[1])
+    default_chunk_start = ordinal * 250
+    candidate_evidence = tuple(
+        evidence
+        for candidate in (*entities, *places, *relationship_events, *location_events)
+        for evidence in candidate.evidence
+    )
+    valid_starts = [
+        evidence.start_offset
+        for evidence in candidate_evidence
+        if evidence.start_offset >= 0 and evidence.end_offset > evidence.start_offset
+    ]
+    chunk_start = min((default_chunk_start, *valid_starts))
+    chunk_end = max(
+        (evidence.end_offset for evidence in candidate_evidence),
+        default=chunk_start + 300,
+    )
+    chunk_end = max(chunk_end, chunk_start + 300)
+    source = [" "] * (chunk_end - chunk_start)
+    for evidence in candidate_evidence:
+        relative_start = evidence.start_offset - chunk_start
+        relative_end = evidence.end_offset - chunk_start
+        if 0 <= relative_start < relative_end <= len(source):
+            width = relative_end - relative_start
+            source[relative_start:relative_end] = list(evidence.text[:width].ljust(width))
+    source_text = "".join(source)
+
+    def normalize_candidate(
+        candidate: EntityCandidate
+        | PlaceCandidate
+        | RelationshipEventCandidate
+        | LocationEventCandidate,
+    ):
+        normalized_evidence = tuple(
+            replace(
+                evidence,
+                text=source_text[
+                    evidence.start_offset - chunk_start : evidence.end_offset - chunk_start
+                ],
+            )
+            if chunk_start <= evidence.start_offset < evidence.end_offset <= chunk_end
+            else evidence
+            for evidence in candidate.evidence
+        )
+        return replace(candidate, evidence=normalized_evidence)
+
+    entities = tuple(normalize_candidate(candidate) for candidate in entities)
+    places = tuple(normalize_candidate(candidate) for candidate in places)
+    relationship_events = tuple(normalize_candidate(candidate) for candidate in relationship_events)
+    location_events = tuple(normalize_candidate(candidate) for candidate in location_events)
     return ChunkAnalysis(
+        schema_version=CHUNK_ANALYSIS_SCHEMA_VERSION,
         chunk_id=chunk_id,
+        chunk_ordinal=ordinal,
+        chunk_start=chunk_start,
+        chunk_end=chunk_end,
+        source_text=source_text,
         scene_id="scene-01",
         scene_revision=1,
         summary=summary,

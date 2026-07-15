@@ -62,7 +62,10 @@ class SQLiteSnapshotRepository:
             ).fetchone()
         if row is None:
             return None
-        return self.get_version(project_id, row[0])
+        snapshot = self.get_version(project_id, row[0])
+        if snapshot is None:
+            raise SnapshotCorruptionError("current snapshot pointer references a missing snapshot")
+        return snapshot
 
     def get_version(self, project_id: str, version: int) -> StoredProjectSnapshot | None:
         with sqlite3.connect(self._path) as connection:

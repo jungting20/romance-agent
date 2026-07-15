@@ -1,8 +1,10 @@
 import json
+import math
 from dataclasses import asdict
 from typing import Any
 
 from apps.narrative_memory.service.models import (
+    PROJECT_SNAPSHOT_SCHEMA_VERSION,
     CandidateStatus,
     EntityCandidate,
     Evidence,
@@ -19,6 +21,9 @@ class SnapshotDecodeError(ValueError):
 
 
 def encode_project_snapshot(snapshot: ProjectRelationshipSnapshot) -> bytes:
+    if snapshot.schema_version != PROJECT_SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError(f"unsupported project snapshot schema: {snapshot.schema_version}")
+    _validate_project_confidences(snapshot)
     data = asdict(snapshot)
     return (
         json.dumps(
@@ -107,7 +112,10 @@ def _require_integer(value: Any, label: str) -> int:
 def _require_number(value: Any, label: str) -> float:
     if type(value) not in (int, float):
         raise TypeError(f"{label} must be a number")
-    return float(value)
+    result = float(value)
+    if not math.isfinite(result) or not 0.0 <= result <= 1.0:
+        raise ValueError(f"{label} must be finite and between 0.0 and 1.0")
+    return result
 
 
 def _string_tuple(value: Any, label: str) -> tuple[str, ...]:
@@ -116,10 +124,19 @@ def _string_tuple(value: Any, label: str) -> tuple[str, ...]:
 
 def _evidence(value: Any) -> Evidence:
     data = _require_object(value, "evidence")
-    keys = {"chunk_id", "start_offset", "end_offset", "text"}
+    keys = {
+        "chunk_id",
+        "scene_id",
+        "scene_revision",
+        "start_offset",
+        "end_offset",
+        "text",
+    }
     _require_keys(data, keys, keys, "evidence")
     return Evidence(
         chunk_id=_require_string(data["chunk_id"], "evidence.chunk_id"),
+        scene_id=_require_string(data["scene_id"], "evidence.scene_id"),
+        scene_revision=_require_integer(data["scene_revision"], "evidence.scene_revision"),
         start_offset=_require_integer(data["start_offset"], "evidence.start_offset"),
         end_offset=_require_integer(data["end_offset"], "evidence.end_offset"),
         text=_require_string(data["text"], "evidence.text"),
@@ -259,10 +276,13 @@ def _active_scene_revision(value: Any) -> tuple[str, int]:
 
 
 def _decode_nested_project_fields(data: dict[str, Any]) -> ProjectRelationshipSnapshot:
-    return ProjectRelationshipSnapshot(
+    schema_version = _require_string(data["schema_version"], "schema_version")
+    if schema_version != PROJECT_SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError(f"unsupported project snapshot schema: {schema_version}")
+    snapshot = ProjectRelationshipSnapshot(
         project_id=_require_string(data["project_id"], "project_id"),
         snapshot_version=_require_integer(data["snapshot_version"], "snapshot_version"),
-        schema_version=_require_string(data["schema_version"], "schema_version"),
+        schema_version=schema_version,
         active_scene_revisions=tuple(
             _active_scene_revision(item)
             for item in _require_array(data["active_scene_revisions"], "active_scene_revisions")
@@ -277,3 +297,11 @@ def _decode_nested_project_fields(data: dict[str, Any]) -> ProjectRelationshipSn
             _location(item) for item in _require_array(data["location_events"], "location_events")
         ),
     )
+    _validate_project_confidences(snapshot)
+    return snapshot
+
+
+def _validate_project_confidences(snapshot: ProjectRelationshipSnapshot) -> None:
+    for event in (*snapshot.relationship_events, *snapshot.location_events):
+        if not math.isfinite(event.confidence) or not 0.0 <= event.confidence <= 1.0:
+            raise ValueError("event confidence must be finite and between 0.0 and 1.0")

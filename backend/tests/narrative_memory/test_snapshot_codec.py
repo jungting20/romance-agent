@@ -28,6 +28,8 @@ def test_empty_project_snapshot_is_version_zero() -> None:
 def test_evidence_is_immutable() -> None:
     evidence = Evidence(
         chunk_id="scene-01:r1:0000",
+        scene_id="scene-01",
+        scene_revision=1,
         start_offset=0,
         end_offset=3,
         text="서연은",
@@ -66,6 +68,8 @@ def test_project_snapshot_codec_is_stable_and_round_trips() -> None:
             "        {\n"
             '          "chunk_id": "scene-01:r1:0000",\n'
             '          "end_offset": 11,\n'
+            '          "scene_id": "scene-01",\n'
+            '          "scene_revision": 1,\n'
             '          "start_offset": 0,\n'
             '          "text": "서연은 민준을 만났다."\n'
             "        }\n"
@@ -161,9 +165,82 @@ def test_project_snapshot_decoder_rejects_non_object_nested_entry() -> None:
         decode_project_snapshot(json.dumps(data).encode())
 
 
+@pytest.mark.parametrize("schema_version", ["project-relationship-snapshot-v2", "unknown"])
+def test_project_snapshot_decoder_rejects_unsupported_schema(schema_version: str) -> None:
+    data = _encoded_snapshot_data()
+    data["schema_version"] = schema_version
+
+    with pytest.raises(SnapshotDecodeError, match="schema"):
+        decode_project_snapshot(json.dumps(data).encode())
+
+
+@pytest.mark.parametrize("value", [1.0001, -0.0001])
+def test_project_snapshot_decoder_rejects_non_finite_or_out_of_range_confidence(
+    value: float,
+) -> None:
+    data = _encoded_snapshot_data()
+    data["relationship_events"][0]["confidence"] = value
+
+    with pytest.raises(SnapshotDecodeError, match="confidence"):
+        decode_project_snapshot(json.dumps(data).encode())
+
+
+@pytest.mark.parametrize("overflow", ["1e400", "-1e400"])
+def test_project_snapshot_decoder_rejects_confidence_overflow(overflow: str) -> None:
+    payload = encode_project_snapshot(_project_snapshot_with_relationship_event()).replace(
+        b'"confidence": 0.75',
+        f'"confidence": {overflow}'.encode(),
+    )
+
+    with pytest.raises(SnapshotDecodeError, match="confidence"):
+        decode_project_snapshot(payload)
+
+
+@pytest.mark.parametrize("event_field", ["relationship_events", "location_events"])
+@pytest.mark.parametrize("confidence", [0.0, 1.0])
+def test_project_snapshot_decoder_accepts_closed_confidence_boundaries(
+    event_field: str,
+    confidence: float,
+) -> None:
+    data = _encoded_snapshot_data()
+    if event_field == "location_events":
+        _move_relationship_to_location(data)
+    data[event_field][0]["confidence"] = confidence
+
+    snapshot = decode_project_snapshot(json.dumps(data).encode())
+
+    assert getattr(snapshot, event_field)[0].confidence == confidence
+
+
+@pytest.mark.parametrize("confidence", [-0.01, 1.01])
+def test_project_snapshot_decoder_rejects_location_confidence_range(
+    confidence: float,
+) -> None:
+    data = _encoded_snapshot_data()
+    _move_relationship_to_location(data)
+    data["location_events"][0]["confidence"] = confidence
+
+    with pytest.raises(SnapshotDecodeError, match="confidence"):
+        decode_project_snapshot(json.dumps(data).encode())
+
+
+@pytest.mark.parametrize("overflow", ["1e400", "-1e400"])
+def test_project_snapshot_decoder_rejects_location_confidence_overflow(
+    overflow: str,
+) -> None:
+    data = _encoded_snapshot_data()
+    _move_relationship_to_location(data)
+    payload = json.dumps(data).replace("0.75", overflow).encode()
+
+    with pytest.raises(SnapshotDecodeError, match="confidence"):
+        decode_project_snapshot(payload)
+
+
 def _project_snapshot_with_relationship_event() -> ProjectRelationshipSnapshot:
     evidence = Evidence(
         chunk_id="scene-01:r1:0000",
+        scene_id="scene-01",
+        scene_revision=1,
         start_offset=0,
         end_offset=11,
         text="서연은 민준을 만났다.",
@@ -195,3 +272,22 @@ def _project_snapshot_with_relationship_event() -> ProjectRelationshipSnapshot:
 
 def _encoded_snapshot_data() -> dict[str, object]:
     return json.loads(encode_project_snapshot(_project_snapshot_with_relationship_event()))
+
+
+def _move_relationship_to_location(data: dict[str, object]) -> None:
+    relationship = data["relationship_events"].pop()
+    data["location_events"] = [
+        {
+            "event_id": "location-01",
+            "character_key": relationship["subject_key"],
+            "place_key": "카페",
+            "event_type": "arrived",
+            "description": "서연은 카페에 도착했다.",
+            "status": relationship["status"],
+            "scene_id": relationship["scene_id"],
+            "scene_revision": relationship["scene_revision"],
+            "scene_sequence": relationship["scene_sequence"],
+            "confidence": relationship["confidence"],
+            "evidence": relationship["evidence"],
+        }
+    ]
