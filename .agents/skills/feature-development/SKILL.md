@@ -50,7 +50,7 @@ The user approves it before OpenAPI drafting or implementation.
 
 ## 3. Produce and approve the UI plan
 
-For substantial UI work, assign the registered project-scoped, planning-only
+Whenever UI behavior changes, assign the registered project-scoped, planning-only
 `ui-planner` from `.codex/agents/ui-planner.toml`. Give it:
 
 - the approved brief, target user, UI target, scope, and exclusions;
@@ -145,9 +145,11 @@ After frontend implementation and before application review, follow
 3. Review generated tests against the plan and implementation, run the required
    Playwright checks, and retain paths, commands, and results for review.
 
-If either required custom agent is absent or unavailable, report a blocker to
-the main agent. Do not silently skip the stage or substitute a generic agent.
-Skip E2E delegation when frontend is unaffected.
+If either required custom agent is missing or unavailable, mark the affected
+frontend pipeline blocked, stop downstream application review and final
+verification, and report the missing or unavailable custom agent to the user.
+Do not silently skip the stage or substitute a generic agent. Skip E2E
+delegation when frontend is unaffected.
 
 ## 7. Dispatch read-only application review
 
@@ -256,10 +258,10 @@ and remaining risks. Only the main agent declares completion.
 | Feature shape | Required path |
 | --- | --- |
 | Cross-stack UI and API | Brief -> `ui-planner` -> `openapi` -> parallel frontend/backend -> frontend E2E -> parallel reviews -> remediation/re-review -> main verification |
-| Frontend-only substantial UI | Brief -> `ui-planner` -> frontend -> E2E -> `frontend-review` -> remediation/re-review -> main verification |
+| Frontend-only substantial implementation with UI behavior change | Brief -> `ui-planner` -> frontend -> E2E -> `frontend-review` -> remediation/re-review -> main verification |
 | Backend-only | Brief -> `openapi` first only if a consumer operation changes -> backend -> `backend-review` -> remediation/re-review -> main verification |
 | API-only or API without UI | Brief -> `openapi` -> affected implementers -> affected reviewers -> remediation/re-review -> main verification |
-| Trivial or tightly coupled | Main thread may retain implementation and proportional review; all applicable approval, contract, domain, and final-verification gates remain |
+| Trivial or tightly coupled | Main thread may retain implementation and proportional review, but UI behavior changes still require `ui-planner` and exact plan approval; all other applicable approval, contract, domain, and final-verification gates remain |
 
 ## Common mistakes
 
