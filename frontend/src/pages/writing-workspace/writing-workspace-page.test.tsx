@@ -79,7 +79,7 @@ describe("WritingWorkspacePage", () => {
   });
 
   test("shows a project-not-found view without redirecting", async () => {
-    renderWorkspace("missing-project");
+    renderWorkspace("/projects/missing-project/write");
 
     expect(
       await screen.findByRole("heading", { name: "프로젝트를 찾을 수 없어요" }),
@@ -88,10 +88,10 @@ describe("WritingWorkspacePage", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  test("opens the selected contextual tab in a mobile sheet", async () => {
+  test("retains tab URL state after closing the selected contextual tab in a mobile sheet", async () => {
     setViewportWidth(375);
     const user = userEvent.setup();
-    renderWorkspace();
+    const { router } = renderWorkspace();
 
     const charactersTab = await screen.findByRole("tab", { name: "인물 보기" });
     expect(screen.getAllByRole("tab")).toHaveLength(3);
@@ -105,7 +105,241 @@ describe("WritingWorkspacePage", () => {
 
     await user.click(screen.getByRole("button", { name: "닫기" }));
     expect(screen.queryByRole("dialog", { name: "인물 보기" })).not.toBeInTheDocument();
+    expect(charactersTab).toHaveAttribute("aria-selected", "true");
+    expect(router.state.location.search).toEqual({ tab: "characters" });
   });
+
+  test.each([
+    ["characters", "인물 보기", "등장인물"],
+    ["world", "세계관 보기", "세계관"],
+  ])("restores the %s tab URL on direct navigation", async (tab, tabLabel, panelHeading) => {
+    setViewportWidth(1024);
+    const { router } = renderWorkspace(`/projects/silver-garden/write?tab=${tab}`);
+
+    expect(await screen.findByRole("tab", { name: tabLabel, selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: panelHeading })).toBeInTheDocument();
+    expect(router.state.location.search).toEqual({ tab });
+  });
+
+  test("uses manuscript for the default tab URL", async () => {
+    setViewportWidth(1024);
+    const { router } = renderWorkspace();
+
+    expect(
+      await screen.findByRole("tab", { name: "원고 보기", selected: true }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "원고 목차" })).toBeInTheDocument();
+    expect(router.state.location.search).toEqual({});
+  });
+
+  test("writes canonical tab URL state while preserving unrelated search keys", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?view=dense");
+
+    await user.click(await screen.findByRole("tab", { name: "인물 보기" }));
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ view: "dense", tab: "characters" }),
+    );
+
+    await user.click(screen.getByRole("tab", { name: "세계관 보기" }));
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ view: "dense", tab: "world" }),
+    );
+  });
+
+  test("removes manuscript from tab URL state while preserving unrelated search keys", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?tab=characters&view=dense");
+
+    await user.click(await screen.findByRole("tab", { name: "원고 보기" }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ view: "dense" }));
+    expect(screen.getByRole("tab", { name: "원고 보기", selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "원고 목차" })).toBeInTheDocument();
+  });
+
+  test("replays tab URL selection through browser history", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace();
+
+    await user.click(await screen.findByRole("tab", { name: "인물 보기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    await user.click(screen.getByRole("tab", { name: "세계관 보기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+
+    router.history.back();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    expect(screen.getByRole("tab", { name: "인물 보기", selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "등장인물" })).toBeInTheDocument();
+
+    router.history.back();
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(screen.getByRole("tab", { name: "원고 보기", selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "원고 목차" })).toBeInTheDocument();
+
+    router.history.forward();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    expect(screen.getByRole("tab", { name: "인물 보기", selected: true })).toBeInTheDocument();
+
+    router.history.forward();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+    expect(screen.getByRole("tab", { name: "세계관 보기", selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "세계관" })).toBeInTheDocument();
+  });
+
+  test("does not flush or block a tab URL click while the manuscript is unsaved", async () => {
+    setViewportWidth(1024);
+    let saveCount = 0;
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () => {
+        saveCount += 1;
+        return HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+          { status: 500 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+
+    fireEvent.change(editor, { target: { value: "탭 이동으로 저장하지 않을 원고" } });
+    expect(screen.getByRole("status")).toHaveAccessibleName("편집 중");
+    await user.click(screen.getByRole("tab", { name: "인물 보기" }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    expect(screen.getByRole("tab", { name: "인물 보기", selected: true })).toBeInTheDocument();
+    expect(saveCount).toBe(0);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("does not flush or block unsaved tab URL replay through browser history", async () => {
+    setViewportWidth(1024);
+    let saveCount = 0;
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () => {
+        saveCount += 1;
+        return HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderWorkspace();
+
+    await user.click(await screen.findByRole("tab", { name: "인물 보기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    await user.click(screen.getByRole("tab", { name: "세계관 보기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+
+    const editor = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "원고 본문" });
+    fireEvent.change(editor, { target: { value: "히스토리 이동으로 저장하지 않을 원고" } });
+    expect(screen.getByRole("status")).toHaveAccessibleName("편집 중");
+
+    router.history.back();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    expect(screen.getByRole("tab", { name: "인물 보기", selected: true })).toBeInTheDocument();
+
+    router.history.forward();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+    expect(screen.getByRole("tab", { name: "세계관 보기", selected: true })).toBeInTheDocument();
+    expect(saveCount).toBe(0);
+    expect(screen.queryByRole("dialog", { name: "원고 저장 충돌 해결" })).not.toBeInTheDocument();
+  });
+
+  test("still flushes and blocks an unsaved non-tab search navigation", async () => {
+    let saveCount = 0;
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () => {
+        saveCount += 1;
+        return HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+          { status: 500 },
+        );
+      }),
+    );
+    const { router } = renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+    fireEvent.change(editor, { target: { value: "검색 상태 이동 전에 저장할 원고" } });
+
+    void router.navigate({
+      to: "/projects/$projectId/write",
+      params: { projectId: "silver-garden" },
+      search: (previous) => ({ ...previous, view: "dense" }),
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
+    expect(saveCount).toBe(1);
+    expect(router.state.location.search).toEqual({});
+    expect(editor.value).toBe("검색 상태 이동 전에 저장할 원고");
+  });
+
+  test.each([
+    ["explicit manuscript", "tab=manuscript&view=dense"],
+    ["empty", "tab=&view=dense"],
+    ["repeated", "tab=characters&tab=world&view=dense"],
+    ["non-string", "tab=true&view=dense"],
+    ["unsupported", "tab=unknown&view=dense"],
+  ])("canonicalizes %s tab URL input with replacement", async (_caseName, search) => {
+    const { router } = renderWorkspace(`/projects/silver-garden/write?${search}`);
+
+    expect(
+      await screen.findByRole("tab", { name: "원고 보기", selected: true }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(router.state.location.search).toEqual({ view: "dense" }));
+    expect(router.state.location.state.__TSR_index).toBe(0);
+  });
+
+  test.each(["pending", "error", "not-found"])(
+    "canonicalizes invalid tab URL state while the workspace query is %s",
+    async (queryState) => {
+      if (queryState === "pending") {
+        server.use(
+          http.get("/api/projects/:projectId/workspace", async () => {
+            await delay("infinite");
+            return HttpResponse.json({});
+          }),
+        );
+      } else if (queryState === "error") {
+        server.use(
+          http.get("/api/projects/:projectId/workspace", () =>
+            HttpResponse.json(
+              { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+              { status: 500 },
+            ),
+          ),
+        );
+      }
+
+      const projectId = queryState === "not-found" ? "missing-project" : "silver-garden";
+      const { router } = renderWorkspace(`/projects/${projectId}/write?tab=unknown&view=dense`);
+
+      if (queryState === "pending") {
+        expect(await screen.findByRole("status")).toHaveTextContent(
+          "작업 공간을 불러오는 중이에요.",
+        );
+      } else if (queryState === "error") {
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "작업 공간을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.",
+        );
+      } else {
+        expect(
+          await screen.findByRole("heading", { name: "프로젝트를 찾을 수 없어요" }),
+        ).toBeInTheDocument();
+      }
+
+      await waitFor(() => expect(router.state.location.search).toEqual({ view: "dense" }));
+      expect(router.state.location.state.__TSR_index).toBe(0);
+    },
+  );
 
   test("opens and closes the AI tool as a sheet below the desktop breakpoint", async () => {
     setViewportWidth(1024);
@@ -548,11 +782,11 @@ describe("WritingWorkspacePage", () => {
   });
 });
 
-function renderWorkspace(projectId = "silver-garden") {
+function renderWorkspace(initialUrl = "/projects/silver-garden/write") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const router = createAppMemoryRouter([`/projects/${projectId}/write`]);
+  const router = createAppMemoryRouter([initialUrl]);
   vi.spyOn(router.history, "block");
 
   return {
