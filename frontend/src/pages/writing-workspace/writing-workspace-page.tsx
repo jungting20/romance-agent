@@ -503,6 +503,10 @@ function LoadedWritingWorkspace({
           error={worldEditor.loadError}
           onRetry={worldEditor.retryLoad}
           onClose={() => onEditorClose(false)}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            restoreWorldEditorFocus();
+          }}
         />
       )}
       <ManuscriptConflictDialog
