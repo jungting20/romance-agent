@@ -51,9 +51,12 @@ src/routes/
   __root.tsx
   index.tsx
   new.tsx
-  new.setup.tsx
+  new_.setup.tsx
   projects.$projectId.write.tsx
 ```
+
+The trailing underscore makes `/new/setup` a non-nested route, so the setup
+screen does not render inside the `/new` trope-selection component.
 
 The root route renders the existing tooltip provider and an outlet. A router-level
 not-found component replaces unknown locations with `/` without adding a new
