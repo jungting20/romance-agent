@@ -76,6 +76,19 @@ verification, and handoff workflows. If the documents conflict, follow
   defined application or transport error, or perform required cleanup. Do not
   silently swallow failures.
 
+## Durable File Replacement
+
+- For mutable project files, serialize to an owned temporary file in the same
+  directory as the canonical file, flush it, call `fsync`, and publish it with
+  an atomic `os.replace` only after serialization succeeds.
+- Protect compare-and-replace workflows with a project-local sibling lock and
+  re-read the canonical file while holding that lock before checking the exact
+  expected revision. Lower and higher revision mismatches are both conflicts.
+- On failure, remove only the temporary file created by the current operation;
+  never truncate, delete, or partially rewrite the canonical file as cleanup.
+- Resolve file paths beneath the configured data root and reject identifiers
+  containing traversal or absolute-path components before any file access.
+
 ## Testing Rules
 
 - Test domain and service behavior without HTTP or real infrastructure when the
