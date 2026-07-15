@@ -1,17 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
+import { createAppMemoryRouter } from "@/app/app";
 import type {
   CreateProjectRequest,
   ProjectWorkspaceResponse,
 } from "@/app/infrastructure/api/contracts";
 import { server } from "@/mocks/server";
-
-import { SetupPage } from "./setup-page";
 
 describe("SetupPage", () => {
   test("disables duplicate submission while project creation is pending", async () => {
@@ -30,7 +29,7 @@ describe("SetupPage", () => {
     const user = userEvent.setup();
     renderSetup();
 
-    await user.type(screen.getByLabelText("작품 제목"), "기다리는 이야기");
+    await user.type(await screen.findByLabelText("작품 제목"), "기다리는 이야기");
     const submitButton = screen.getByRole("button", { name: "작업 공간 열기" });
     await user.click(submitButton);
 
@@ -68,7 +67,7 @@ describe("SetupPage", () => {
     const user = userEvent.setup();
     renderSetup();
 
-    await user.type(screen.getByLabelText("작품 제목"), "겹치는 제목");
+    await user.type(await screen.findByLabelText("작품 제목"), "겹치는 제목");
     await user.click(screen.getByRole("button", { name: "작업 공간 열기" }));
 
     expect(await screen.findByText("이미 사용 중인 작품 제목이에요.")).toBeInTheDocument();
@@ -99,7 +98,7 @@ describe("SetupPage", () => {
     const user = userEvent.setup();
     renderSetup();
 
-    await user.type(screen.getByLabelText("작품 제목"), "트로프 오류 이야기");
+    await user.type(await screen.findByLabelText("작품 제목"), "트로프 오류 이야기");
     await user.click(screen.getByRole("button", { name: "작업 공간 열기" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -119,7 +118,7 @@ describe("SetupPage", () => {
     const user = userEvent.setup();
     renderSetup();
 
-    await user.type(screen.getByLabelText("작품 제목"), "실패하는 이야기");
+    await user.type(await screen.findByLabelText("작품 제목"), "실패하는 이야기");
     await user.click(screen.getByRole("button", { name: "작업 공간 열기" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -136,12 +135,14 @@ describe("SetupPage", () => {
       }),
     );
     const user = userEvent.setup();
-    renderSetup();
+    const router = renderSetup();
 
-    await user.type(screen.getByLabelText("작품 제목"), "서버가 만든 이야기");
+    await user.type(await screen.findByLabelText("작품 제목"), "서버가 만든 이야기");
     await user.click(screen.getByRole("button", { name: "작업 공간 열기" }));
 
-    expect(await screen.findByText("열린 프로젝트: server-project-id")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/projects/server-project-id/write");
+    });
     expect(submittedRequest).toMatchObject({
       title: "서버가 만든 이야기",
       tropeId: "reunion",
@@ -154,23 +155,15 @@ function renderSetup() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  const router = createAppMemoryRouter(["/new/setup?trope=reunion"]);
 
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/new/setup?trope=reunion"]}>
-        <Routes>
-          <Route path="/new/setup" element={<SetupPage />} />
-          <Route path="/projects/:projectId/write" element={<OpenedProject />} />
-          <Route path="/new" element={<p>트로프 선택</p>} />
-        </Routes>
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-}
 
-function OpenedProject() {
-  const { projectId } = useParams();
-  return <p>열린 프로젝트: {projectId}</p>;
+  return router;
 }
 
 function createWorkspace(projectId: string): ProjectWorkspaceResponse {

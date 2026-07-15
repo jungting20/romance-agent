@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from "react";
+import { Link, Navigate, useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight, Heart, Sparkles } from "lucide-react";
-import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import { ApiRequestError } from "@/app/infrastructure/api/api-client";
 import type { CreateProjectRequest } from "@/app/infrastructure/api/contracts";
@@ -15,10 +15,9 @@ import { TROPE_TEMPLATES } from "@/modules/story-design";
 import { BrandMark } from "@/shared/ui/brand-mark";
 
 export function SetupPage() {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
+  const { trope: tropeId } = useSearch({ from: "/new_/setup" });
+  const navigate = useNavigate({ from: "/new/setup" });
   const createProject = useCreateProjectMutation();
-  const tropeId = searchParams.get("trope");
   const trope = TROPE_TEMPLATES.find(({ id }) => id === tropeId);
   const [title, setTitle] = useState("");
   const [logline, setLogline] = useState(trope?.starterLogline ?? "");
@@ -56,7 +55,10 @@ export function SetupPage() {
         tropeId: trope.id as CreateProjectRequest["tropeId"],
         protagonistNames: [firstName, secondName],
       });
-      void navigate(`/projects/${workspace.project.id}/write`);
+      void navigate({
+        to: "/projects/$projectId/write",
+        params: { projectId: workspace.project.id },
+      });
     } catch {
       // The mutation state renders contract field errors or the generic failure state.
     }
