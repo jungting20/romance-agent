@@ -83,6 +83,16 @@ export function worldEditorReducer(
   action: WorldEditorAction,
 ): WorldEditorState {
   if (
+    state.phase.status === "unavailable" &&
+    (action.type === "change-field" ||
+      action.type === "add-row" ||
+      action.type === "validate" ||
+      action.type === "save-start")
+  ) {
+    return state;
+  }
+
+  if (
     isWorldEditorFrozen(state) &&
     action.type !== "save-failed" &&
     action.type !== "reload-success"

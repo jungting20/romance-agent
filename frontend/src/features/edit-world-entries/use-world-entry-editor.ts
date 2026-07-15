@@ -49,6 +49,7 @@ export function useWorldEntryEditor({
   const mutation = useSaveWorldEntriesMutation();
   const [state, setState] = useState<WorldEditorState>();
   const [savedSnapshot, setSavedSnapshot] = useState<StoryBibleSnapshot>();
+  const [closeRequested, setCloseRequested] = useState(false);
   const nextKey = useRef(0);
   const navigationResolution = useRef<((confirmed: boolean) => void) | null>(null);
 
@@ -64,6 +65,12 @@ export function useWorldEntryEditor({
     onSaved(savedSnapshot);
     setSavedSnapshot(undefined);
   }, [onSaved, savedSnapshot]);
+
+  useEffect(() => {
+    if (!closeRequested || !state || isWorldEditorDirty(state)) return;
+    setCloseRequested(false);
+    onClose();
+  }, [closeRequested, onClose, state]);
 
   const dispatch = useCallback((action: WorldEditorAction) => {
     setState((current) => (current ? worldEditorReducer(current, action) : current));
@@ -111,11 +118,6 @@ export function useWorldEntryEditor({
     addRow: () => {
       const key = `new-${++nextKey.current}`;
       dispatch({ type: "add-row", key });
-      requestAnimationFrame(() => {
-        Array.from(document.querySelectorAll<HTMLElement>("[data-world-field]"))
-          .find((element) => element.dataset.worldField === `${key}:kind`)
-          ?.focus();
-      });
     },
     save,
     retry: save,
@@ -157,7 +159,19 @@ export function useWorldEntryEditor({
         dispatch({ type: "cancel-discard" });
         return;
       }
-      onClose();
+      setState((current) =>
+        current
+          ? {
+              ...current,
+              draft: current.baseline,
+              phase: { status: "ready" },
+              errors: {},
+              firstInvalidField: undefined,
+              discardIntent: undefined,
+            }
+          : current,
+      );
+      setCloseRequested(true);
     },
     confirmNavigationDiscard: () => {
       if (!state || !isWorldEditorDirty(state)) return Promise.resolve(true);

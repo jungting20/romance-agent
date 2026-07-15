@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type Ref, useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -215,6 +215,9 @@ function LoadedWritingWorkspace({
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [selection, setSelection] = useState<TextRange | null>(null);
   const [worldAnnouncement, setWorldAnnouncement] = useState("");
+  const worldTabRef = useRef<HTMLButtonElement>(null);
+  const worldLaunchRef = useRef<HTMLButtonElement>(null);
+  const openedFromLaunchRef = useRef(false);
   const contextIsInline = useMediaQuery("(min-width: 768px)");
   const desktopIsResizable = useMediaQuery("(min-width: 1280px)");
   const { project, storyBible: bible } = workspace;
@@ -250,6 +253,15 @@ function LoadedWritingWorkspace({
     onClose: () => onEditorClose(false),
   });
   useWorkspaceNavigationGuard(status, flush, worldEditor);
+  const handleEditorOpen = () => {
+    openedFromLaunchRef.current = true;
+    onEditorOpen();
+  };
+  const restoreWorldEditorFocus = (resetLaunchOrigin = true) => {
+    const focusTarget = openedFromLaunchRef.current ? worldLaunchRef.current : worldTabRef.current;
+    focusTarget?.focus();
+    if (resetLaunchOrigin) openedFromLaunchRef.current = false;
+  };
   const scene = draft.scenes.find(({ id }) => id === draft.activeSceneId);
 
   if (!scene) {
@@ -338,6 +350,7 @@ function LoadedWritingWorkspace({
                 <Tooltip key={tool.mode}>
                   <TooltipTrigger asChild>
                     <TabsTrigger
+                      ref={tool.mode === "world" ? worldTabRef : undefined}
                       value={tool.mode}
                       aria-label={tool.label}
                       onClick={() => {
@@ -383,7 +396,12 @@ function LoadedWritingWorkspace({
                   <SheetDescription>현재 장면과 관련된 집필 정보를 확인합니다.</SheetDescription>
                 </SheetHeader>
                 <ScrollArea className="min-h-0 flex-1">
-                  <ContextPanelContent draft={draft} bible={bible} onEditWorld={onEditorOpen} />
+                  <ContextPanelContent
+                    draft={draft}
+                    bible={bible}
+                    onEditWorld={handleEditorOpen}
+                    editWorldButtonRef={worldLaunchRef}
+                  />
                 </ScrollArea>
               </SheetContent>
             </Sheet>
@@ -393,7 +411,12 @@ function LoadedWritingWorkspace({
           <ResizablePanelGroup orientation="horizontal" className="min-w-0 flex-1">
             <ResizablePanel defaultSize="20%" minSize="15%">
               <ScrollArea className="h-full bg-sidebar/90">
-                <ContextPanelContent draft={draft} bible={bible} onEditWorld={onEditorOpen} />
+                <ContextPanelContent
+                  draft={draft}
+                  bible={bible}
+                  onEditWorld={handleEditorOpen}
+                  editWorldButtonRef={worldLaunchRef}
+                />
               </ScrollArea>
             </ResizablePanel>
             <ResizableHandle withHandle />
@@ -412,7 +435,12 @@ function LoadedWritingWorkspace({
         ) : (
           <>
             <aside className="w-64 shrink-0 overflow-y-auto border-r border-border bg-sidebar/90">
-              <ContextPanelContent draft={draft} bible={bible} onEditWorld={onEditorOpen} />
+              <ContextPanelContent
+                draft={draft}
+                bible={bible}
+                onEditWorld={handleEditorOpen}
+                editWorldButtonRef={worldLaunchRef}
+              />
             </aside>
             <div className="min-w-0 flex-1">{editor}</div>
           </>
@@ -453,11 +481,19 @@ function LoadedWritingWorkspace({
             onRequestClose={worldEditor.requestClose}
             onRetry={() => void worldEditor.retry()}
             onRequestReload={worldEditor.requestLatestReload}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              restoreWorldEditorFocus();
+            }}
           />
           <WorldDiscardDialog
             intent={worldEditor.state.discardIntent}
             onCancel={worldEditor.cancelDiscard}
             onConfirm={() => void worldEditor.confirmDiscard()}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              restoreWorldEditorFocus(false);
+            }}
           />
         </>
       )}
@@ -490,10 +526,12 @@ function ContextPanelContent({
   draft,
   bible,
   onEditWorld,
+  editWorldButtonRef,
 }: {
   draft: ProjectWorkspaceResponse["manuscript"];
   bible: ProjectWorkspaceResponse["storyBible"];
   onEditWorld: () => void;
+  editWorldButtonRef: Ref<HTMLButtonElement>;
 }) {
   return (
     <>
@@ -504,7 +542,12 @@ function ContextPanelContent({
         <StoryContextPanel bible={bible} mode="characters" />
       </TabsContent>
       <TabsContent value="world">
-        <StoryContextPanel bible={bible} mode="world" onEditWorld={onEditWorld} />
+        <StoryContextPanel
+          bible={bible}
+          mode="world"
+          onEditWorld={onEditWorld}
+          editWorldButtonRef={editWorldButtonRef}
+        />
       </TabsContent>
     </>
   );

@@ -14,10 +14,12 @@ export function WorldDiscardDialog({
   intent,
   onCancel,
   onConfirm,
+  onCloseAutoFocus,
 }: {
   intent?: WorldDiscardIntent;
   onCancel: () => void;
   onConfirm: () => void;
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   const reload = intent === "reload-latest";
   const title = reload
@@ -30,7 +32,12 @@ export function WorldDiscardDialog({
         if (!open) onCancel();
       }}
     >
-      <DialogContent showCloseButton={false} className="z-[70]">
+      <DialogContent
+        showCloseButton={false}
+        overlayClassName="z-[70]"
+        className="z-[71]"
+        onCloseAutoFocus={intent === "close" ? onCloseAutoFocus : undefined}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>이 작업은 되돌릴 수 없어요.</DialogDescription>

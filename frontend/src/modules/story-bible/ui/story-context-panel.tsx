@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import { Heart, MapPin } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -9,17 +10,29 @@ interface StoryContextPanelProps {
   bible: StoryBible;
   mode: "characters" | "world";
   onEditWorld?: () => void;
+  editWorldButtonRef?: Ref<HTMLButtonElement>;
 }
 
 const worldKindLabels = { place: "장소", object: "사물", rule: "규칙" } as const;
 
-export function StoryContextPanel({ bible, mode, onEditWorld }: StoryContextPanelProps) {
+export function StoryContextPanel({
+  bible,
+  mode,
+  onEditWorld,
+  editWorldButtonRef,
+}: StoryContextPanelProps) {
   if (mode === "world") {
     return (
       <div className="h-full p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold">세계관</h2>
-          <Button type="button" size="sm" variant="outline" onClick={onEditWorld}>
+          <Button
+            ref={editWorldButtonRef}
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onEditWorld}
+          >
             세계관 수정 및 추가
           </Button>
         </div>

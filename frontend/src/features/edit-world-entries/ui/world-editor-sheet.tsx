@@ -32,11 +32,14 @@ export interface WorldEditorSheetProps {
   onRequestClose: () => void;
   onRetry: () => void;
   onRequestReload: () => void;
+  onCloseAutoFocus?: (event: Event) => void;
 }
 
 export function WorldEditorSheet(props: WorldEditorSheetProps) {
   const { state } = props;
   const frozen = isWorldEditorFrozen(state);
+  const unavailable = state.phase.status === "unavailable";
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const previousRowCount = useRef(state.draft.rows.length);
   useEffect(() => {
     if (state.draft.rows.length > previousRowCount.current) {
@@ -62,9 +65,13 @@ export function WorldEditorSheet(props: WorldEditorSheetProps) {
         showCloseButton={false}
         className="z-[60] w-full gap-0 p-0 sm:max-w-2xl"
         onOpenAutoFocus={(event) => {
+          event.preventDefault();
           if (state.firstInvalidField) {
-            event.preventDefault();
             focusWorldField(state.firstInvalidField.key, state.firstInvalidField.field);
+          } else if (state.draft.rows[0]) {
+            focusWorldField(state.draft.rows[0].key, "kind");
+          } else {
+            titleRef.current?.focus();
           }
         }}
         onEscapeKeyDown={(event) => {
@@ -73,9 +80,12 @@ export function WorldEditorSheet(props: WorldEditorSheetProps) {
         onPointerDownOutside={(event) => {
           if (frozen) event.preventDefault();
         }}
+        onCloseAutoFocus={props.onCloseAutoFocus}
       >
         <SheetHeader className="border-b pr-14">
-          <SheetTitle>세계관 수정 및 추가</SheetTitle>
+          <SheetTitle ref={titleRef} tabIndex={-1}>
+            세계관 수정 및 추가
+          </SheetTitle>
           <SheetDescription>
             기존 항목을 수정하거나 새 세계관 항목을 추가한 뒤 한 번에 저장합니다.
           </SheetDescription>
@@ -105,6 +115,7 @@ export function WorldEditorSheet(props: WorldEditorSheetProps) {
               state={state}
               onRetry={props.onRetry}
               onRequestReload={props.onRequestReload}
+              onRequestClose={props.onRequestClose}
             />
             {state.draft.rows.length === 0 && (
               <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -120,7 +131,7 @@ export function WorldEditorSheet(props: WorldEditorSheetProps) {
                   index={index}
                   newIndex={newIndex}
                   errors={state.errors[row.key]}
-                  disabled={frozen || state.phase.status === "unavailable"}
+                  disabled={frozen || unavailable}
                   onFieldChange={props.onFieldChange}
                 />
               );
@@ -129,7 +140,7 @@ export function WorldEditorSheet(props: WorldEditorSheetProps) {
               type="button"
               variant="outline"
               className="w-full"
-              disabled={frozen}
+              disabled={frozen || unavailable}
               onClick={props.onAdd}
             >
               <Plus />
@@ -143,7 +154,7 @@ export function WorldEditorSheet(props: WorldEditorSheetProps) {
           </Button>
           <Button
             type="button"
-            disabled={frozen || state.phase.status === "unavailable" || !isWorldEditorDirty(state)}
+            disabled={frozen || unavailable || !isWorldEditorDirty(state)}
             onClick={props.onSave}
           >
             저장
