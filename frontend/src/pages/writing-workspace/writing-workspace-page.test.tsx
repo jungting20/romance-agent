@@ -190,6 +190,98 @@ describe("WritingWorkspacePage", () => {
     expect(screen.getByRole("heading", { name: "세계관" })).toBeInTheDocument();
   });
 
+  test("does not flush or block a tab URL click while the manuscript is unsaved", async () => {
+    setViewportWidth(1024);
+    let saveCount = 0;
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () => {
+        saveCount += 1;
+        return HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+          { status: 500 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+
+    fireEvent.change(editor, { target: { value: "탭 이동으로 저장하지 않을 원고" } });
+    expect(screen.getByRole("status")).toHaveAccessibleName("편집 중");
+    await user.click(screen.getByRole("tab", { name: "인물 보기" }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    expect(screen.getByRole("tab", { name: "인물 보기", selected: true })).toBeInTheDocument();
+    expect(saveCount).toBe(0);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("does not flush or block unsaved tab URL replay through browser history", async () => {
+    setViewportWidth(1024);
+    let saveCount = 0;
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () => {
+        saveCount += 1;
+        return HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderWorkspace();
+
+    await user.click(await screen.findByRole("tab", { name: "인물 보기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    await user.click(screen.getByRole("tab", { name: "세계관 보기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+
+    const editor = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "원고 본문" });
+    fireEvent.change(editor, { target: { value: "히스토리 이동으로 저장하지 않을 원고" } });
+    expect(screen.getByRole("status")).toHaveAccessibleName("편집 중");
+
+    router.history.back();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    expect(screen.getByRole("tab", { name: "인물 보기", selected: true })).toBeInTheDocument();
+
+    router.history.forward();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+    expect(screen.getByRole("tab", { name: "세계관 보기", selected: true })).toBeInTheDocument();
+    expect(saveCount).toBe(0);
+    expect(screen.queryByRole("dialog", { name: "원고 저장 충돌 해결" })).not.toBeInTheDocument();
+  });
+
+  test("still flushes and blocks an unsaved non-tab search navigation", async () => {
+    let saveCount = 0;
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () => {
+        saveCount += 1;
+        return HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+          { status: 500 },
+        );
+      }),
+    );
+    const { router } = renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+    fireEvent.change(editor, { target: { value: "검색 상태 이동 전에 저장할 원고" } });
+
+    void router.navigate({
+      to: "/projects/$projectId/write",
+      params: { projectId: "silver-garden" },
+      search: (previous) => ({ ...previous, view: "dense" }),
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
+    expect(saveCount).toBe(1);
+    expect(router.state.location.search).toEqual({});
+    expect(editor.value).toBe("검색 상태 이동 전에 저장할 원고");
+  });
+
   test.each([
     ["explicit manuscript", "tab=manuscript&view=dense"],
     ["empty", "tab=&view=dense"],

@@ -43,7 +43,7 @@ import { SceneTree } from "@/modules/manuscript/ui/scene-tree";
 import { StoryContextPanel } from "@/modules/story-bible/ui/story-context-panel";
 import { WritingToolPanel } from "@/modules/writing-assistant/ui/writing-tool-panel";
 
-import type { ContextMode } from "./writing-workspace-tabs";
+import { type ContextMode, isTabOnlyWorkspaceNavigation } from "./writing-workspace-tabs";
 
 const contextTools: Array<{
   mode: ContextMode;
@@ -429,7 +429,11 @@ function useManuscriptNavigationGuard(
   useBlocker({
     disabled: !shouldBlock,
     enableBeforeUnload: shouldBlock,
-    shouldBlockFn: async () => {
+    shouldBlockFn: async ({ current, next }) => {
+      if (isTabOnlyWorkspaceNavigation(current, next)) {
+        return false;
+      }
+
       if (isHandlingBlockedNavigationRef.current) {
         return true;
       }
