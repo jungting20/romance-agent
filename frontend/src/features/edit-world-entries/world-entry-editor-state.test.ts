@@ -141,6 +141,37 @@ describe("worldEditorReducer", () => {
     expect(state.draft).toBe(draft);
   });
 
+  test("keeps a save-time unavailable draft frozen against field changes and additions", () => {
+    let state = createWorldEditorState(snapshot);
+    state = worldEditorReducer(state, {
+      type: "change-field",
+      key: "world-1",
+      field: "title",
+      value: "보존할 초안",
+    });
+    state = worldEditorReducer(state, {
+      type: "save-failed",
+      error: new ApiRequestError(404, {
+        code: "STORY_BIBLE_NOT_FOUND",
+        message: "없음",
+        fieldErrors: [],
+      }),
+    });
+    const unavailable = state;
+
+    state = worldEditorReducer(state, { type: "add-row", key: "must-not-add" });
+    state = worldEditorReducer(state, {
+      type: "change-field",
+      key: "world-1",
+      field: "title",
+      value: "바뀌면 안 됨",
+    });
+
+    expect(state).toBe(unavailable);
+    expect(state.draft.rows).toHaveLength(2);
+    expect(state.draft.rows[0].title).toBe("보존할 초안");
+  });
+
   test("preserves the old draft during latest reload and replaces it only after success", () => {
     let state = createWorldEditorState(snapshot);
     state = worldEditorReducer(state, {

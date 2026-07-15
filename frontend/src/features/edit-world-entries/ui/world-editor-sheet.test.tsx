@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
 import type { StoryBibleSnapshot } from "@/app/infrastructure/api/contracts";
+import { ApiRequestError } from "@/app/infrastructure/api/api-client";
 
 import { createWorldEditorState, worldEditorReducer } from "../world-entry-editor-state";
 import { WorldEditorSheet } from "./world-editor-sheet";
@@ -30,6 +31,23 @@ describe("WorldEditorSheet", () => {
 
     await user.clear(screen.getByRole("textbox", { name: "기존 항목 1 제목" }));
     expect(onFieldChange).toHaveBeenCalledWith("world-1", "title", "");
+  });
+
+  test("autofocuses the first existing kind on a normal open", () => {
+    renderEditor();
+
+    expect(screen.getByRole("combobox", { name: "기존 항목 1 분류" })).toHaveFocus();
+  });
+
+  test("autofocuses the editor title when an empty editor opens", () => {
+    renderEditor({
+      state: createWorldEditorState({
+        ...snapshot,
+        storyBible: { ...snapshot.storyBible, worldEntries: [] },
+      }),
+    });
+
+    expect(screen.getByRole("heading", { name: "세계관 수정 및 추가" })).toHaveFocus();
   });
 
   test("focuses the first invalid field and exposes every validation error", () => {
@@ -63,6 +81,32 @@ describe("WorldEditorSheet", () => {
     expect(screen.getByRole("button", { name: "세계관 항목 추가" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "세계관 편집기 닫기" })).toBeDisabled();
+  });
+
+  test("freezes edits and additions and offers guarded return while unavailable", () => {
+    let state = createWorldEditorState(snapshot);
+    state = worldEditorReducer(state, {
+      type: "change-field",
+      key: "world-1",
+      field: "title",
+      value: "보존할 초안",
+    });
+    state = worldEditorReducer(state, {
+      type: "save-failed",
+      error: new ApiRequestError(404, {
+        code: "STORY_BIBLE_NOT_FOUND",
+        message: "없음",
+        fieldErrors: [],
+      }),
+    });
+    const onRequestClose = vi.fn();
+    renderEditor({ state, onRequestClose });
+
+    expect(screen.getByRole("textbox", { name: "기존 항목 1 제목" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "세계관 항목 추가" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    screen.getByRole("button", { name: "세계관 보기로 돌아가기" }).click();
+    expect(onRequestClose).toHaveBeenCalledOnce();
   });
 });
 

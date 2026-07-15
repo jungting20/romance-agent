@@ -7,10 +7,12 @@ export function WorldEditorFeedback({
   state,
   onRetry,
   onRequestReload,
+  onRequestClose,
 }: {
   state: WorldEditorState;
   onRetry: () => void;
   onRequestReload: () => void;
+  onRequestClose: () => void;
 }) {
   const errorCount = Object.values(state.errors).reduce(
     (count, errors) => count + Number(Boolean(errors.title)) + Number(Boolean(errors.description)),
@@ -42,6 +44,11 @@ export function WorldEditorFeedback({
       <Alert variant="destructive">
         <AlertTitle>이 세계관을 더 이상 편집할 수 없어요.</AlertTitle>
         <AlertDescription>현재 편집 내용은 보존되어 있어요.</AlertDescription>
+        <AlertAction className="static mt-2">
+          <Button type="button" variant="outline" onClick={onRequestClose}>
+            세계관 보기로 돌아가기
+          </Button>
+        </AlertAction>
       </Alert>
     );
   }

@@ -266,6 +266,126 @@ describe("WritingWorkspacePage", () => {
     expect(router.state.location.search).toEqual({ tab: "world", panel: "world-editor" });
   });
 
+  test("discards a confirmed close draft and reopens from the authoritative snapshot", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world");
+    const launch = await screen.findByRole("button", { name: "세계관 수정 및 추가" });
+    await user.click(launch);
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    const original = (title as HTMLInputElement).value;
+    await user.clear(title);
+    await user.type(title, "폐기할 로컬 초안");
+
+    await user.click(screen.getByRole("button", { name: "세계관 편집기 닫기" }));
+    await user.click(screen.getByRole("button", { name: "변경사항 버리기" }));
+    await waitFor(() => expect(launch).toHaveFocus());
+    await user.click(launch);
+
+    expect(await screen.findByRole("textbox", { name: "기존 항목 1 제목" })).toHaveValue(original);
+  });
+
+  test("routes Escape and overlay dismissal through the dirty discard confirmation", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.type(title, " 지킬 초안");
+
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="dialog-overlay"]')).toHaveClass("z-[70]");
+    expect(document.querySelector('[data-slot="dialog-content"]')).toHaveClass("z-[71]");
+    await user.click(screen.getByRole("button", { name: "계속 편집" }));
+    expect(title).toHaveValue("비가 그친 온실 지킬 초안");
+
+    const overlay = document.querySelector<HTMLElement>('[data-slot="sheet-overlay"]');
+    expect(overlay).not.toBeNull();
+    fireEvent.pointerDown(overlay!);
+    fireEvent.click(overlay!);
+    expect(
+      screen.getByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+  });
+
+  test("preserves and freezes a draft after save reports the Story Bible unavailable", async () => {
+    setViewportWidth(1024);
+    server.use(
+      http.put("/api/projects/:projectId/story-bible/world-entries", () =>
+        HttpResponse.json(
+          { code: "STORY_BIBLE_NOT_FOUND", message: "없음", fieldErrors: [] },
+          { status: 404 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.clear(title);
+    await user.type(title, "404 뒤에도 남는 초안");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("더 이상 편집할 수 없어요");
+    expect(title).toHaveValue("404 뒤에도 남는 초안");
+    expect(title).toBeDisabled();
+    expect(screen.getByRole("button", { name: "세계관 항목 추가" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "세계관 보기로 돌아가기" }));
+    expect(
+      screen.getByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+  });
+
+  test("keeps the world draft open when confirmed navigation is later blocked by manuscript flush", async () => {
+    setViewportWidth(1024);
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "실패", fieldErrors: [] },
+          { status: 500 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    const { container, router } = renderWorkspace(
+      "/projects/silver-garden/write?tab=world&panel=world-editor",
+    );
+    const manuscript = await waitFor(() => {
+      const element = container.querySelector<HTMLTextAreaElement>('[aria-label="원고 본문"]');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    fireEvent.change(manuscript, {
+      target: { value: "탐색 전에 실패할 원고" },
+    });
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.clear(title);
+    await user.type(title, "탐색 실패 뒤에도 남는 세계관");
+
+    void router.navigate({ to: "/" });
+    await user.click(await screen.findByRole("button", { name: "변경사항 버리기" }));
+
+    await waitFor(() => expect(screen.getByText("저장 실패")).toBeInTheDocument());
+    expect(screen.getByRole("textbox", { name: "기존 항목 1 제목" })).toHaveValue(
+      "탐색 실패 뒤에도 남는 세계관",
+    );
+    expect(router.state.location.search).toEqual({ tab: "world", panel: "world-editor" });
+  });
+
+  test("returns focus to the world tab after closing a direct-link editor", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+
+    await user.click(screen.getByRole("button", { name: "세계관 편집기 닫기" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "세계관 보기", selected: true })).toHaveFocus(),
+    );
+  });
+
   test("adds multiple entries, focuses each new kind, validates all blanks, and focuses the first invalid title", async () => {
     setViewportWidth(1024);
     const user = userEvent.setup();
