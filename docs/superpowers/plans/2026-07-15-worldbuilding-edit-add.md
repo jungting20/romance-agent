@@ -26,7 +26,7 @@
 - Keep runtime data untracked. Tests inject temporary directories and deterministic identifiers.
 - Required full frontend checks are `mise exec -- pnpm check`, `mise exec -- pnpm build`, and `mise exec -- pnpm api:lint` from `frontend/`.
 - Required full backend checks are `mise exec -- uv run pytest`, `mise exec -- uv run ruff check .`, and `mise exec -- uv run ruff format --check .` from `backend/`.
-- The required Playwright planner and generator configs are currently absent. Do not substitute generic agents, dispatch frontend review, or claim final completion until `.codex/agents/playwright_test_planner.toml` and `.codex/agents/playwright_test_generator.toml` exist and complete their ordered work.
+- The required Playwright planner and generator configs are present after merging `main`. Use those exact registered agents in order; do not substitute generic agents, dispatch frontend review before they finish, or claim final completion without their evidence.
 
 ---
 
@@ -406,7 +406,7 @@ git commit -m "feat(backend): persist story bible world entries"
 
 **Files:**
 
-- Create: `frontend/src/pages/writing-workspace/writing-workspace-search.ts`
+- Modify: `frontend/src/pages/writing-workspace/writing-workspace-tabs.ts`
 - Modify: `frontend/src/routes/projects.$projectId.write.tsx`
 - Modify: `frontend/src/pages/writing-workspace/writing-workspace-page.tsx`
 - Modify: `frontend/src/pages/writing-workspace/writing-workspace-page.test.tsx`
@@ -501,9 +501,9 @@ mise exec -- pnpm test src/features/edit-world-entries/ui/world-editor-sheet.tes
 
 Expected: FAIL because the action, URL contract, editor, and mutation workflow do not exist.
 
-- [ ] **Step 6: Implement canonical URL state and the approved component tree**
+- [ ] **Step 6: Extend the existing canonical tab URL state and implement the approved component tree**
 
-The route validator and page canonicalizer implement:
+Extend the merged `writing-workspace-tabs.ts`, route validator, and page canonicalizer with the editor panel contract while preserving all existing tab direct-link, history, canonicalization, and save-guard tests:
 
 ```ts
 export const contextModes = ["manuscript", "characters", "world"] as const;
@@ -627,7 +627,7 @@ test -f .codex/agents/playwright_test_planner.toml
 test -f .codex/agents/playwright_test_generator.toml
 ```
 
-Expected current result: both commands fail. Mark the frontend pipeline blocked. Do not substitute a generic agent, create ad hoc tests, dispatch `frontend-review`, or proceed to final verification.
+Expected current result: both commands pass. If either later fails or the registered agent cannot invoke its configured MCP tools, mark the frontend pipeline blocked. Do not substitute a generic agent, create ad hoc tests, dispatch `frontend-review`, or proceed to final verification.
 
 - [ ] **Step 2: When both registered agents exist, dispatch in order**
 
