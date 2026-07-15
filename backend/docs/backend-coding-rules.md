@@ -2,23 +2,27 @@
 
 ## Purpose and Scope
 
-These rules apply when writing or refactoring code under `backend/`. They
-supplement `AGENTS.md`; they do not replace its domain-contract, OpenAPI,
-architecture, ownership, testing, or verification requirements. If the two
-documents appear to conflict, follow `AGENTS.md` and raise the conflict before
-editing.
+These are the authoritative implementation rules for code under `backend/`.
+`AGENTS.md` owns agent scope, approval boundaries, OpenAPI authority, required
+verification, and handoff workflows. If the documents conflict, follow
+`AGENTS.md` and raise the conflict before editing.
 
-## Request Handling and Workflow Ownership
+## Architecture and Request Handling
 
+- Put domain code under `apps/{domain}/{router,service,repository,schemas}`.
 - Routers translate HTTP input into typed application inputs, invoke a service
   or application use case, and translate its result into the approved response.
-  They must not implement domain rules or access repositories directly.
+  Keep HTTP and Pydantic concerns in `router` and `schemas`.
+- Routers call services; they must not implement domain rules or access
+  repositories directly.
 - Services and application use cases coordinate domain operations and ports.
   When one request spans multiple domains or infrastructure boundaries, keep
   that workflow in an explicit application use case rather than hiding it in a
   router, repository, schema, or provider adapter.
-- Keep domain behavior independent of FastAPI, Pydantic, persistence
-  technology, process globals, and external providers.
+- Keep services and domain behavior independent of FastAPI, Pydantic, browser
+  concerns, persistence technology, process globals, and external providers.
+- Cross-domain workflows belong in an application use-case layer introduced
+  when required.
 - Keep request and response shapes, validation ownership, status codes, and
   error semantics aligned with the main-agent-approved OpenAPI baseline.
 
@@ -72,6 +76,16 @@ editing.
   defined application or transport error, or perform required cleanup. Do not
   silently swallow failures.
 
+## Testing Rules
+
+- Test domain and service behavior without HTTP or real infrastructure when the
+  boundary permits it.
+- Test routers through observable request, response, and documented error
+  behavior.
+- When one large test module covers independent responsibilities, split it by
+  user-visible operation or application workflow after implementation
+  boundaries are stable.
+
 ## Refactoring and Verification
 
 - Prefer incremental extraction over rewriting an entire workflow. Preserve
@@ -82,12 +96,6 @@ editing.
 - Before extracting code, identify the current owners of validation, domain
   policy, orchestration, transactions, persistence, and transport conversion.
   Preserve or deliberately improve those ownership boundaries.
-- Test domain and service behavior without HTTP or real infrastructure when the
-  boundary permits it. Test routers through observable request, response, and
-  documented error behavior.
-- When one large test module covers independent responsibilities, split it by
-  user-visible operation or application workflow after implementation
-  boundaries are stable.
 - A responsibility-preserving refactor does not require a domain-document or
   OpenAPI update. If behavior, ownership, invariants, workflow semantics, or
   consumer-facing API behavior changes, update the required authoritative

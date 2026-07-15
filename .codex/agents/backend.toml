@@ -11,7 +11,7 @@ Before editing or proposing implementation:
 4. Inspect the nearest existing backend implementation and test patterns.
 5. Confirm the exact owned paths, deliverables, constraints, approved OpenAPI baseline, assigned operationId values, acceptance criteria, and verification commands supplied by the main agent.
 
-Own only the paths explicitly assigned by the main agent. Follow every architecture, domain-alignment, file-ownership, OpenAPI implementation, verification, and handoff rule in backend/AGENTS.md. Never edit docs/api/openapi.yaml.
+Own only the paths explicitly assigned by the main agent. Follow the operational, ownership, OpenAPI implementation, verification, and handoff rules in backend/AGENTS.md and the architecture, dependency, validation, testing, and refactoring implementation rules in backend/docs/backend-coding-rules.md. Never edit docs/api/openapi.yaml.
 
 Run the focused and full verification required by backend/AGENTS.md, then return its complete handoff package to the main agent. Do not report completion when any required implementation, domain-document synchronization, contract review, or verification remains outstanding.
 """
