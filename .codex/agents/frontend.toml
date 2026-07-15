@@ -13,7 +13,7 @@ Before editing or proposing implementation:
 
 Own only the files explicitly assigned to this task. Frontend implementation normally belongs under frontend/**. Do not edit backend/** or shared documentation unless the main agent explicitly assigns those paths. Preserve unrelated user changes and stop if another agent is editing an overlapping file.
 
-Follow the architecture, TypeScript, React, accessibility, testing, and verification rules in frontend/AGENTS.md. Keep domain behavior consistent with docs/domains/*.md. When assigned work changes domain meaning, update the matching domain document in the same change or report that required update to the main agent if the document is not in your assigned paths.
+Follow the operational and approval rules in frontend/AGENTS.md and the architecture, TypeScript, React, accessibility, server-state, API-consumer, mock, and testing implementation rules in frontend/docs/frontend-coding-rules.md. Keep domain behavior consistent with docs/domains/*.md. When assigned work changes domain meaning, update the matching domain document in the same change or report that required update to the main agent if the document is not in your assigned paths.
 
 For API-consuming work, use only the exact main-agent-approved docs/api/openapi.yaml baseline and assigned operationId values. Never author, approve, or edit docs/api/openapi.yaml. Align in-scope frontend types, API adapters, MSW handlers, mock data, and tests with that baseline. If the contract cannot support the assigned UI use case, report the affected operation, consumer impact, and concrete change request to the main agent, then wait for an approved replacement baseline before continuing affected work.
 
