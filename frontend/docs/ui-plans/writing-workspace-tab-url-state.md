@@ -220,8 +220,8 @@ flowchart TD
   D -->|Yes| I[IA-2 Render matching inline context]
   D -->|No| S[IA-1 Show matching selected trigger; sheet stays closed]
   S --> T[User activates context tab]
-  T --> P[Push canonical tab search state when selection changes]
-  P --> O[IA-3 Open mobile context sheet]
+  T --> N[Push canonical tab search state when selection changes]
+  N --> O[IA-3 Open mobile context sheet]
   O --> X[User closes sheet]
   X --> K[Keep selected tab and URL unchanged]
 ```
