@@ -16,6 +16,7 @@ import { server } from "@/mocks/server";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function setViewportWidth(width: number) {
@@ -132,6 +133,44 @@ describe("WritingWorkspacePage", () => {
 
     await user.click(screen.getByRole("button", { name: "AI 도구 닫기" }));
     expect(screen.getAllByRole("separator")).toHaveLength(1);
+  });
+
+  test("uses explicit percentage defaults for every desktop panel", async () => {
+    setViewportWidth(1280);
+    const user = userEvent.setup();
+    const { container } = renderWorkspace();
+
+    await screen.findByRole("textbox", { name: "원고 본문" });
+    let panels = container.querySelectorAll<HTMLElement>('[data-slot="resizable-panel"]');
+    expect(panels).toHaveLength(2);
+    expect(panels[0]).toHaveAttribute("data-default-size", "20%");
+    expect(panels[0]).toHaveAttribute("data-min-size", "15%");
+    expect(panels[1]).toHaveAttribute("data-default-size", "55%");
+    expect(panels[1]).toHaveAttribute("data-min-size", "40%");
+
+    await user.click(screen.getByRole("button", { name: "AI 도구 열기" }));
+    panels = container.querySelectorAll<HTMLElement>('[data-slot="resizable-panel"]');
+    expect(panels).toHaveLength(3);
+    expect(panels[2]).toHaveAttribute("data-default-size", "25%");
+    expect(panels[2]).toHaveAttribute("data-min-size", "20%");
+  });
+
+  test("resizes desktop panels from a focused separator with the keyboard", async () => {
+    setViewportWidth(1280);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(500);
+    const user = userEvent.setup();
+    renderWorkspace();
+
+    await screen.findByRole("textbox", { name: "원고 본문" });
+    const separator = screen.getByRole("separator");
+    const initialSize = separator.getAttribute("aria-valuenow");
+
+    separator.focus();
+    expect(separator).toHaveFocus();
+    expect(separator).toHaveAttribute("tabindex", "0");
+    await user.keyboard("{ArrowRight}");
+
+    await waitFor(() => expect(separator).not.toHaveAttribute("aria-valuenow", initialSize));
   });
 
   test("applies a requested continuation to the manuscript", async () => {

@@ -12,8 +12,17 @@ function ResizablePanelGroup({ className, ...props }: ResizablePrimitive.GroupPr
   );
 }
 
-function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
-  return <ResizablePrimitive.Panel data-slot="resizable-panel" {...props} />;
+function ResizablePanel({ defaultSize, minSize, ...props }: ResizablePrimitive.PanelProps) {
+  return (
+    <ResizablePrimitive.Panel
+      data-slot="resizable-panel"
+      data-default-size={defaultSize}
+      data-min-size={minSize}
+      defaultSize={defaultSize}
+      minSize={minSize}
+      {...props}
+    />
+  );
 }
 
 function ResizableHandle({

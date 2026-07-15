@@ -298,19 +298,19 @@ function LoadedWritingWorkspace({ workspace }: { workspace: ProjectWorkspaceResp
           </>
         ) : desktopIsResizable ? (
           <ResizablePanelGroup orientation="horizontal" className="min-w-0 flex-1">
-            <ResizablePanel defaultSize={20} minSize={15}>
+            <ResizablePanel defaultSize="20%" minSize="15%">
               <ScrollArea className="h-full bg-sidebar/90">
                 <ContextPanelContent draft={draft} bible={bible} />
               </ScrollArea>
             </ResizablePanel>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={55} minSize={40}>
+            <ResizablePanel defaultSize="55%" minSize="40%">
               {editor}
             </ResizablePanel>
             {assistantOpen && (
               <>
                 <ResizableHandle withHandle />
-                <ResizablePanel defaultSize={25} minSize={20} className="[&>aside]:w-full">
+                <ResizablePanel defaultSize="25%" minSize="20%" className="[&>aside]:w-full">
                   {assistantPanel}
                 </ResizablePanel>
               </>
