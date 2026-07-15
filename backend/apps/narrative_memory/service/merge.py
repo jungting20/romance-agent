@@ -95,7 +95,7 @@ def merge_chunk_analyses(
     for analysis in ordered_analyses:
         _validate_analysis(analysis, scene_id, scene_revision, scene_sequence)
 
-    return SceneRelationshipSnapshot(
+    snapshot = SceneRelationshipSnapshot(
         scene_id=scene_id,
         scene_revision=scene_revision,
         scene_sequence=scene_sequence,
@@ -114,6 +114,8 @@ def merge_chunk_analyses(
             event for analysis in ordered_analyses for event in analysis.location_events
         ),
     )
+    _validate_scene_snapshot(snapshot)
+    return snapshot
 
 
 def merge_scene_into_project(
@@ -130,6 +132,7 @@ def merge_scene_into_project(
     previous_revision = active_revisions.get(scene.scene_id)
     if previous_revision is not None and scene.scene_revision <= previous_revision:
         raise MergeInvariantError("scene revision must advance")
+    scene = _force_pending_scene_candidates(scene)
 
     entities, entity_id_map = _merge_project_identities(project.entities, scene.entities, scene)
     places, place_id_map = _merge_project_identities(project.places, scene.places, scene)
@@ -141,12 +144,20 @@ def merge_scene_into_project(
     replacement_relationships = _rewrite_relationship_references(
         scene.relationship_events, entity_references
     )
+    previous_relationships = _merge_relationship_events(
+        previous_relationships, reject_conflicting_stable_ids=True
+    )
+    replacement_relationships = _merge_relationship_events(replacement_relationships)
     previous_locations = _rewrite_location_references(
         project.location_events, entity_references, place_references
     )
     replacement_locations = _rewrite_location_references(
         scene.location_events, entity_references, place_references
     )
+    previous_locations = _merge_location_events(
+        previous_locations, reject_conflicting_stable_ids=True
+    )
+    replacement_locations = _merge_location_events(replacement_locations)
     relationships = _replace_scene_candidates(
         previous_relationships,
         replacement_relationships,
@@ -185,6 +196,26 @@ def _require_valid_project(project: ProjectRelationshipSnapshot) -> None:
         validate_project_snapshot(project)
     except ProjectInvariantError as error:
         raise MergeInvariantError(str(error)) from error
+
+
+def _force_pending_scene_candidates(
+    scene: SceneRelationshipSnapshot,
+) -> SceneRelationshipSnapshot:
+    return replace(
+        scene,
+        entities=tuple(
+            replace(candidate, status=CandidateStatus.PENDING) for candidate in scene.entities
+        ),
+        places=tuple(
+            replace(candidate, status=CandidateStatus.PENDING) for candidate in scene.places
+        ),
+        relationship_events=tuple(
+            replace(event, status=CandidateStatus.PENDING) for event in scene.relationship_events
+        ),
+        location_events=tuple(
+            replace(event, status=CandidateStatus.PENDING) for event in scene.location_events
+        ),
+    )
 
 
 def _replace_scene_relationships(
@@ -589,6 +620,11 @@ def _validate_chunk_set(analyses: tuple[ChunkAnalysis, ...]) -> None:
     for analysis in analyses[:-1]:
         if analysis.chunk_end - analysis.chunk_start != 300:
             raise MergeInvariantError("nonfinal chunk width must be 300")
+    if len(analyses) > 1 and analyses[-1].chunk_end - analyses[-1].chunk_start <= 50:
+        raise MergeInvariantError("final chunk must contain text beyond the overlap")
+    for previous, current in zip(analyses, analyses[1:], strict=False):
+        if previous.source_text[-50:] != current.source_text[:50]:
+            raise MergeInvariantError("adjacent chunk overlap text must match")
 
 
 def _validate_analysis(
@@ -624,6 +660,8 @@ def _validate_analysis(
         *analysis.location_events,
     )
     for candidate in candidates:
+        if candidate.status is not CandidateStatus.PENDING:
+            raise MergeInvariantError("extraction candidates must be pending")
         if candidate.scene_id != scene_id:
             raise MergeInvariantError("candidate scene does not match requested scene")
         if candidate.scene_revision != scene_revision:
@@ -766,6 +804,8 @@ def _merge_places(values: Iterable[PlaceCandidate]) -> tuple[PlaceCandidate, ...
 
 def _merge_relationship_events(
     values: Iterable[RelationshipEventCandidate],
+    *,
+    reject_conflicting_stable_ids: bool = False,
 ) -> tuple[RelationshipEventCandidate, ...]:
     grouped: dict[tuple[str, str, str, str, str], list[RelationshipEventCandidate]] = {}
     for event in values:
@@ -775,9 +815,17 @@ def _merge_relationship_events(
     for key in sorted(grouped):
         ordered = tuple(sorted(grouped[key], key=_relationship_event_order_key))
         for cluster in _overlap_clusters(ordered):
+            stable = tuple(
+                event
+                for event in cluster
+                if event.status in (CandidateStatus.APPROVED, CandidateStatus.NEEDS_REVIEW)
+            )
+            if reject_conflicting_stable_ids and len({event.event_id for event in stable}) > 1:
+                raise MergeInvariantError("conflicting stable event IDs would collapse")
+            representative = stable[0] if stable else cluster[0]
             merged.append(
                 replace(
-                    cluster[0],
+                    representative,
                     evidence=_merge_evidence(
                         evidence for event in cluster for evidence in event.evidence
                     ),
@@ -788,6 +836,8 @@ def _merge_relationship_events(
 
 def _merge_location_events(
     values: Iterable[LocationEventCandidate],
+    *,
+    reject_conflicting_stable_ids: bool = False,
 ) -> tuple[LocationEventCandidate, ...]:
     grouped: dict[tuple[str, str, str, str, str], list[LocationEventCandidate]] = {}
     for event in values:
@@ -797,9 +847,17 @@ def _merge_location_events(
     for key in sorted(grouped):
         ordered = tuple(sorted(grouped[key], key=_location_event_order_key))
         for cluster in _overlap_clusters(ordered):
+            stable = tuple(
+                event
+                for event in cluster
+                if event.status in (CandidateStatus.APPROVED, CandidateStatus.NEEDS_REVIEW)
+            )
+            if reject_conflicting_stable_ids and len({event.event_id for event in stable}) > 1:
+                raise MergeInvariantError("conflicting stable event IDs would collapse")
+            representative = stable[0] if stable else cluster[0]
             merged.append(
                 replace(
-                    cluster[0],
+                    representative,
                     evidence=_merge_evidence(
                         evidence for event in cluster for evidence in event.evidence
                     ),
