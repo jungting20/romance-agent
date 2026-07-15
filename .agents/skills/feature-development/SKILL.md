@@ -92,8 +92,9 @@ Review the response for complete request, response, status, and error semantics
 and domain compatibility. The main agent must approve the `exact proposed baseline`
 and record its unambiguous revision or diff. No affected frontend or
 backend API work begins until that approval. Every later spec edit creates a
-new proposal and pauses affected implementation and review until the main agent
-approves a replacement baseline.
+new proposal, invalidates affected implementation and review baselines, and
+pauses that work until the main agent approves and redispatches the replacement
+baseline identity/revision.
 
 Only `openapi` edits the contract. Implementers and reviewers never author,
 revise, or approve it. Skip this stage when no consumer-facing operation
@@ -110,7 +111,8 @@ pass and their write ownership is non-overlapping. Every assignment states:
 - relevant domain contracts and acceptance criteria;
 - approved UI-plan path, exact revision or diff, and assigned `REQ-*` IDs when
   applicable;
-- approved OpenAPI baseline and assigned `operationId` values when applicable;
+- the same exact recorded main-approved OpenAPI baseline identity/revision for
+  frontend and backend, plus assigned `operationId` values, when applicable;
 - approved dependency and persistence decisions;
 - ownership of every affected domain document;
 - exact focused and full verification commands and required handoff evidence.
@@ -162,7 +164,8 @@ Each review assignment contains:
 - implementation summary and implementer handoff;
 - approved brief, relevant domain contracts, and accepted deviations;
 - approved UI-plan path/revision and assigned `REQ-*` IDs when applicable;
-- approved OpenAPI baseline and `operationId` values when applicable;
+- the exact OpenAPI baseline identity/revision used by the implementation being
+  reviewed, plus its `operationId` values, when applicable;
 - affected implementation and test paths, acceptance criteria, and all
   verification evidence;
 - explicit read-only ownership and safe verification commands.
