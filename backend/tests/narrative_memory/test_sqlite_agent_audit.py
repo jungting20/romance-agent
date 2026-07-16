@@ -279,6 +279,29 @@ def test_invalid_utf8_event_payload_is_not_partially_committed(tmp_path) -> None
     assert _stored_events(path, "run_events") == []
 
 
+@pytest.mark.parametrize(
+    "latency_ms",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_non_finite_event_number_is_not_partially_committed(tmp_path, latency_ms: float) -> None:
+    audit, path = _initialized_audit(tmp_path)
+    invalid = AttemptFailed(
+        run_id="run-01",
+        chunk_id="scene-01:r2:0000",
+        attempt_number=1,
+        occurred_at=OCCURRED_AT,
+        latency_ms=latency_ms,
+        error_type="ProviderCallError",
+        error_message="provider unavailable",
+    )
+
+    with pytest.raises(ValueError, match="JSON compliant"):
+        audit.append_attempt_event(invalid)
+
+    assert _stored_events(path, "attempt_events") == []
+
+
 def test_database_error_rolls_back_attempt_append(tmp_path) -> None:
     audit, path = _initialized_audit(tmp_path)
     with sqlite3.connect(path) as connection:

@@ -196,7 +196,13 @@ def _event_payload(event: RunEvent | AttemptEvent, excluded_fields: set[str]) ->
         for key, value in asdict(event).items()
         if key not in excluded_fields
     }
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
 
 
 def _json_value(value: Any) -> Any:
