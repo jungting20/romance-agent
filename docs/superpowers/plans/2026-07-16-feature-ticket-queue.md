@@ -971,8 +971,8 @@ git commit -m "feat: expose feature ticket commands"
 - Test: `.agents/skills/prepare-feature-ticket/scripts/validate-skill.sh`
 
 **Interfaces:**
-- Consumes: an explicit `$prepare-feature-ticket` request, the feature idea, approved Superpowers artifacts, and the built `ra-ticket` CLI.
-- Produces: exactly one registered `ready` ticket after both written-artifact approvals, or no ticket on cancellation/failure.
+- Consumes: an explicit `$prepare-feature-ticket` request, the feature idea, an approved design, a completed written implementation plan, and the built `ra-ticket` CLI.
+- Produces: exactly one registered `ready` ticket after design approval and one explicit approval covering the written plan, title, and summary, or no ticket on cancellation/failure.
 
 - [ ] **Step 1: Write the failing structural validator**
 
@@ -1005,7 +1005,9 @@ require 'docs/superpowers/specs/' 'design artifact path'
 require 'explicit approval of the written design' 'design approval gate'
 require 'superpowers:writing-plans' 'implementation planning stage'
 require 'docs/superpowers/plans/' 'plan artifact path'
-require 'explicit approval of the written implementation plan' 'plan approval gate'
+require 'Derive a non-empty title' 'title derivation stage'
+require 'Present the written implementation plan, title, and summary together' 'registration value presentation'
+require 'one explicit approval covering all' 'joint plan and registration approval gate'
 require 'Do not register' 'negative registration gate'
 require 'ra-ticket add' 'registration command'
 require '--json' 'machine-readable registration'
@@ -1014,12 +1016,16 @@ require 'ready' 'initial ticket status'
 brainstorm_line=$(grep -n -F 'superpowers:brainstorming' "$skill_file" | head -1 | cut -d: -f1)
 design_approval_line=$(grep -n -F 'explicit approval of the written design' "$skill_file" | head -1 | cut -d: -f1)
 plan_line=$(grep -n -F 'superpowers:writing-plans' "$skill_file" | head -1 | cut -d: -f1)
-plan_approval_line=$(grep -n -F 'explicit approval of the written implementation plan' "$skill_file" | head -1 | cut -d: -f1)
+title_line=$(grep -n -F 'Derive a non-empty title' "$skill_file" | head -1 | cut -d: -f1)
+present_line=$(grep -n -F 'Present the written implementation plan, title, and summary together' "$skill_file" | head -1 | cut -d: -f1)
+plan_approval_line=$(grep -n -F 'one explicit approval covering all' "$skill_file" | head -1 | cut -d: -f1)
 register_line=$(grep -n -F 'ra-ticket add' "$skill_file" | head -1 | cut -d: -f1)
 
 [ "$brainstorm_line" -lt "$design_approval_line" ] || fail 'design approval must follow brainstorming'
 [ "$design_approval_line" -lt "$plan_line" ] || fail 'writing plan must follow design approval'
-[ "$plan_line" -lt "$plan_approval_line" ] || fail 'plan approval must follow writing plan'
+[ "$plan_line" -lt "$title_line" ] || fail 'title derivation must follow writing plan'
+[ "$title_line" -lt "$present_line" ] || fail 'title and summary presentation must follow derivation'
+[ "$present_line" -lt "$plan_approval_line" ] || fail 'joint approval must follow title and summary presentation'
 [ "$plan_approval_line" -lt "$register_line" ] || fail 'registration must follow plan approval'
 
 printf 'prepare-feature-ticket skill: OK\n'
@@ -1045,16 +1051,19 @@ phrases:
 1. Confirm the request is an explicit invocation and extract the feature idea.
 2. Invoke `superpowers:brainstorming`; follow it completely through the design
    at `docs/superpowers/specs/` and explicit approval of the written design.
-3. Invoke `superpowers:writing-plans`; produce the plan at
-   `docs/superpowers/plans/` and obtain explicit approval of the written
-   implementation plan.
-4. Derive and present a non-empty title and implementation-scope summary before
-   registration.
-5. Do not register if either artifact is absent, either approval is missing, or
+3. Invoke `superpowers:writing-plans`; produce the completed written implementation plan
+   at `docs/superpowers/plans/`, review it, and preserve its path without
+   requesting approval yet.
+4. Derive a non-empty title and implementation-scope summary from the approved
+   design and completed written plan.
+5. Present the written implementation plan, title, and summary together, then
+   obtain one explicit approval covering all three as ready for implementation
+   and registration.
+6. Do not register if either artifact is absent, either approval is missing, or
    the user cancels.
-6. Ensure `.local/bin/ra-ticket` exists by building it from
+7. Ensure `.local/bin/ra-ticket` exists by building it from
    `tools/ra-ticket/` when absent.
-7. Run this exact command shape from the repository root, with shell-safe
+8. Run this exact command shape from the repository root, with shell-safe
    arguments and the approved repository-relative paths:
 
 ```sh
@@ -1066,14 +1075,15 @@ phrases:
   --json
 ```
 
-8. Verify the returned ticket has status `ready`, then report its ID, title,
+9. Verify the returned ticket has status `ready`, then report its ID, title,
    design path, and plan path. On duplicate-plan output, run
    `.local/bin/ra-ticket list --json`, select the item whose `plan_path` exactly
    matches the approved repository-relative plan path, and report that existing
    ticket rather than modifying the database manually.
 
 The quoted values above demonstrate argument shape; the skill must substitute
-the actual approved title, summary, and artifact paths from the current run.
+the actual jointly approved title, summary, and artifact paths from the current
+run.
 
 - [ ] **Step 3: Verify the validator detects ordering regressions**
 
@@ -1082,7 +1092,7 @@ Run:
 ```sh
 .agents/skills/prepare-feature-ticket/scripts/validate-skill.sh
 tmp_skill=$(mktemp)
-awk '!/explicit approval of the written implementation plan/' .agents/skills/prepare-feature-ticket/SKILL.md > "$tmp_skill"
+awk '!/one explicit approval covering all/' .agents/skills/prepare-feature-ticket/SKILL.md > "$tmp_skill"
 if .agents/skills/prepare-feature-ticket/scripts/validate-skill.sh "$tmp_skill"; then
   rm -f "$tmp_skill"
   exit 1
@@ -1091,7 +1101,7 @@ rm -f "$tmp_skill"
 ```
 
 Expected: the real skill prints `OK`; the mutated copy fails with the missing
-plan-approval gate.
+joint plan and registration approval gate.
 
 - [ ] **Step 4: Commit the preparation skill**
 
