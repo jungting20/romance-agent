@@ -10,6 +10,10 @@ class PromptVersionConflict(RuntimeError):
     pass
 
 
+class AttemptAlreadyTerminal(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class RunStarted:
     run_id: str
@@ -84,4 +88,6 @@ class AgentAuditPort(Protocol):
 
     def append_run_event(self, event: RunEvent) -> None: ...
 
-    def append_attempt_event(self, event: AttemptEvent) -> None: ...
+    def append_attempt_event(self, event: AttemptEvent) -> None:
+        """Append an event, rejecting a second terminal event for the same attempt."""
+        ...

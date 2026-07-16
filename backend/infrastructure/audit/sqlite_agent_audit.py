@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.narrative_memory.repository.analysis_audit import (
+    AttemptAlreadyTerminal,
     AttemptEvent,
     AttemptFailed,
     AttemptStarted,
@@ -79,6 +80,16 @@ class SQLiteAgentAudit:
                 )
                 """
             )
+            try:
+                connection.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_attempt_terminal "
+                    "ON attempt_events (run_id, chunk_id, attempt_number) "
+                    "WHERE event_type IN ('attempt_succeeded', 'attempt_failed')"
+                )
+            except sqlite3.IntegrityError:
+                raise AttemptAlreadyTerminal(
+                    "existing attempts contain duplicate terminal events"
+                ) from None
             connection.commit()
         except Exception:
             connection.rollback()
@@ -183,6 +194,14 @@ class SQLiteAgentAudit:
                 ),
             )
             connection.commit()
+        except sqlite3.IntegrityError as error:
+            connection.rollback()
+            if (
+                isinstance(event, (AttemptSucceeded, AttemptFailed))
+                and error.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_UNIQUE
+            ):
+                raise AttemptAlreadyTerminal("attempt already has a terminal event") from None
+            raise
         except Exception:
             connection.rollback()
             raise

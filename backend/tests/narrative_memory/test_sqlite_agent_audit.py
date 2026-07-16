@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from apps.narrative_memory.repository.analysis_audit import (
+    AttemptAlreadyTerminal,
     AttemptFailed,
     AttemptStarted,
     AttemptSucceeded,
@@ -69,6 +70,12 @@ def test_audit_initializes_owner_only_database_and_append_only_schema(tmp_path) 
             table: [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
             for table in schemas
         }
+        indexes = dict(
+            connection.execute(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type = 'index' AND name NOT LIKE 'sqlite_%'"
+            )
+        )
 
     assert set(schemas) == {"prompt_definitions", "run_events", "attempt_events"}
     assert columns == {
@@ -92,6 +99,12 @@ def test_audit_initializes_owner_only_database_and_append_only_schema(tmp_path) 
     }
     assert all("UPDATE" not in sql.upper() for sql in schemas.values())
     assert all("status" not in table_columns for table_columns in columns.values())
+    assert set(indexes) == {"uq_attempt_terminal"}
+    assert "UNIQUE INDEX" in indexes["uq_attempt_terminal"].upper()
+    assert (
+        "WHERE event_type IN ('attempt_succeeded', 'attempt_failed')"
+        in indexes["uq_attempt_terminal"]
+    )
 
 
 def test_register_prompt_is_exact_byte_idempotent_and_rejects_version_reuse(tmp_path) -> None:
@@ -263,6 +276,110 @@ def test_attempt_failure_preserves_available_response_and_error(tmp_path) -> Non
         "latency_ms": 44.0,
         "response_messages_json": '[{"content":"잘못된 응답"}]',
     }
+
+
+def _terminal_success(attempt_number: int = 1) -> AttemptSucceeded:
+    return AttemptSucceeded(
+        run_id="run-terminal",
+        chunk_id="scene:r1:0000",
+        attempt_number=attempt_number,
+        occurred_at=OCCURRED_AT,
+        latency_ms=10.0,
+        response_messages_json=b"[]",
+        validated_extraction_json=b'{"summary":"ok"}',
+        provider_name="provider",
+        model_name="model",
+        usage=AgentUsage(requests=1),
+    )
+
+
+def _terminal_failure(attempt_number: int = 1) -> AttemptFailed:
+    return AttemptFailed(
+        run_id="run-terminal",
+        chunk_id="scene:r1:0000",
+        attempt_number=attempt_number,
+        occurred_at=OCCURRED_AT,
+        latency_ms=10.0,
+        error_type="ProviderCallError",
+        error_message="provider call failed",
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "conflicting"),
+    [
+        (_terminal_success(), _terminal_failure()),
+        (_terminal_failure(), _terminal_success()),
+    ],
+    ids=["success-then-failure", "failure-then-success"],
+)
+def test_terminal_attempt_event_is_unique_and_conflict_rolls_back(
+    tmp_path,
+    first: AttemptSucceeded | AttemptFailed,
+    conflicting: AttemptSucceeded | AttemptFailed,
+) -> None:
+    audit, path = _initialized_audit(tmp_path)
+
+    audit.append_attempt_event(first)
+    with pytest.raises(AttemptAlreadyTerminal) as captured:
+        audit.append_attempt_event(conflicting)
+    audit.append_attempt_event(_terminal_failure(attempt_number=2))
+
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("attempt already has a terminal event",)
+    rows = _stored_events(path, "attempt_events")
+    first_event_type = (
+        "attempt_succeeded" if isinstance(first, AttemptSucceeded) else "attempt_failed"
+    )
+    assert [(row[2], row[3], row[4]) for row in rows] == [
+        ("scene:r1:0000", 1, first_event_type),
+        ("scene:r1:0000", 2, "attempt_failed"),
+    ]
+
+
+def test_initialize_rejects_existing_duplicate_terminal_events_without_rewriting(tmp_path) -> None:
+    path = tmp_path / "private" / "agent-audit.sqlite3"
+    path.parent.mkdir(parents=True)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE attempt_events (
+                event_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                chunk_id TEXT NOT NULL,
+                attempt_number INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                payload_json BLOB NOT NULL
+            )
+            """
+        )
+        connection.executemany(
+            """
+            INSERT INTO attempt_events (
+                run_id, chunk_id, attempt_number, event_type, occurred_at, payload_json
+            ) VALUES ('run', 'chunk', 1, ?, ?, '{}')
+            """,
+            [
+                ("attempt_succeeded", OCCURRED_AT.isoformat()),
+                ("attempt_failed", OCCURRED_AT.isoformat()),
+            ],
+        )
+
+    with pytest.raises(AttemptAlreadyTerminal) as captured:
+        SQLiteAgentAudit(path).initialize()
+
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("existing attempts contain duplicate terminal events",)
+    with sqlite3.connect(path) as connection:
+        rows = connection.execute(
+            "SELECT event_type FROM attempt_events ORDER BY event_sequence"
+        ).fetchall()
+        index = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'uq_attempt_terminal'"
+        ).fetchone()
+    assert rows == [("attempt_succeeded",), ("attempt_failed",)]
+    assert index is None
 
 
 def test_invalid_utf8_event_payload_is_not_partially_committed(tmp_path) -> None:

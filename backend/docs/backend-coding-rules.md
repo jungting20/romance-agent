@@ -101,6 +101,11 @@ verification, and handoff workflows. If the documents conflict, follow
   provider call. Treat an audit-start failure as call-blocking, and never write
   prompts, manuscript text, model responses, or validated extraction content to
   ordinary console logs.
+- Enforce at most one terminal attempt event (`attempt_succeeded` or
+  `attempt_failed`) for each run, chunk, and attempt number in both the audit
+  port contract and durable storage. A best-effort failure fallback after an
+  ambiguous success append may run, but storage must reject it when success was
+  already committed; never repair terminal conflicts with update or delete.
 - Validate structured provider output before translating it into domain types.
   Provider adapters must not assign durable domain IDs, candidate states, or
   other domain-owned meaning.
