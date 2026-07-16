@@ -74,19 +74,21 @@ brainstorming과 writing-plans는 다시 수행하지 말고,
 feature-development의 전체 구현·검토·검증 절차를 따라줘.
 티켓에 없는 범위를 추측해서 추가하지 마.
 
-%s`, ticket.SpecPath, ticket.PlanPath, completionInstruction(workerCompletionMarker))
+%s`, ticket.SpecPath, ticket.PlanPath, completionInstruction(workerCompletionMarker, ticket.ID))
 }
 
-func completionInstruction(marker string) string {
+func completionInstruction(marker string, ticketID int64) string {
 	split := len(marker) / 2
 
 	return fmt.Sprintf(
-		"작업과 검증이 모두 성공한 경우에만 다음 두 조각을 공백 없이 연결한 결과를 별도의 한 줄로 출력하세요.\n"+
+		"작업과 검증이 모두 성공한 경우에만 다음 두 조각을 공백 없이 연결하고, 한 칸을 띄운 뒤 티켓 식별자를 붙인 결과를 최종 응답의 마지막 한 줄로 출력하세요.\n"+
 			"앞부분: %s\n"+
 			"뒷부분: %s\n"+
+			"티켓 식별자: ticket_id=%d\n"+
 			"완료 전에는 연결된 결과를 출력하거나 언급하지 마세요.",
 		marker[:split],
 		marker[split:],
+		ticketID,
 	)
 }
 
