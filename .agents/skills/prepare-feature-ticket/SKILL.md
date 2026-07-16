@@ -7,6 +7,7 @@ description: Use only when the user explicitly invokes `$prepare-feature-ticket`
 
 Follow this recipe in order. Treat design approval and the later implementation
 package approval as separate user decisions; never infer either approval.
+Never claim a command was run, a file was checked, or a result exists unless it was actually observed.
 
 1. Confirm that the request is an explicit invocation of
    `$prepare-feature-ticket`, then extract the feature idea. If the invocation
@@ -72,3 +73,5 @@ package approval as separate user decisions; never infer either approval.
    that existing ticket instead. If no exact match exists or the command fails
    for another reason, stop and report the failure without claiming that a
    ticket was registered.
+   In a dry run, describe the intended duplicate-plan recovery and stop without
+   claiming any command, file, or result outcome.
