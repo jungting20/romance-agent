@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -114,6 +115,58 @@ func TestNextJSONReturnsReadyTicketWithoutMutation(t *testing.T) {
 	if shown.Status != ticket.StatusReady || !shown.UpdatedAt.Equal(created.UpdatedAt) {
 		t.Fatalf("next mutated ticket: created=%#v shown=%#v", created, shown)
 	}
+}
+
+func TestEndToEndFIFOAndLifecycle(t *testing.T) {
+	h := newHarness(t)
+	firstSpec, firstPlan := h.artifacts(t, "first")
+	first := h.addJSON(t, "First", "First ticket", firstSpec, firstPlan)
+	secondSpec, secondPlan := h.artifacts(t, "second")
+	second := h.addJSON(t, "Second", "Second ticket", secondSpec, secondPlan)
+
+	assertNext := func(wantID int64, wantStatus ticket.Status) {
+		t.Helper()
+		if got := h.run(t, "next", "--json"); got != ExitOK {
+			t.Fatalf("next exit = %d, stderr = %s", got, h.stderr.String())
+		}
+		next := decodeTicket(t, h.stdout.Bytes())
+		if next.ID != wantID || next.Status != wantStatus {
+			t.Fatalf("next ticket = %#v, want ID %d/status %q", next, wantID, wantStatus)
+		}
+	}
+
+	assertNext(first.ID, ticket.StatusReady)
+
+	firstID := strconv.FormatInt(first.ID, 10)
+	if got := h.run(t, "start", firstID, "--json"); got != ExitOK {
+		t.Fatalf("start exit = %d, stderr = %s", got, h.stderr.String())
+	}
+	if started := decodeTicket(t, h.stdout.Bytes()); started.Status != ticket.StatusInProgress {
+		t.Fatalf("started ticket status = %q, want %q", started.Status, ticket.StatusInProgress)
+	}
+	assertNext(second.ID, ticket.StatusReady)
+
+	if got := h.run(t, "done", firstID, "--json"); got != ExitOK {
+		t.Fatalf("done exit = %d, stderr = %s", got, h.stderr.String())
+	}
+	if done := decodeTicket(t, h.stdout.Bytes()); done.Status != ticket.StatusDone {
+		t.Fatalf("done ticket status = %q, want %q", done.Status, ticket.StatusDone)
+	}
+	if got := h.run(t, "reopen", firstID, "--json"); got != ExitOK {
+		t.Fatalf("reopen exit = %d, stderr = %s", got, h.stderr.String())
+	}
+	if reopened := decodeTicket(t, h.stdout.Bytes()); reopened.Status != ticket.StatusReady {
+		t.Fatalf("reopened ticket status = %q, want %q", reopened.Status, ticket.StatusReady)
+	}
+	assertNext(first.ID, ticket.StatusReady)
+
+	if got := h.run(t, "cancel", firstID, "--json"); got != ExitOK {
+		t.Fatalf("cancel exit = %d, stderr = %s", got, h.stderr.String())
+	}
+	if cancelled := decodeTicket(t, h.stdout.Bytes()); cancelled.Status != ticket.StatusCancelled {
+		t.Fatalf("cancelled ticket status = %q, want %q", cancelled.Status, ticket.StatusCancelled)
+	}
+	assertNext(second.ID, ticket.StatusReady)
 }
 
 func TestNextJSONReportsEmptyQueue(t *testing.T) {
