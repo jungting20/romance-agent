@@ -503,7 +503,8 @@ Run from the repository root:
 docker compose config --quiet
 docker compose config --services
 docker compose config --volumes
-docker compose config | rg '127\.0\.0\.1:'
+local_binding_count=$(docker compose config | rg -c '^\s+host_ip: 127\.0\.0\.1$')
+test "$local_binding_count" -eq 5
 ```
 
 Expected:
@@ -511,7 +512,8 @@ Expected:
 - configuration validation succeeds without a real `.env` file;
 - services are `frontend`, `backend`, `postgres`, and `neo4j`;
 - volumes are `backend_data`, `frontend_node_modules`, `neo4j_data`, and `postgres_data`;
-- every published port includes host IP `127.0.0.1`.
+- the rendered Compose model contains exactly five published ports with host
+  IP `127.0.0.1`.
 
 - [ ] **Step 4: Confirm backend database integration remains absent**
 
@@ -750,9 +752,10 @@ Run from the repository root:
 
 ```sh
 git status --short
-git log --oneline --decorate -5
-git diff HEAD~4..HEAD --check
-git diff HEAD~4..HEAD --stat
+base=$(git merge-base main HEAD)
+git log --oneline --decorate "$base"..HEAD
+git diff "$base"..HEAD --check
+git diff "$base"..HEAD --stat
 ```
 
 Expected: the worktree is clean; the design, MSW switch, application
