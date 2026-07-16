@@ -149,9 +149,11 @@ dependency; normal user commands do not redirect the personal queue implicitly.
 `list` orders tickets by `created_at ASC, id ASC` and may filter by one valid
 status. `show` returns one ticket by ID.
 
-`next` returns the oldest `ready` ticket using `created_at ASC, id ASC` and
-never mutates it. The user must explicitly run `start ID` to transition that
-ticket to `in_progress`. No queue command performs automatic claiming.
+`next` atomically selects the oldest `ready` ticket using
+`created_at ASC, id ASC`, changes it to `in_progress`, and sets `started_at`
+and `updated_at` before returning it. Selection and mutation occur in one
+`BEGIN IMMEDIATE` transaction, so overlapping local commands cannot claim the
+same ticket. `start ID` remains available for explicitly starting a known ID.
 
 Human-readable output is the default. `--json` emits a stable JSON object for a
 single ticket and a stable JSON array for `list`. Timestamps use RFC 3339 UTC
@@ -201,7 +203,8 @@ Go unit and integration tests use isolated temporary databases and cover:
 - rejection and rollback of every invalid lifecycle transition;
 - timestamp behavior for start, completion, cancellation, and reopening;
 - FIFO ordering using both `created_at` and `id`;
-- the guarantee that `next` never changes state or timestamps;
+- atomic FIFO claiming by `next`, including status and timestamp updates;
+- concurrent `next` calls claiming a ready ticket at most once;
 - empty-queue and unknown-ticket behavior;
 - status filtering; and
 - human-readable and JSON output contracts.
@@ -231,13 +234,13 @@ The Go commands run from `tools/ra-ticket/`.
 - Registered tickets begin in `ready` and reference both existing approved
   artifacts.
 - The local SQLite database is repository-specific and excluded from Git.
-- `ra-ticket next` deterministically returns the oldest `ready` ticket and does
-  not mutate it.
+- `ra-ticket next` atomically claims and returns the oldest `ready` ticket and
+  persists its `in_progress` status and start timestamp in the same transaction.
 - Users can list, inspect, start, complete, cancel, and reopen tickets through
   validated state transitions.
 - Duplicate plans, invalid paths, missing documents, and invalid transitions do
   not modify stored data.
 - Human-readable and JSON output both support immediate implementation from the
   returned design and plan paths.
-- The implementation introduces no UI, consumer API, background worker,
-  automatic claiming behavior, or domain-contract change.
+- The implementation introduces no UI, consumer API, background worker, or
+  domain-contract change.

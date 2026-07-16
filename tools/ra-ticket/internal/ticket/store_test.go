@@ -261,8 +261,17 @@ func TestListReturnsAllocatedEmptySlice(t *testing.T) {
 	}
 }
 
-func TestNextReturnsOldestReadyWithoutMutation(t *testing.T) {
-	store, root := newTestStore(t)
+func TestNextClaimsOldestReady(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := fixedNow
+	store, err := Open(context.Background(), root, filepath.Join(root, ".local", "tickets.db"), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
 	spec1, plan1 := writeArtifacts(t, root, "first")
 	first, err := store.Add(context.Background(), CreateInput{Title: "First", Summary: "First summary", SpecPath: spec1, PlanPath: plan1})
 	if err != nil {
@@ -273,19 +282,27 @@ func TestNextReturnsOldestReadyWithoutMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	now = fixedNow.Add(time.Minute)
 	got, err := store.Next(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != first.ID || got.Status != StatusReady {
+	if got.ID != first.ID || got.Status != StatusInProgress || got.StartedAt == nil || !got.StartedAt.Equal(now) || !got.UpdatedAt.Equal(now) {
 		t.Fatalf("Next() = %#v", got)
 	}
 	after, err := store.Get(context.Background(), first.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Status != first.Status || !after.UpdatedAt.Equal(first.UpdatedAt) || after.StartedAt != nil {
-		t.Fatalf("Next mutated ticket: before=%#v after=%#v", first, after)
+	if !reflect.DeepEqual(after, got) {
+		t.Fatalf("claimed ticket not persisted: returned=%#v stored=%#v", got, after)
+	}
+	remaining, err := store.Next(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remaining.ID == first.ID || remaining.Status != StatusInProgress {
+		t.Fatalf("second Next() = %#v", remaining)
 	}
 }
 
@@ -301,6 +318,64 @@ func TestNextReturnsEmptyQueueAfterReadyTicketsLeaveQueue(t *testing.T) {
 	}
 	if _, err := store.Next(context.Background()); !errors.Is(err, ErrEmptyQueue) {
 		t.Fatalf("Next() error = %v, want ErrEmptyQueue", err)
+	}
+}
+
+func TestConcurrentNextClaimsTicketOnce(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	databasePath := filepath.Join(root, ".local", "tickets.db")
+	first, err := Open(context.Background(), root, databasePath, func() time.Time { return fixedNow })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+	second, err := Open(context.Background(), root, databasePath, func() time.Time { return fixedNow.Add(time.Minute) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = second.Close() })
+	spec, plan := writeArtifacts(t, root, "only")
+	created, err := first.Add(context.Background(), CreateInput{Title: "Only", Summary: "Only summary", SpecPath: spec, PlanPath: plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type result struct {
+		ticket Ticket
+		err    error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	for _, store := range []*Store{first, second} {
+		go func(store *Store) {
+			<-start
+			ticket, err := store.Next(context.Background())
+			results <- result{ticket: ticket, err: err}
+		}(store)
+	}
+	close(start)
+
+	claimed := 0
+	empty := 0
+	for range 2 {
+		result := <-results
+		switch {
+		case result.err == nil:
+			claimed++
+			if result.ticket.ID != created.ID || result.ticket.Status != StatusInProgress {
+				t.Fatalf("claimed ticket = %#v", result.ticket)
+			}
+		case errors.Is(result.err, ErrEmptyQueue):
+			empty++
+		default:
+			t.Fatalf("Next() error = %v", result.err)
+		}
+	}
+	if claimed != 1 || empty != 1 {
+		t.Fatalf("claimed=%d empty=%d, want 1 each", claimed, empty)
 	}
 }
 

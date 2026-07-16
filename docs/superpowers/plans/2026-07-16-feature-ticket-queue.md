@@ -1,5 +1,10 @@
 # Feature Ticket Queue Implementation Plan
 
+> **Historical baseline:** This plan records the initial queue implementation.
+> Its read-only `next` requirements were superseded on 2026-07-16 by the
+> atomic claim behavior in
+> `docs/superpowers/specs/2026-07-16-feature-ticket-queue-design.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an explicitly invoked planning skill and a repository-local Go/SQLite CLI that registers implementation-ready feature tickets and manages their lifecycle without automatic claiming.

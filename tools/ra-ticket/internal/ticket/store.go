@@ -162,7 +162,22 @@ FROM tickets`
 }
 
 func (s *Store) Next(ctx context.Context) (Ticket, error) {
-	ticket, err := scanTicket(s.db.QueryRowContext(ctx, `
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return Ticket{}, fmt.Errorf("acquire next ticket connection: %w", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return Ticket{}, fmt.Errorf("begin next ticket claim: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		}
+	}()
+
+	ticket, err := scanTicket(conn.QueryRowContext(ctx, `
 SELECT id, title, summary, spec_path, plan_path, status,
        created_at, updated_at, started_at, completed_at, cancelled_at
 FROM tickets
@@ -175,6 +190,21 @@ LIMIT 1`))
 	if err != nil {
 		return Ticket{}, fmt.Errorf("get next ticket: %w", err)
 	}
+
+	now := s.now().UTC()
+	ticket.Status = StatusInProgress
+	ticket.UpdatedAt = now
+	ticket.StartedAt = &now
+	if _, err := conn.ExecContext(ctx, `
+UPDATE tickets
+SET status = 'in_progress', updated_at = ?, started_at = ?
+WHERE id = ? AND status = 'ready'`, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), ticket.ID); err != nil {
+		return Ticket{}, fmt.Errorf("claim next ticket: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return Ticket{}, fmt.Errorf("commit next ticket claim: %w", err)
+	}
+	committed = true
 	return ticket, nil
 }
 

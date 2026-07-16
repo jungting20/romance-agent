@@ -125,7 +125,7 @@ func TestTicketJSONUsesExactSnakeCaseKeys(t *testing.T) {
 	}
 }
 
-func TestNextJSONReturnsReadyTicketWithoutMutation(t *testing.T) {
+func TestNextJSONClaimsReadyTicket(t *testing.T) {
 	h := newHarness(t)
 	spec, plan := h.artifacts(t, "first")
 	created := h.addJSON(t, "First", "First ticket", spec, plan)
@@ -136,7 +136,7 @@ func TestNextJSONReturnsReadyTicketWithoutMutation(t *testing.T) {
 		t.Fatalf("next exit = %d, stderr = %s", got, h.stderr.String())
 	}
 	next := decodeTicket(t, h.stdout.Bytes())
-	if next.ID != created.ID || next.Status != ticket.StatusReady {
+	if next.ID != created.ID || next.Status != ticket.StatusInProgress || next.StartedAt == nil {
 		t.Fatalf("next ticket = %#v", next)
 	}
 
@@ -144,8 +144,8 @@ func TestNextJSONReturnsReadyTicketWithoutMutation(t *testing.T) {
 		t.Fatalf("show exit = %d, stderr = %s", got, h.stderr.String())
 	}
 	shown := decodeTicket(t, h.stdout.Bytes())
-	if shown.Status != ticket.StatusReady || !shown.UpdatedAt.Equal(created.UpdatedAt) {
-		t.Fatalf("next mutated ticket: created=%#v shown=%#v", created, shown)
+	if shown.Status != ticket.StatusInProgress || shown.StartedAt == nil || !shown.UpdatedAt.Equal(next.UpdatedAt) {
+		t.Fatalf("next claim not persisted: next=%#v shown=%#v", next, shown)
 	}
 }
 
@@ -167,16 +167,10 @@ func TestEndToEndFIFOAndLifecycle(t *testing.T) {
 		}
 	}
 
-	assertNext(first.ID, ticket.StatusReady)
+	assertNext(first.ID, ticket.StatusInProgress)
 
 	firstID := strconv.FormatInt(first.ID, 10)
-	if got := h.run(t, "start", firstID, "--json"); got != ExitOK {
-		t.Fatalf("start exit = %d, stderr = %s", got, h.stderr.String())
-	}
-	if started := decodeTicket(t, h.stdout.Bytes()); started.ID != first.ID || started.Status != ticket.StatusInProgress {
-		t.Fatalf("started ticket = %#v, want ID %d/status %q", started, first.ID, ticket.StatusInProgress)
-	}
-	assertNext(second.ID, ticket.StatusReady)
+	assertNext(second.ID, ticket.StatusInProgress)
 
 	if got := h.run(t, "done", firstID, "--json"); got != ExitOK {
 		t.Fatalf("done exit = %d, stderr = %s", got, h.stderr.String())
@@ -190,7 +184,7 @@ func TestEndToEndFIFOAndLifecycle(t *testing.T) {
 	if reopened := decodeTicket(t, h.stdout.Bytes()); reopened.ID != first.ID || reopened.Status != ticket.StatusReady {
 		t.Fatalf("reopened ticket = %#v, want ID %d/status %q", reopened, first.ID, ticket.StatusReady)
 	}
-	assertNext(first.ID, ticket.StatusReady)
+	assertNext(first.ID, ticket.StatusInProgress)
 
 	if got := h.run(t, "cancel", firstID, "--json"); got != ExitOK {
 		t.Fatalf("cancel exit = %d, stderr = %s", got, h.stderr.String())
@@ -198,7 +192,9 @@ func TestEndToEndFIFOAndLifecycle(t *testing.T) {
 	if cancelled := decodeTicket(t, h.stdout.Bytes()); cancelled.ID != first.ID || cancelled.Status != ticket.StatusCancelled {
 		t.Fatalf("cancelled ticket = %#v, want ID %d/status %q", cancelled, first.ID, ticket.StatusCancelled)
 	}
-	assertNext(second.ID, ticket.StatusReady)
+	if got := h.run(t, "next", "--json"); got != ExitEmptyQueue {
+		t.Fatalf("next exit = %d, want %d", got, ExitEmptyQueue)
+	}
 }
 
 func TestNextJSONReportsEmptyQueue(t *testing.T) {

@@ -99,6 +99,7 @@ mise exec -- go build -o ../../.local/bin/ra-ticket ./cmd/ra-ticket
 ../../.local/bin/ra-ticket reopen 1
 ```
 
-`next` only returns the oldest ready ticket; it does not start or otherwise
-change that ticket. Add `--json` to any command for agent-readable output.
+`next` atomically claims the oldest ready ticket by changing it to
+`in_progress` and setting `started_at`. Add `--json` to any command for
+agent-readable output.
 Rebuild the ignored binary after changing CLI source files.
