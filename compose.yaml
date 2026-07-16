@@ -78,7 +78,6 @@ services:
     image: neo4j:2026.06.0
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-romance_agent_dev}
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-romance_agent_dev}
     ports:
       - "127.0.0.1:${NEO4J_HTTP_PORT:-7474}:7474"
       - "127.0.0.1:${NEO4J_BOLT_PORT:-7687}:7687"
@@ -89,7 +88,7 @@ services:
         - CMD-SHELL
         - >-
           cypher-shell -a bolt://127.0.0.1:7687 -u neo4j
-          -p "$${NEO4J_PASSWORD}" "RETURN 1" >/dev/null 2>&1
+          -p "$${NEO4J_AUTH#*/}" "RETURN 1" >/dev/null 2>&1
       interval: 10s
       timeout: 5s
       retries: 20
