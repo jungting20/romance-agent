@@ -141,30 +141,30 @@ func TestEndToEndFIFOAndLifecycle(t *testing.T) {
 	if got := h.run(t, "start", firstID, "--json"); got != ExitOK {
 		t.Fatalf("start exit = %d, stderr = %s", got, h.stderr.String())
 	}
-	if started := decodeTicket(t, h.stdout.Bytes()); started.Status != ticket.StatusInProgress {
-		t.Fatalf("started ticket status = %q, want %q", started.Status, ticket.StatusInProgress)
+	if started := decodeTicket(t, h.stdout.Bytes()); started.ID != first.ID || started.Status != ticket.StatusInProgress {
+		t.Fatalf("started ticket = %#v, want ID %d/status %q", started, first.ID, ticket.StatusInProgress)
 	}
 	assertNext(second.ID, ticket.StatusReady)
 
 	if got := h.run(t, "done", firstID, "--json"); got != ExitOK {
 		t.Fatalf("done exit = %d, stderr = %s", got, h.stderr.String())
 	}
-	if done := decodeTicket(t, h.stdout.Bytes()); done.Status != ticket.StatusDone {
-		t.Fatalf("done ticket status = %q, want %q", done.Status, ticket.StatusDone)
+	if done := decodeTicket(t, h.stdout.Bytes()); done.ID != first.ID || done.Status != ticket.StatusDone {
+		t.Fatalf("done ticket = %#v, want ID %d/status %q", done, first.ID, ticket.StatusDone)
 	}
 	if got := h.run(t, "reopen", firstID, "--json"); got != ExitOK {
 		t.Fatalf("reopen exit = %d, stderr = %s", got, h.stderr.String())
 	}
-	if reopened := decodeTicket(t, h.stdout.Bytes()); reopened.Status != ticket.StatusReady {
-		t.Fatalf("reopened ticket status = %q, want %q", reopened.Status, ticket.StatusReady)
+	if reopened := decodeTicket(t, h.stdout.Bytes()); reopened.ID != first.ID || reopened.Status != ticket.StatusReady {
+		t.Fatalf("reopened ticket = %#v, want ID %d/status %q", reopened, first.ID, ticket.StatusReady)
 	}
 	assertNext(first.ID, ticket.StatusReady)
 
 	if got := h.run(t, "cancel", firstID, "--json"); got != ExitOK {
 		t.Fatalf("cancel exit = %d, stderr = %s", got, h.stderr.String())
 	}
-	if cancelled := decodeTicket(t, h.stdout.Bytes()); cancelled.Status != ticket.StatusCancelled {
-		t.Fatalf("cancelled ticket status = %q, want %q", cancelled.Status, ticket.StatusCancelled)
+	if cancelled := decodeTicket(t, h.stdout.Bytes()); cancelled.ID != first.ID || cancelled.Status != ticket.StatusCancelled {
+		t.Fatalf("cancelled ticket = %#v, want ID %d/status %q", cancelled, first.ID, ticket.StatusCancelled)
 	}
 	assertNext(second.ID, ticket.StatusReady)
 }
