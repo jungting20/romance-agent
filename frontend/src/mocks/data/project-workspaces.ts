@@ -2,6 +2,8 @@ import type {
   ApiError,
   ApiProject,
   ProjectWorkspaceResponse,
+  SaveWorldEntriesRequest,
+  StoryBibleSnapshot,
 } from "@/app/infrastructure/api/contracts";
 
 export const PROJECT_API_BASE_URL = "/api";
@@ -16,6 +18,16 @@ export const apiErrors = {
   projectNotFound: {
     code: "PROJECT_NOT_FOUND",
     message: "프로젝트를 찾을 수 없습니다.",
+    fieldErrors: [],
+  },
+  storyBibleNotFound: {
+    code: "STORY_BIBLE_NOT_FOUND",
+    message: "세계관 정보를 찾을 수 없습니다.",
+    fieldErrors: [],
+  },
+  storyBibleRevisionConflict: {
+    code: "STORY_BIBLE_REVISION_CONFLICT",
+    message: "다른 위치에서 세계관이 먼저 수정되었습니다.",
     fieldErrors: [],
   },
   manuscriptNotFound: {
@@ -128,6 +140,11 @@ function cloneWorkspaces(
 }
 
 let projectWorkspaces = cloneWorkspaces(initialProjectWorkspaces);
+let storyBibleRevisions = createInitialStoryBibleRevisions();
+
+function createInitialStoryBibleRevisions(): Map<string, number> {
+  return new Map(initialProjectWorkspaces.map(({ project }) => [project.id, 1]));
+}
 
 export function listMockProjects(): ApiProject[] {
   return projectWorkspaces
@@ -159,6 +176,162 @@ export function findMockWorkspaceBySceneId(sceneId: string): ProjectWorkspaceRes
 
 export function addMockWorkspace(workspace: ProjectWorkspaceResponse): void {
   projectWorkspaces.push(structuredClone(workspace));
+  storyBibleRevisions.set(workspace.project.id, 1);
+}
+
+export function getMockStoryBibleSnapshot(projectId: string): StoryBibleSnapshot | undefined {
+  const workspace = projectWorkspaces.find(({ project }) => project.id === projectId);
+  const storyBibleRevision = storyBibleRevisions.get(projectId);
+
+  if (!workspace || storyBibleRevision === undefined) {
+    return undefined;
+  }
+
+  return {
+    storyBible: structuredClone(workspace.storyBible),
+    storyBibleRevision,
+  };
+}
+
+export type SaveMockWorldEntriesResult =
+  | { status: "not-found" }
+  | { status: "revision-conflict" }
+  | { status: "invalid"; error: ApiError }
+  | { status: "saved"; snapshot: StoryBibleSnapshot };
+
+function invalidWorldEntries(message: string, fieldErrors: ApiError["fieldErrors"]): ApiError {
+  return { code: "INVALID_WORLD_ENTRIES", message, fieldErrors };
+}
+
+export function saveMockWorldEntries(
+  projectId: string,
+  request: SaveWorldEntriesRequest,
+): SaveMockWorldEntriesResult {
+  const workspaceIndex = projectWorkspaces.findIndex(({ project }) => project.id === projectId);
+  const storyBibleRevision = storyBibleRevisions.get(projectId);
+
+  if (workspaceIndex < 0 || storyBibleRevision === undefined) {
+    return { status: "not-found" };
+  }
+
+  if (request.expectedRevision !== storyBibleRevision) {
+    return { status: "revision-conflict" };
+  }
+
+  if (request.updates.length === 0 && request.additions.length === 0) {
+    return {
+      status: "invalid",
+      error: invalidWorldEntries("수정하거나 추가할 세계관 항목이 필요합니다.", [
+        { path: "updates", message: "수정 또는 추가 항목을 한 개 이상 입력해 주세요." },
+        { path: "additions", message: "수정 또는 추가 항목을 한 개 이상 입력해 주세요." },
+      ]),
+    };
+  }
+
+  const blankFieldErrors: ApiError["fieldErrors"] = [];
+  request.updates.forEach((entry, index) => {
+    if (!entry.title.trim()) {
+      blankFieldErrors.push({ path: `updates[${index}].title`, message: "제목을 입력해 주세요." });
+    }
+    if (!entry.description.trim()) {
+      blankFieldErrors.push({
+        path: `updates[${index}].description`,
+        message: "설명을 입력해 주세요.",
+      });
+    }
+  });
+  request.additions.forEach((entry, index) => {
+    if (!entry.title.trim()) {
+      blankFieldErrors.push({
+        path: `additions[${index}].title`,
+        message: "제목을 입력해 주세요.",
+      });
+    }
+    if (!entry.description.trim()) {
+      blankFieldErrors.push({
+        path: `additions[${index}].description`,
+        message: "설명을 입력해 주세요.",
+      });
+    }
+  });
+
+  if (blankFieldErrors.length > 0) {
+    return {
+      status: "invalid",
+      error: invalidWorldEntries("세계관 항목을 확인해 주세요.", blankFieldErrors),
+    };
+  }
+
+  const seenUpdateIds = new Set<string>();
+  for (const [index, update] of request.updates.entries()) {
+    if (seenUpdateIds.has(update.id)) {
+      return {
+        status: "invalid",
+        error: invalidWorldEntries("같은 세계관 항목을 두 번 수정할 수 없습니다.", [
+          { path: `updates[${index}].id`, message: "수정 항목 식별자가 중복되었습니다." },
+        ]),
+      };
+    }
+    seenUpdateIds.add(update.id);
+  }
+
+  const workspace = projectWorkspaces[workspaceIndex];
+  const worldEntryIds = new Set(workspace.storyBible.worldEntries.map(({ id }) => id));
+  for (const [index, update] of request.updates.entries()) {
+    if (!worldEntryIds.has(update.id)) {
+      return {
+        status: "invalid",
+        error: invalidWorldEntries("수정할 세계관 항목을 찾을 수 없습니다.", [
+          {
+            path: `updates[${index}].id`,
+            message: "현재 세계관에 존재하는 항목을 선택해 주세요.",
+          },
+        ]),
+      };
+    }
+  }
+
+  const updatesById = new Map(request.updates.map((update) => [update.id, update]));
+  const updatedEntries = workspace.storyBible.worldEntries.map((entry) => {
+    const update = updatesById.get(entry.id);
+    return update
+      ? { ...update, title: update.title.trim(), description: update.description.trim() }
+      : entry;
+  });
+  const allocatedIds = new Set(worldEntryIds);
+  let sequence = 1;
+  const additions = request.additions.map((addition) => {
+    while (allocatedIds.has(`${projectId}-world-${sequence}`)) {
+      sequence += 1;
+    }
+    const id = `${projectId}-world-${sequence}`;
+    allocatedIds.add(id);
+    sequence += 1;
+    return {
+      id,
+      kind: addition.kind,
+      title: addition.title.trim(),
+      description: addition.description.trim(),
+    };
+  });
+  const storedWorkspace: ProjectWorkspaceResponse = {
+    ...workspace,
+    storyBible: {
+      ...workspace.storyBible,
+      worldEntries: [...updatedEntries, ...additions],
+    },
+  };
+
+  projectWorkspaces[workspaceIndex] = structuredClone(storedWorkspace);
+  storyBibleRevisions.set(projectId, storyBibleRevision + 1);
+
+  return {
+    status: "saved",
+    snapshot: {
+      storyBible: structuredClone(storedWorkspace.storyBible),
+      storyBibleRevision: storyBibleRevision + 1,
+    },
+  };
 }
 
 export type ReplaceMockWorkspaceAtRevisionResult =
@@ -191,4 +364,5 @@ export function replaceMockWorkspaceAtRevision(
 
 export function resetProjectWorkspaceMockData(): void {
   projectWorkspaces = cloneWorkspaces(initialProjectWorkspaces);
+  storyBibleRevisions = createInitialStoryBibleRevisions();
 }

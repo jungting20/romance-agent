@@ -9,6 +9,8 @@ import type {
   CompareManuscriptSceneResponse,
   ProjectWorkspaceResponse,
   SaveManuscriptRequest,
+  SaveWorldEntriesRequest,
+  StoryBibleSnapshot,
 } from "@/app/infrastructure/api/contracts";
 import { createAppMemoryRouter } from "@/app/app";
 import { findMockWorkspace } from "@/mocks/data/project-workspaces";
@@ -130,6 +132,472 @@ describe("WritingWorkspacePage", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "원고 목차" })).toBeInTheDocument();
     expect(router.state.location.search).toEqual({});
+  });
+
+  test("opens the world editor from the populated read panel with canonical URL state", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?tab=world");
+
+    await user.click(await screen.findByRole("button", { name: "세계관 수정 및 추가" }));
+
+    expect(screen.getByRole("dialog", { name: "세계관 수정 및 추가" })).toBeInTheDocument();
+    expect(router.state.location.search).toEqual({ tab: "world", panel: "world-editor" });
+    expect(screen.getByRole("textbox", { name: "기존 항목 1 제목" })).toBeInTheDocument();
+  });
+
+  test("reconstructs and canonicalizes the editor from direct URL state", async () => {
+    setViewportWidth(1024);
+    const { router } = renderWorkspace(
+      "/projects/silver-garden/write?panel=world-editor&view=dense",
+    );
+
+    expect(await screen.findByRole("dialog", { name: "세계관 수정 및 추가" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({
+        view: "dense",
+        tab: "world",
+        panel: "world-editor",
+      }),
+    );
+    expect(router.state.location.state.__TSR_index).toBe(0);
+  });
+
+  test("removes an unsupported editor panel while preserving world tab and unrelated search", async () => {
+    setViewportWidth(1024);
+    const { router } = renderWorkspace(
+      "/projects/silver-garden/write?tab=world&panel=unknown&view=dense",
+    );
+
+    expect(
+      await screen.findByRole("tab", { name: "세계관 보기", selected: true }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ tab: "world", view: "dense" }),
+    );
+    expect(router.state.location.state.__TSR_index).toBe(0);
+  });
+
+  test("pushes clean explicit close and reopens the editor through Back", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?tab=world");
+    await user.click(await screen.findByRole("button", { name: "세계관 수정 및 추가" }));
+    await screen.findByRole("dialog", { name: "세계관 수정 및 추가" });
+    await user.click(screen.getByRole("button", { name: "세계관 편집기 닫기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+
+    router.history.back();
+    expect(await screen.findByRole("dialog", { name: "세계관 수정 및 추가" })).toBeInTheDocument();
+    expect(router.state.location.search).toEqual({ tab: "world", panel: "world-editor" });
+  });
+
+  test("pauses dirty URL navigation and resumes only after discard confirmation", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?tab=world");
+    await user.click(await screen.findByRole("button", { name: "세계관 수정 및 추가" }));
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.type(title, " 수정");
+    await expectUnloadProtection(router);
+
+    void router.navigate({
+      to: "/projects/$projectId/write",
+      params: { projectId: "silver-garden" },
+      search: { tab: "world" },
+    });
+    expect(
+      await screen.findByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+    expect(router.state.location.search).toEqual({ tab: "world", panel: "world-editor" });
+    await user.click(screen.getByRole("button", { name: "변경사항 버리기" }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+    expect(screen.queryByRole("dialog", { name: "세계관 수정 및 추가" })).not.toBeInTheDocument();
+  });
+
+  test("replays a successful confirmed navigation with a fresh authoritative world draft", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?tab=world");
+    await user.click(await screen.findByRole("button", { name: "세계관 수정 및 추가" }));
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    const original = (title as HTMLInputElement).value;
+    await user.clear(title);
+    await user.type(title, "탐색에서 폐기할 초안");
+
+    void router.navigate({
+      to: "/projects/$projectId/write",
+      params: { projectId: "silver-garden" },
+      search: { tab: "world" },
+    });
+    await user.click(await screen.findByRole("button", { name: "변경사항 버리기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+
+    router.history.back();
+    expect(await screen.findByRole("textbox", { name: "기존 항목 1 제목" })).toHaveValue(original);
+  });
+
+  test("warns before unloading while the world editor has a dirty draft", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace(
+      "/projects/silver-garden/write?tab=world&panel=world-editor",
+    );
+    await user.type(await screen.findByRole("textbox", { name: "기존 항목 1 제목" }), " 수정");
+
+    await expectUnloadProtection(router);
+  });
+
+  test("shows an unavailable editor for a direct URL when the Story Bible is missing", async () => {
+    setViewportWidth(1024);
+    server.use(
+      http.get("/api/projects/:projectId/story-bible", () =>
+        HttpResponse.json(
+          { code: "STORY_BIBLE_NOT_FOUND", message: "없음", fieldErrors: [] },
+          { status: 404 },
+        ),
+      ),
+    );
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+
+    expect(await screen.findByRole("dialog", { name: "세계관 수정 및 추가" })).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "이 세계관을 더 이상 편집할 수 없어요",
+    );
+    expect(screen.getByRole("button", { name: "세계관 보기로 돌아가기" })).toBeInTheDocument();
+  });
+
+  test("returns initializing error close focus to the world tab for a direct editor URL", async () => {
+    setViewportWidth(1024);
+    server.use(
+      http.get("/api/projects/:projectId/story-bible", () =>
+        HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "실패", fieldErrors: [] },
+          { status: 500 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    expect(await screen.findByRole("alert")).toHaveTextContent("세계관을 불러오지 못했어요");
+
+    await user.click(screen.getByRole("button", { name: "닫기" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "세계관 보기", selected: true })).toHaveFocus(),
+    );
+  });
+
+  test("guards a dirty explicit editor close and preserves the draft when cancelled", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace(
+      "/projects/silver-garden/write?tab=world&panel=world-editor",
+    );
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.clear(title);
+    await user.type(title, "로컬 온실");
+
+    await user.click(screen.getByRole("button", { name: "세계관 편집기 닫기" }));
+    expect(
+      screen.getByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "계속 편집" }));
+
+    expect(title).toHaveValue("로컬 온실");
+    expect(router.state.location.search).toEqual({ tab: "world", panel: "world-editor" });
+  });
+
+  test("discards a confirmed close draft and reopens from the authoritative snapshot", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world");
+    const launch = await screen.findByRole("button", { name: "세계관 수정 및 추가" });
+    await user.click(launch);
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    const original = (title as HTMLInputElement).value;
+    await user.clear(title);
+    await user.type(title, "폐기할 로컬 초안");
+
+    await user.click(screen.getByRole("button", { name: "세계관 편집기 닫기" }));
+    await user.click(screen.getByRole("button", { name: "변경사항 버리기" }));
+    await waitFor(() => expect(launch).toHaveFocus());
+    await user.click(launch);
+
+    expect(await screen.findByRole("textbox", { name: "기존 항목 1 제목" })).toHaveValue(original);
+  });
+
+  test("routes Escape and overlay dismissal through the dirty discard confirmation", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.type(title, " 지킬 초안");
+
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="dialog-overlay"]')).toHaveClass("z-[70]");
+    expect(document.querySelector('[data-slot="dialog-content"]')).toHaveClass("z-[71]");
+    await user.click(screen.getByRole("button", { name: "계속 편집" }));
+    expect(title).toHaveValue("비가 그친 온실 지킬 초안");
+
+    const overlay = document.querySelector<HTMLElement>('[data-slot="sheet-overlay"]');
+    expect(overlay).not.toBeNull();
+    fireEvent.pointerDown(overlay!);
+    fireEvent.click(overlay!);
+    expect(
+      screen.getByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+  });
+
+  test("preserves and freezes a draft after save reports the Story Bible unavailable", async () => {
+    setViewportWidth(1024);
+    server.use(
+      http.put("/api/projects/:projectId/story-bible/world-entries", () =>
+        HttpResponse.json(
+          { code: "STORY_BIBLE_NOT_FOUND", message: "없음", fieldErrors: [] },
+          { status: 404 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.clear(title);
+    await user.type(title, "404 뒤에도 남는 초안");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("더 이상 편집할 수 없어요");
+    expect(title).toHaveValue("404 뒤에도 남는 초안");
+    expect(title).toBeDisabled();
+    expect(screen.getByRole("button", { name: "세계관 항목 추가" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "세계관 보기로 돌아가기" }));
+    expect(
+      screen.getByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+  });
+
+  test("keeps the world draft open when confirmed navigation is later blocked by manuscript flush", async () => {
+    setViewportWidth(1024);
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "실패", fieldErrors: [] },
+          { status: 500 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    const { container, router } = renderWorkspace(
+      "/projects/silver-garden/write?tab=world&panel=world-editor",
+    );
+    const manuscript = await waitFor(() => {
+      const element = container.querySelector<HTMLTextAreaElement>('[aria-label="원고 본문"]');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    fireEvent.change(manuscript, {
+      target: { value: "탐색 전에 실패할 원고" },
+    });
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.clear(title);
+    await user.type(title, "탐색 실패 뒤에도 남는 세계관");
+
+    void router.navigate({ to: "/" });
+    await user.click(await screen.findByRole("button", { name: "변경사항 버리기" }));
+
+    await waitFor(() => expect(screen.getByText("저장 실패")).toBeInTheDocument());
+    expect(screen.getByRole("textbox", { name: "기존 항목 1 제목" })).toHaveValue(
+      "탐색 실패 뒤에도 남는 세계관",
+    );
+    expect(router.state.location.search).toEqual({ tab: "world", panel: "world-editor" });
+  });
+
+  test("returns focus to the world tab after closing a direct-link editor", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+
+    await user.click(screen.getByRole("button", { name: "세계관 편집기 닫기" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "세계관 보기", selected: true })).toHaveFocus(),
+    );
+  });
+
+  test("adds multiple entries, focuses each new kind, validates all blanks, and focuses the first invalid title", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    await user.click(await screen.findByRole("button", { name: "세계관 항목 추가" }));
+    expect(screen.getByRole("combobox", { name: "새 항목 1 분류" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "세계관 항목 추가" }));
+    expect(screen.getByRole("combobox", { name: "새 항목 2 분류" })).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("입력하지 않은 항목이 4개");
+    expect(screen.getByRole("textbox", { name: "새 항목 1 제목" })).toHaveFocus();
+    expect(screen.getAllByText("제목을 입력해 주세요.")).toHaveLength(2);
+    expect(screen.getAllByText("설명을 입력해 주세요.")).toHaveLength(2);
+  });
+
+  test("saves normalized entries, uses the authoritative response, announces, and replacement-closes", async () => {
+    setViewportWidth(1024);
+    let request: SaveWorldEntriesRequest | undefined;
+    const workspace = getWorkspace();
+    const saved: StoryBibleSnapshot = {
+      storyBibleRevision: 2,
+      storyBible: {
+        ...workspace.storyBible,
+        worldEntries: [
+          {
+            ...workspace.storyBible.worldEntries[0],
+            kind: "rule",
+            title: "유리 온실",
+            description: "수정된 설명",
+          },
+          {
+            id: "server-world-2",
+            kind: "object",
+            title: "은빛 열쇠",
+            description: "서버가 만든 항목",
+          },
+        ],
+      },
+    };
+    server.use(
+      http.put(
+        "/api/projects/:projectId/story-bible/world-entries",
+        async ({ request: incoming }) => {
+          request = (await incoming.json()) as SaveWorldEntriesRequest;
+          return HttpResponse.json(saved);
+        },
+      ),
+    );
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?tab=world");
+    await user.click(await screen.findByRole("button", { name: "세계관 수정 및 추가" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "기존 항목 1 분류" }), "rule");
+    const title = screen.getByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.clear(title);
+    await user.type(title, "  유리 온실  ");
+    const description = screen.getByRole("textbox", { name: "기존 항목 1 설명" });
+    await user.clear(description);
+    await user.type(description, " 수정된 설명 ");
+    await user.click(screen.getByRole("button", { name: "세계관 항목 추가" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "새 항목 1 분류" }), "object");
+    await user.type(screen.getByRole("textbox", { name: "새 항목 1 제목" }), " 은빛 열쇠 ");
+    await user.type(screen.getByRole("textbox", { name: "새 항목 1 설명" }), " 서버가 만든 항목 ");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByText("세계관을 저장했어요.")).toBeInTheDocument();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+    expect(screen.queryByRole("dialog", { name: "세계관 수정 및 추가" })).not.toBeInTheDocument();
+    expect(screen.getByText("은빛 열쇠")).toBeInTheDocument();
+    expect(screen.getByText("사물")).toBeInTheDocument();
+    expect(request).toMatchObject({
+      expectedRevision: 1,
+      updates: [
+        {
+          id: workspace.storyBible.worldEntries[0].id,
+          kind: "rule",
+          title: "유리 온실",
+          description: "수정된 설명",
+        },
+      ],
+      additions: [{ kind: "object", title: "은빛 열쇠", description: "서버가 만든 항목" }],
+    });
+    expect(JSON.stringify(request)).not.toContain("new-");
+    router.history.back();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+    expect(screen.queryByRole("dialog", { name: "세계관 수정 및 추가" })).not.toBeInTheDocument();
+  });
+
+  test("preserves the exact draft through a retryable save failure and retry", async () => {
+    setViewportWidth(1024);
+    let attempts = 0;
+    server.use(
+      http.put("/api/projects/:projectId/story-bible/world-entries", async ({ request }) => {
+        attempts += 1;
+        const body = (await request.json()) as SaveWorldEntriesRequest;
+        if (attempts === 1)
+          return HttpResponse.json(
+            { code: "INTERNAL_ERROR", message: "실패", fieldErrors: [] },
+            { status: 500 },
+          );
+        return HttpResponse.json({
+          storyBibleRevision: 2,
+          storyBible: { ...getWorkspace().storyBible, worldEntries: body.updates },
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.clear(title);
+    await user.type(title, "실패해도 남는 세계관");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("편집 내용은 잃지 않았어요");
+    expect(title).toHaveValue("실패해도 남는 세계관");
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(attempts).toBe(2));
+  });
+
+  test("preserves conflict draft and replaces it only after confirmed latest reload succeeds", async () => {
+    setViewportWidth(1024);
+    const latest: StoryBibleSnapshot = {
+      storyBibleRevision: 2,
+      storyBible: {
+        ...getWorkspace().storyBible,
+        worldEntries: [{ ...getWorkspace().storyBible.worldEntries[0], title: "서버 최신 온실" }],
+      },
+    };
+    let gets = 0;
+    server.use(
+      http.put("/api/projects/:projectId/story-bible/world-entries", () =>
+        HttpResponse.json(
+          { code: "STORY_BIBLE_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        ),
+      ),
+      http.get("/api/projects/:projectId/story-bible", () => {
+        gets += 1;
+        return HttpResponse.json(
+          gets === 1 ? { storyBibleRevision: 1, storyBible: getWorkspace().storyBible } : latest,
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=world&panel=world-editor");
+    const title = await screen.findByRole("textbox", { name: "기존 항목 1 제목" });
+    await user.clear(title);
+    await user.type(title, "충돌한 로컬 초안");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("다른 곳에서 세계관이 변경되었어요");
+    await user.click(screen.getByRole("button", { name: "최신 세계관 불러오기" }));
+    expect(
+      screen.getByRole("dialog", { name: "현재 편집 내용을 버리고 최신 세계관을 불러올까요?" }),
+    ).toBeInTheDocument();
+    expect(title).toHaveValue("충돌한 로컬 초안");
+    await user.click(screen.getByRole("button", { name: "최신 세계관 불러오기" }));
+    expect(await screen.findByRole("textbox", { name: "기존 항목 1 제목" })).toHaveValue(
+      "서버 최신 온실",
+    );
+  });
+
+  test("renders the editor above the mobile context sheet", async () => {
+    setViewportWidth(375);
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(await screen.findByRole("tab", { name: "세계관 보기" }));
+    expect(screen.getByRole("dialog", { name: "세계관 보기" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "세계관 수정 및 추가" }));
+    expect(await screen.findByRole("dialog", { name: "세계관 수정 및 추가" })).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="sheet-content"]')).toHaveLength(2);
   });
 
   test("writes canonical tab URL state while preserving unrelated search keys", async () => {

@@ -3,6 +3,9 @@ export type TropeId = "rivals-to-lovers" | "contract-romance" | "reunion" | "fri
 export type ApiErrorCode =
   | "MALFORMED_REQUEST"
   | "PROJECT_NOT_FOUND"
+  | "STORY_BIBLE_NOT_FOUND"
+  | "STORY_BIBLE_REVISION_CONFLICT"
+  | "INVALID_WORLD_ENTRIES"
   | "MANUSCRIPT_NOT_FOUND"
   | "SCENE_NOT_FOUND"
   | "INVALID_SCENE_REFERENCE"
@@ -48,6 +51,26 @@ export interface ApiStoryBible {
   projectId: string;
   characters: ApiCharacter[];
   worldEntries: ApiWorldEntry[];
+}
+
+export interface StoryBibleSnapshot {
+  storyBible: ApiStoryBible;
+  storyBibleRevision: number;
+}
+
+export type WorldEntryUpdate = ApiWorldEntry;
+
+export type WorldEntryAddition = Omit<ApiWorldEntry, "id">;
+
+export interface SaveWorldEntriesRequest {
+  expectedRevision: number;
+  updates: WorldEntryUpdate[];
+  additions: WorldEntryAddition[];
+}
+
+export interface SaveWorldEntriesMutationVariables {
+  projectId: string;
+  request: SaveWorldEntriesRequest;
 }
 
 export interface ApiScene {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type Ref, useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -29,6 +29,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { applyWritingSuggestion } from "@/features/apply-writing-suggestion";
+import {
+  useWorldEntryEditor,
+  WorldDiscardDialog,
+  WorldEditorInitializingSheet,
+  WorldEditorSheet,
+} from "@/features/edit-world-entries";
 import { ManuscriptConflictDialog } from "@/features/manuscript-conflict";
 import {
   type ManuscriptAutosaveStatus,
@@ -57,7 +63,8 @@ const contextTools: Array<{
 
 export function WritingWorkspacePage() {
   const { projectId } = useParams({ from: "/projects/$projectId/write" });
-  const { tab } = useSearch({ from: "/projects/$projectId/write" });
+  const search = useSearch({ from: "/projects/$projectId/write" });
+  const { tab, panel } = search;
   const navigate = useNavigate({ from: "/projects/$projectId/write" });
   const contextMode: ContextMode = tab ?? "manuscript";
   const workspaceQuery = useProjectWorkspaceQuery(projectId);
@@ -68,11 +75,30 @@ export function WritingWorkspacePage() {
     void navigate({
       replace: true,
       search: (previous) => {
-        const { tab: _tab, ...search } = previous;
-        return search;
+        const { tab: _tab, ...rest } = previous;
+        return rest;
       },
     });
   }, [navigate, tab]);
+
+  useEffect(() => {
+    if (panel !== null) return;
+    void navigate({
+      replace: true,
+      search: (previous) => {
+        const { panel: _panel, ...rest } = previous;
+        return rest;
+      },
+    });
+  }, [navigate, panel]);
+
+  useEffect(() => {
+    if (panel !== "world-editor" || tab === "world") return;
+    void navigate({
+      replace: true,
+      search: (previous) => ({ ...previous, tab: "world", panel: "world-editor" }),
+    });
+  }, [navigate, panel, tab]);
 
   function handleContextModeChange(mode: ContextMode) {
     void navigate({
@@ -150,7 +176,22 @@ export function WritingWorkspacePage() {
     <LoadedWritingWorkspace
       workspace={workspaceQuery.data}
       contextMode={contextMode}
+      editorOpen={panel === "world-editor" && contextMode === "world"}
       onContextModeChange={handleContextModeChange}
+      onEditorOpen={() => {
+        void navigate({
+          search: (previous) => ({ ...previous, tab: "world", panel: "world-editor" }),
+        });
+      }}
+      onEditorClose={(replace = false) => {
+        void navigate({
+          replace,
+          search: (previous) => {
+            const { panel: _panel, ...rest } = previous;
+            return { ...rest, tab: "world" };
+          },
+        });
+      }}
     />
   );
 }
@@ -158,15 +199,25 @@ export function WritingWorkspacePage() {
 function LoadedWritingWorkspace({
   workspace,
   contextMode,
+  editorOpen,
   onContextModeChange,
+  onEditorOpen,
+  onEditorClose,
 }: {
   workspace: ProjectWorkspaceResponse;
   contextMode: ContextMode;
+  editorOpen: boolean;
   onContextModeChange: (mode: ContextMode) => void;
+  onEditorOpen: () => void;
+  onEditorClose: (replace?: boolean) => void;
 }) {
   const [contextOpen, setContextOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [selection, setSelection] = useState<TextRange | null>(null);
+  const [worldAnnouncement, setWorldAnnouncement] = useState("");
+  const worldTabRef = useRef<HTMLButtonElement>(null);
+  const worldLaunchRef = useRef<HTMLButtonElement>(null);
+  const openedFromLaunchRef = useRef(false);
   const contextIsInline = useMediaQuery("(min-width: 768px)");
   const desktopIsResizable = useMediaQuery("(min-width: 1280px)");
   const { project, storyBible: bible } = workspace;
@@ -192,7 +243,25 @@ function LoadedWritingWorkspace({
     manuscript: workspace.manuscript,
     manuscriptRevision: workspace.manuscriptRevision,
   });
-  useManuscriptNavigationGuard(status, flush);
+  const worldEditor = useWorldEntryEditor({
+    projectId: project.id,
+    open: editorOpen,
+    onSaved: () => {
+      setWorldAnnouncement("세계관을 저장했어요.");
+      onEditorClose(true);
+    },
+    onClose: () => onEditorClose(false),
+  });
+  useWorkspaceNavigationGuard(status, flush, worldEditor);
+  const handleEditorOpen = () => {
+    openedFromLaunchRef.current = true;
+    onEditorOpen();
+  };
+  const restoreWorldEditorFocus = (resetLaunchOrigin = true) => {
+    const focusTarget = openedFromLaunchRef.current ? worldLaunchRef.current : worldTabRef.current;
+    focusTarget?.focus();
+    if (resetLaunchOrigin) openedFromLaunchRef.current = false;
+  };
   const scene = draft.scenes.find(({ id }) => id === draft.activeSceneId);
 
   if (!scene) {
@@ -281,6 +350,7 @@ function LoadedWritingWorkspace({
                 <Tooltip key={tool.mode}>
                   <TooltipTrigger asChild>
                     <TabsTrigger
+                      ref={tool.mode === "world" ? worldTabRef : undefined}
                       value={tool.mode}
                       aria-label={tool.label}
                       onClick={() => {
@@ -326,7 +396,12 @@ function LoadedWritingWorkspace({
                   <SheetDescription>현재 장면과 관련된 집필 정보를 확인합니다.</SheetDescription>
                 </SheetHeader>
                 <ScrollArea className="min-h-0 flex-1">
-                  <ContextPanelContent draft={draft} bible={bible} />
+                  <ContextPanelContent
+                    draft={draft}
+                    bible={bible}
+                    onEditWorld={handleEditorOpen}
+                    editWorldButtonRef={worldLaunchRef}
+                  />
                 </ScrollArea>
               </SheetContent>
             </Sheet>
@@ -336,7 +411,12 @@ function LoadedWritingWorkspace({
           <ResizablePanelGroup orientation="horizontal" className="min-w-0 flex-1">
             <ResizablePanel defaultSize="20%" minSize="15%">
               <ScrollArea className="h-full bg-sidebar/90">
-                <ContextPanelContent draft={draft} bible={bible} />
+                <ContextPanelContent
+                  draft={draft}
+                  bible={bible}
+                  onEditWorld={handleEditorOpen}
+                  editWorldButtonRef={worldLaunchRef}
+                />
               </ScrollArea>
             </ResizablePanel>
             <ResizableHandle withHandle />
@@ -355,7 +435,12 @@ function LoadedWritingWorkspace({
         ) : (
           <>
             <aside className="w-64 shrink-0 overflow-y-auto border-r border-border bg-sidebar/90">
-              <ContextPanelContent draft={draft} bible={bible} />
+              <ContextPanelContent
+                draft={draft}
+                bible={bible}
+                onEditWorld={handleEditorOpen}
+                editWorldButtonRef={worldLaunchRef}
+              />
             </aside>
             <div className="min-w-0 flex-1">{editor}</div>
           </>
@@ -380,6 +465,50 @@ function LoadedWritingWorkspace({
           </Sheet>
         )}
       </Tabs>
+      {worldAnnouncement && (
+        <p role="status" aria-live="polite" className="sr-only">
+          {worldAnnouncement}
+        </p>
+      )}
+      {worldEditor.state && (
+        <>
+          <WorldEditorSheet
+            open={editorOpen}
+            state={worldEditor.state}
+            onFieldChange={worldEditor.changeField}
+            onAdd={worldEditor.addRow}
+            onSave={() => void worldEditor.save()}
+            onRequestClose={worldEditor.requestClose}
+            onRetry={() => void worldEditor.retry()}
+            onRequestReload={worldEditor.requestLatestReload}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              restoreWorldEditorFocus();
+            }}
+          />
+          <WorldDiscardDialog
+            intent={worldEditor.state.discardIntent}
+            onCancel={worldEditor.cancelDiscard}
+            onConfirm={() => void worldEditor.confirmDiscard()}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              restoreWorldEditorFocus(false);
+            }}
+          />
+        </>
+      )}
+      {editorOpen && !worldEditor.state && (
+        <WorldEditorInitializingSheet
+          open
+          error={worldEditor.loadError}
+          onRetry={worldEditor.retryLoad}
+          onClose={() => onEditorClose(false)}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            restoreWorldEditorFocus();
+          }}
+        />
+      )}
       <ManuscriptConflictDialog
         open={isConflictDialogOpen}
         comparison={conflictComparison}
@@ -400,9 +529,13 @@ function LoadedWritingWorkspace({
 function ContextPanelContent({
   draft,
   bible,
+  onEditWorld,
+  editWorldButtonRef,
 }: {
   draft: ProjectWorkspaceResponse["manuscript"];
   bible: ProjectWorkspaceResponse["storyBible"];
+  onEditWorld: () => void;
+  editWorldButtonRef: Ref<HTMLButtonElement>;
 }) {
   return (
     <>
@@ -413,17 +546,23 @@ function ContextPanelContent({
         <StoryContextPanel bible={bible} mode="characters" />
       </TabsContent>
       <TabsContent value="world">
-        <StoryContextPanel bible={bible} mode="world" />
+        <StoryContextPanel
+          bible={bible}
+          mode="world"
+          onEditWorld={onEditWorld}
+          editWorldButtonRef={editWorldButtonRef}
+        />
       </TabsContent>
     </>
   );
 }
 
-function useManuscriptNavigationGuard(
+function useWorkspaceNavigationGuard(
   status: ManuscriptAutosaveStatus,
   flush: () => Promise<boolean>,
+  worldEditor: ReturnType<typeof useWorldEntryEditor>,
 ) {
-  const shouldBlock = status !== "saved";
+  const shouldBlock = status !== "saved" || worldEditor.requiresDiscardConfirmation;
   const isHandlingBlockedNavigationRef = useRef(false);
 
   useBlocker({
@@ -440,6 +579,10 @@ function useManuscriptNavigationGuard(
 
       isHandlingBlockedNavigationRef.current = true;
       try {
+        if (worldEditor.requiresDiscardConfirmation) {
+          const confirmed = await worldEditor.confirmNavigationDiscard();
+          if (!confirmed) return true;
+        }
         return !(await flush());
       } finally {
         isHandlingBlockedNavigationRef.current = false;

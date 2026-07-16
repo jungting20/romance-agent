@@ -28,4 +28,34 @@ describe("StoryBible", () => {
     expect(context.characters.map(({ name }) => name)).toEqual(["도현"]);
     expect(context.worldEntries).toHaveLength(1);
   });
+
+  test("trims a valid world-entry draft without mutating the caller value", async () => {
+    const { validateWorldEntryDraft } = await import("./story-bible");
+    const draft = {
+      kind: "rule" as const,
+      title: "  왕실의 서약  ",
+      description: "  어길 수 없다.  ",
+    };
+
+    expect(validateWorldEntryDraft(draft)).toEqual({
+      value: { kind: "rule", title: "왕실의 서약", description: "어길 수 없다." },
+      errors: {},
+    });
+    expect(draft).toEqual({
+      kind: "rule",
+      title: "  왕실의 서약  ",
+      description: "  어길 수 없다.  ",
+    });
+  });
+
+  test("reports every blank normalized required field in one pass", async () => {
+    const { validateWorldEntryDraft } = await import("./story-bible");
+
+    expect(validateWorldEntryDraft({ kind: "place", title: " \n ", description: "\t" })).toEqual({
+      errors: {
+        title: "제목을 입력해 주세요.",
+        description: "설명을 입력해 주세요.",
+      },
+    });
+  });
 });
