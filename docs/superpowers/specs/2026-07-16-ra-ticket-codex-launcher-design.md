@@ -49,10 +49,14 @@ $feature-development
 brainstorming과 writing-plans는 다시 수행하지 말고,
 feature-development의 전체 구현·검토·검증 절차를 따라줘.
 티켓에 없는 범위를 추측해서 추가하지 마.
+작업을 완전히 마친 뒤 최종 응답 마지막 줄에 다음 완료 마커를 남겨:
+completion_marker: ZELLIJ_AGENT_WORKER_DONE
 ```
 
 Only `<spec_path>` and `<plan_path>` are substituted from the claimed ticket.
 The ticket ID, title, and summary are not included in the prompt.
+The completion marker is a fixed literal so the Zellij agent worker can detect
+that the launched implementation session finished its assigned work.
 
 ## Error Handling
 

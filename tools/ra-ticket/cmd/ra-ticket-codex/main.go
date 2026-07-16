@@ -51,7 +51,9 @@ func run() error {
 
 brainstorming과 writing-plans는 다시 수행하지 말고,
 feature-development의 전체 구현·검토·검증 절차를 따라줘.
-티켓에 없는 범위를 추측해서 추가하지 마.`, ticket.SpecPath, ticket.PlanPath)
+티켓에 없는 범위를 추측해서 추가하지 마.
+작업을 완전히 마친 뒤 최종 응답 마지막 줄에 다음 완료 마커를 남겨:
+completion_marker: ZELLIJ_AGENT_WORKER_DONE`, ticket.SpecPath, ticket.PlanPath)
 
 	codex := exec.Command("codex", "--dangerously-bypass-approvals-and-sandbox", "-C", root, prompt)
 	codex.Stdin = os.Stdin
