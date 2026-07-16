@@ -188,7 +188,13 @@ def _translate_relationship_event(
         event_id=_stable_id(
             chunk,
             "relationship-event",
-            (subject_key, object_key, event.category, event.description, str(event.confidence)),
+            (
+                subject_key,
+                object_key,
+                event.category,
+                event.description,
+                _confidence_semantic_value(event.confidence),
+            ),
             evidence,
         ),
         subject_key=subject_key,
@@ -240,7 +246,7 @@ def _translate_location_event(
                 place_key,
                 event.event_type.value,
                 event.description,
-                str(event.confidence),
+                _confidence_semantic_value(event.confidence),
             ),
             evidence,
         ),
@@ -302,6 +308,10 @@ def _translate_evidence(
 def _validate_confidence(confidence: float) -> None:
     if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
         raise ExtractionTranslationError("confidence must be finite and between 0.0 and 1.0")
+
+
+def _confidence_semantic_value(confidence: float) -> str:
+    return str(0.0 if confidence == 0.0 else confidence)
 
 
 def _stable_id(

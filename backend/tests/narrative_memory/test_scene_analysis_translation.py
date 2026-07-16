@@ -349,3 +349,29 @@ def test_translation_accepts_confidence_boundaries(
 
     assert analysis.relationship_events[0].confidence == confidence
     assert analysis.location_events[0].confidence == confidence
+
+
+def test_equal_numeric_zero_confidence_produces_the_same_event_ids(
+    chunk: SceneChunk,
+    extraction: SceneChunkExtraction,
+) -> None:
+    positive_zero = replace(
+        extraction,
+        relationship_events=(replace(extraction.relationship_events[0], confidence=0.0),),
+        location_events=(replace(extraction.location_events[0], confidence=0.0),),
+    )
+    negative_zero = replace(
+        extraction,
+        relationship_events=(replace(extraction.relationship_events[0], confidence=-0.0),),
+        location_events=(replace(extraction.location_events[0], confidence=-0.0),),
+    )
+
+    positive_analysis = _translate(chunk, positive_zero)
+    negative_analysis = _translate(chunk, negative_zero)
+
+    assert positive_analysis.relationship_events[0].event_id == (
+        negative_analysis.relationship_events[0].event_id
+    )
+    assert positive_analysis.location_events[0].event_id == (
+        negative_analysis.location_events[0].event_id
+    )
