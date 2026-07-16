@@ -455,6 +455,57 @@ def test_initialize_rejects_wrong_named_terminal_index_without_repair(
     assert tables == {"attempt_events"}
 
 
+@pytest.mark.parametrize("collation", ["NOCASE", "RTRIM"])
+def test_initialize_rejects_terminal_index_with_nonbinary_collation_without_repair(
+    tmp_path, collation: str
+) -> None:
+    path = tmp_path / "private" / "agent-audit.sqlite3"
+    path.parent.mkdir(parents=True)
+    index_sql = (
+        "CREATE UNIQUE INDEX uq_attempt_terminal "
+        f"ON attempt_events (run_id COLLATE {collation}, chunk_id, attempt_number) "
+        "WHERE event_type IN ('attempt_succeeded', 'attempt_failed')"
+    )
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE attempt_events (
+                event_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                chunk_id TEXT NOT NULL,
+                attempt_number INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                payload_json BLOB NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO attempt_events (
+                run_id, chunk_id, attempt_number, event_type, occurred_at, payload_json
+            ) VALUES ('run', 'chunk', 1, 'attempt_started', ?, '{}')
+            """,
+            (OCCURRED_AT.isoformat(),),
+        )
+        connection.execute(index_sql)
+
+    with pytest.raises(SQLiteAuditSchemaError) as captured:
+        SQLiteAgentAudit(path).initialize()
+
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("terminal attempt index schema is invalid",)
+    with sqlite3.connect(path) as connection:
+        stored_index_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'uq_attempt_terminal'"
+        ).fetchone()
+        rows = connection.execute(
+            "SELECT event_type FROM attempt_events ORDER BY event_sequence"
+        ).fetchall()
+    assert stored_index_sql == (index_sql,)
+    assert rows == [("attempt_started",)]
+
+
 def test_initialize_accepts_existing_canonical_terminal_index_idempotently(tmp_path) -> None:
     audit, path = _initialized_audit(tmp_path)
 

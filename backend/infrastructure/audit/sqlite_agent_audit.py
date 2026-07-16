@@ -37,6 +37,7 @@ _TERMINAL_INDEX_SQL = (
     "WHERE event_type IN ('attempt_succeeded', 'attempt_failed')"
 )
 _TERMINAL_INDEX_COLUMNS = ("run_id", "chunk_id", "attempt_number")
+_TERMINAL_INDEX_KEYS = tuple((column, 0, "BINARY", 1) for column in _TERMINAL_INDEX_COLUMNS)
 _TERMINAL_PREDICATE = re.compile(
     r"event_type\s+in\s*\(\s*'attempt_succeeded'\s*,\s*'attempt_failed'\s*\)",
     re.IGNORECASE,
@@ -259,8 +260,10 @@ def _validate_terminal_index(connection: sqlite3.Connection) -> None:
         ),
         None,
     )
-    index_columns = tuple(
-        row[2] for row in connection.execute(f"PRAGMA index_info('{_TERMINAL_INDEX_NAME}')")
+    index_keys = tuple(
+        (row[2], row[3], row[4], row[5])
+        for row in connection.execute(f"PRAGMA index_xinfo('{_TERMINAL_INDEX_NAME}')")
+        if row[5] == 1
     )
     if (
         stored is None
@@ -269,7 +272,7 @@ def _validate_terminal_index(connection: sqlite3.Connection) -> None:
         or index_list_row is None
         or index_list_row[2] != 1
         or index_list_row[4] != 1
-        or index_columns != _TERMINAL_INDEX_COLUMNS
+        or index_keys != _TERMINAL_INDEX_KEYS
         or not _has_expected_terminal_predicate(stored[1])
     ):
         raise SQLiteAuditSchemaError("terminal attempt index schema is invalid") from None

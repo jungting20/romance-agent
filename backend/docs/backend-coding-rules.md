@@ -106,6 +106,10 @@ verification, and handoff workflows. If the documents conflict, follow
   port contract and durable storage. A best-effort failure fallback after an
   ambiguous success append may run, but storage must reject it when success was
   already committed; never repair terminal conflicts with update or delete.
+  Compare the identity tuple with exact, case-sensitive (`BINARY`) semantics,
+  and validate an existing reserved index from SQLite index metadata, including
+  key order, collation, sort direction, uniqueness, and partial predicate,
+  before accepting it as the durable constraint.
 - Validate structured provider output before translating it into domain types.
   Provider adapters must not assign durable domain IDs, candidate states, or
   other domain-owned meaning.
