@@ -76,3 +76,28 @@ docker compose down -v
 
 `down -v` is destructive. Use it only when the local stack data should be
 reinitialized.
+
+## Local feature ticket queue
+
+The feature ticket queue is personal local tooling. Its SQLite database lives
+at `.local/tickets.db`, which is not shared or committed. Ticket creation is
+normally performed by `$prepare-feature-ticket` after the feature design and
+implementation plan have been approved.
+
+Build the ignored CLI binary from the repository checkout:
+
+```sh
+cd tools/ra-ticket
+mise exec -- go build -o ../../.local/bin/ra-ticket ./cmd/ra-ticket
+../../.local/bin/ra-ticket next
+../../.local/bin/ra-ticket list --status ready
+../../.local/bin/ra-ticket show 1
+../../.local/bin/ra-ticket start 1
+../../.local/bin/ra-ticket done 1
+../../.local/bin/ra-ticket cancel 1
+../../.local/bin/ra-ticket reopen 1
+```
+
+`next` only returns the oldest ready ticket; it does not start or otherwise
+change that ticket. Add `--json` to any command for agent-readable output.
+Rebuild the ignored binary after changing CLI source files.
