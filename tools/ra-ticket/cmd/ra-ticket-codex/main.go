@@ -53,7 +53,7 @@ brainstorming과 writing-plans는 다시 수행하지 말고,
 feature-development의 전체 구현·검토·검증 절차를 따라줘.
 티켓에 없는 범위를 추측해서 추가하지 마.`, ticket.SpecPath, ticket.PlanPath)
 
-	codex := exec.Command("codex", "-C", root, prompt)
+	codex := exec.Command("codex", "--dangerously-bypass-approvals-and-sandbox", "-C", root, prompt)
 	codex.Stdin = os.Stdin
 	codex.Stdout = os.Stdout
 	codex.Stderr = os.Stderr
