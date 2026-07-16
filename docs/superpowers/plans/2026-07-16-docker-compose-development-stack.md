@@ -325,14 +325,14 @@ Run from the repository root:
 
 ```sh
 docker compose config --quiet
-docker compose config --services
+docker compose config --services | sort
 ```
 
 Expected: configuration validation succeeds and service output is exactly:
 
 ```text
-frontend
 backend
+frontend
 ```
 
 - [ ] **Step 7: Commit the application containers**
