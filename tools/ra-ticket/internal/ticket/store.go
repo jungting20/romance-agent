@@ -3,6 +3,7 @@ package ticket
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -110,6 +111,135 @@ VALUES (?, ?, ?, ?, 'ready', ?, ?)`, title, summary, spec, plan, stamp, stamp)
 	return Ticket{ID: id, Title: title, Summary: summary, SpecPath: spec, PlanPath: plan, Status: StatusReady, CreatedAt: now, UpdatedAt: now}, nil
 }
 
+func (s *Store) Get(ctx context.Context, id int64) (Ticket, error) {
+	ticket, err := scanTicket(s.db.QueryRowContext(ctx, `
+SELECT id, title, summary, spec_path, plan_path, status,
+       created_at, updated_at, started_at, completed_at, cancelled_at
+FROM tickets
+WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Ticket{}, ErrNotFound
+	}
+	if err != nil {
+		return Ticket{}, fmt.Errorf("get ticket: %w", err)
+	}
+	return ticket, nil
+}
+
+func (s *Store) List(ctx context.Context, filter *Status) ([]Ticket, error) {
+	if filter != nil && !validStatus(*filter) {
+		return nil, ErrInvalidTransition
+	}
+	query := `
+SELECT id, title, summary, spec_path, plan_path, status,
+       created_at, updated_at, started_at, completed_at, cancelled_at
+FROM tickets`
+	args := []any(nil)
+	if filter != nil {
+		query += "\nWHERE status = ?"
+		args = append(args, *filter)
+	}
+	query += "\nORDER BY created_at ASC, id ASC"
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list tickets: %w", err)
+	}
+	defer rows.Close()
+
+	tickets := make([]Ticket, 0)
+	for rows.Next() {
+		ticket, err := scanTicket(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan listed ticket: %w", err)
+		}
+		tickets = append(tickets, ticket)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tickets: %w", err)
+	}
+	return tickets, nil
+}
+
+func (s *Store) Next(ctx context.Context) (Ticket, error) {
+	ticket, err := scanTicket(s.db.QueryRowContext(ctx, `
+SELECT id, title, summary, spec_path, plan_path, status,
+       created_at, updated_at, started_at, completed_at, cancelled_at
+FROM tickets
+WHERE status = 'ready'
+ORDER BY created_at ASC, id ASC
+LIMIT 1`))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Ticket{}, ErrEmptyQueue
+	}
+	if err != nil {
+		return Ticket{}, fmt.Errorf("get next ticket: %w", err)
+	}
+	return ticket, nil
+}
+
+func (s *Store) Transition(ctx context.Context, id int64, action Action) (Ticket, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Ticket{}, fmt.Errorf("begin transition: %w", err)
+	}
+	defer tx.Rollback()
+
+	ticket, err := scanTicket(tx.QueryRowContext(ctx, `
+SELECT id, title, summary, spec_path, plan_path, status,
+       created_at, updated_at, started_at, completed_at, cancelled_at
+FROM tickets
+WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Ticket{}, ErrNotFound
+	}
+	if err != nil {
+		return Ticket{}, fmt.Errorf("get transition ticket: %w", err)
+	}
+
+	targets, ok := allowedTransitions[action]
+	if !ok {
+		return Ticket{}, ErrInvalidTransition
+	}
+	target, ok := targets[ticket.Status]
+	if !ok {
+		return Ticket{}, ErrInvalidTransition
+	}
+
+	now := s.now().UTC()
+	switch action {
+	case ActionStart:
+		ticket.StartedAt = &now
+	case ActionDone:
+		ticket.CompletedAt = &now
+	case ActionCancel:
+		ticket.CancelledAt = &now
+	case ActionReopen:
+		ticket.StartedAt = nil
+		ticket.CompletedAt = nil
+		ticket.CancelledAt = nil
+	}
+	ticket.Status = target
+	ticket.UpdatedAt = now
+	if _, err := tx.ExecContext(ctx, `
+UPDATE tickets
+SET status = ?, updated_at = ?, started_at = ?, completed_at = ?, cancelled_at = ?
+WHERE id = ?`, ticket.Status, ticket.UpdatedAt.Format(time.RFC3339Nano), optionalTimeValue(ticket.StartedAt), optionalTimeValue(ticket.CompletedAt), optionalTimeValue(ticket.CancelledAt), ticket.ID); err != nil {
+		return Ticket{}, fmt.Errorf("update ticket transition: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Ticket{}, fmt.Errorf("commit ticket transition: %w", err)
+	}
+	return ticket, nil
+}
+
+var allowedTransitions = map[Action]map[Status]Status{
+	ActionStart:  {StatusReady: StatusInProgress},
+	ActionDone:   {StatusInProgress: StatusDone},
+	ActionCancel: {StatusReady: StatusCancelled, StatusInProgress: StatusCancelled},
+	ActionReopen: {StatusDone: StatusReady, StatusCancelled: StatusReady},
+}
+
 func (s *Store) artifactPath(input, requiredDirectory string) (string, error) {
 	candidate := input
 	if !filepath.IsAbs(candidate) {
@@ -151,4 +281,60 @@ func parseOptionalTime(value sql.NullString) (*time.Time, error) {
 		return nil, err
 	}
 	return &parsed, nil
+}
+
+func scanTicket(scanner interface{ Scan(...any) error }) (Ticket, error) {
+	var ticket Ticket
+	var status string
+	var createdAt, updatedAt string
+	var startedAt, completedAt, cancelledAt sql.NullString
+	if err := scanner.Scan(
+		&ticket.ID,
+		&ticket.Title,
+		&ticket.Summary,
+		&ticket.SpecPath,
+		&ticket.PlanPath,
+		&status,
+		&createdAt,
+		&updatedAt,
+		&startedAt,
+		&completedAt,
+		&cancelledAt,
+	); err != nil {
+		return Ticket{}, err
+	}
+	var err error
+	ticket.Status = Status(status)
+	if ticket.CreatedAt, err = parseTime(createdAt); err != nil {
+		return Ticket{}, err
+	}
+	if ticket.UpdatedAt, err = parseTime(updatedAt); err != nil {
+		return Ticket{}, err
+	}
+	if ticket.StartedAt, err = parseOptionalTime(startedAt); err != nil {
+		return Ticket{}, err
+	}
+	if ticket.CompletedAt, err = parseOptionalTime(completedAt); err != nil {
+		return Ticket{}, err
+	}
+	if ticket.CancelledAt, err = parseOptionalTime(cancelledAt); err != nil {
+		return Ticket{}, err
+	}
+	return ticket, nil
+}
+
+func validStatus(status Status) bool {
+	switch status {
+	case StatusReady, StatusInProgress, StatusDone, StatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func optionalTimeValue(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return value.Format(time.RFC3339Nano)
 }
