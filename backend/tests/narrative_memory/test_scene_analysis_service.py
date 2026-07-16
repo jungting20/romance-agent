@@ -1,7 +1,10 @@
 import asyncio
 import json
+import sqlite3
 import traceback
+from dataclasses import asdict
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +21,7 @@ from apps.narrative_memory.repository.analysis_audit import (
     RunSucceeded,
 )
 from apps.narrative_memory.service.chunking import chunk_scene
+from apps.narrative_memory.service.models import CandidateStatus, LocationEventType
 from apps.narrative_memory.service.scene_analysis import (
     SceneAnalysisAuditError,
     SceneAnalysisError,
@@ -34,12 +38,20 @@ from apps.narrative_memory.service.scene_analysis_types import (
     AgentUsage,
     AnalyzeSceneRequest,
     ExtractedEntity,
+    ExtractedLocationEvent,
+    ExtractedPlace,
     ExtractedRelationshipEvent,
     KnownIdentity,
     RelativeEvidence,
     SceneChunkExtraction,
+    encode_scene_chunk_extraction,
 )
-from infrastructure.llm.prompt_registry import render_scene_analysis_user_prompt
+from infrastructure.audit.sqlite_agent_audit import SQLiteAgentAudit
+from infrastructure.llm.prompt_registry import (
+    FilePromptRegistry,
+    render_scene_analysis_user_prompt,
+)
+from infrastructure.llm.scripted_scene_analysis import ScriptedSceneAnalysisAgent
 
 NOW = datetime(2026, 7, 16, 9, 30, tzinfo=UTC)
 
@@ -229,6 +241,222 @@ def test_scene_chunks_are_analyzed_serially_and_audited_canonically() -> None:
         canonical_extraction,
     ]
     assert [event.latency_ms for event in successes] == [125.0, 250.0]
+
+
+def test_analyze_scene_with_mock_and_sqlite_audit_end_to_end(tmp_path: Path) -> None:
+    phrase = "서연은 민준과 카페에 도착했다."
+    phrase_start = 260
+    scene_characters = list("가" * 350)
+    scene_characters[phrase_start : phrase_start + len(phrase)] = phrase
+    scene_text = "".join(scene_characters)
+    assert len(scene_text) == 350
+
+    def extraction(chunk_start: int, summary: str) -> SceneChunkExtraction:
+        relative_phrase_start = phrase_start - chunk_start
+
+        def evidence(text: str) -> tuple[RelativeEvidence, ...]:
+            relative_start = relative_phrase_start + phrase.index(text)
+            return (
+                RelativeEvidence(
+                    relative_start,
+                    relative_start + len(text),
+                    text,
+                ),
+            )
+
+        return SceneChunkExtraction(
+            summary=summary,
+            entities=(
+                ExtractedEntity("seoyeon", "서연", "서연", (), evidence("서연")),
+                ExtractedEntity("minjun", "민준", "민준", (), evidence("민준")),
+            ),
+            places=(ExtractedPlace("cafe", "카페", "카페", (), evidence("카페")),),
+            relationship_events=(
+                ExtractedRelationshipEvent(
+                    "seoyeon",
+                    "minjun",
+                    "romance",
+                    "서연과 민준이 함께 카페에 도착했다.",
+                    0.9,
+                    evidence(phrase),
+                ),
+            ),
+            location_events=(
+                ExtractedLocationEvent(
+                    "seoyeon",
+                    "cafe",
+                    LocationEventType.ARRIVED,
+                    "서연이 카페에 도착했다.",
+                    0.95,
+                    evidence(phrase),
+                ),
+            ),
+        )
+
+    scripted_extractions = {
+        "scene-acceptance:r3:0000": extraction(0, "서연과 민준이 카페에 도착한다."),
+        "scene-acceptance:r3:0001": extraction(250, "두 사람이 카페에 도착한다."),
+    }
+    agent = ScriptedSceneAnalysisAgent(
+        {chunk_id: (value,) for chunk_id, value in scripted_extractions.items()}
+    )
+    prompt_registry = FilePromptRegistry(Path(__file__).parents[2] / "prompts")
+    expected_prompt = prompt_registry.load("scene-analysis")
+    audit_path = tmp_path / "agent-audit.sqlite3"
+    audit = SQLiteAgentAudit(audit_path)
+    audit.initialize()
+    ticks = iter((1.0, 1.125, 2.0, 2.25))
+    service = SceneAnalysisService(
+        agent=agent,
+        prompt_registry=prompt_registry,
+        audit=audit,
+        run_id_factory=lambda: "run-acceptance",
+        clock=lambda: NOW,
+        monotonic=lambda: next(ticks),
+    )
+
+    snapshot = asyncio.run(
+        service.analyze_scene(
+            AnalyzeSceneRequest(
+                "project-acceptance",
+                "scene-acceptance",
+                3,
+                8,
+                scene_text,
+            )
+        )
+    )
+
+    assert [call.chunk_id for call in agent.calls] == [
+        "scene-acceptance:r3:0000",
+        "scene-acceptance:r3:0001",
+    ]
+    assert len(snapshot.entities) == 2
+    assert len(snapshot.places) == 1
+    assert len(snapshot.relationship_events) == 1
+    assert len(snapshot.location_events) == 1
+    assert {
+        candidate.status
+        for candidate in (
+            *snapshot.entities,
+            *snapshot.places,
+            *snapshot.relationship_events,
+            *snapshot.location_events,
+        )
+    } == {CandidateStatus.PENDING}
+    assert {
+        (evidence.start_offset, evidence.end_offset, evidence.text)
+        for candidate in (
+            *snapshot.entities,
+            *snapshot.places,
+            *snapshot.relationship_events,
+            *snapshot.location_events,
+        )
+        for evidence in candidate.evidence
+    } == {
+        (phrase_start, phrase_start + 2, "서연"),
+        (phrase_start + 4, phrase_start + 6, "민준"),
+        (phrase_start + 8, phrase_start + 10, "카페"),
+        (phrase_start, phrase_start + len(phrase), phrase),
+    }
+
+    with sqlite3.connect(audit_path) as connection:
+        prompt_rows = connection.execute(
+            "SELECT prompt_id, version, result_schema, content_hash, raw_bytes "
+            "FROM prompt_definitions"
+        ).fetchall()
+        run_rows = connection.execute(
+            "SELECT run_id, event_type, occurred_at, payload_json FROM run_events "
+            "ORDER BY event_sequence"
+        ).fetchall()
+        attempt_rows = connection.execute(
+            "SELECT run_id, chunk_id, attempt_number, event_type, occurred_at, payload_json "
+            "FROM attempt_events ORDER BY event_sequence"
+        ).fetchall()
+        application_tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+
+    assert prompt_rows == [
+        (
+            expected_prompt.prompt_id,
+            expected_prompt.version,
+            expected_prompt.result_schema,
+            expected_prompt.content_hash,
+            expected_prompt.raw_bytes,
+        )
+    ]
+    expected_snapshot_json = json.dumps(
+        asdict(snapshot),
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert [(row[0], row[1], row[2]) for row in run_rows] == [
+        ("run-acceptance", "run_started", NOW.isoformat()),
+        ("run-acceptance", "run_succeeded", NOW.isoformat()),
+    ]
+    assert [json.loads(bytes(row[3])) for row in run_rows] == [
+        {
+            "model_name": "mock",
+            "project_id": "project-acceptance",
+            "prompt_id": "scene-analysis",
+            "prompt_version": 1,
+            "provider_name": None,
+            "scene_id": "scene-acceptance",
+            "scene_revision": 3,
+            "scene_sequence": 8,
+        },
+        {"scene_snapshot_json": expected_snapshot_json},
+    ]
+    assert [row[:5] for row in attempt_rows] == [
+        ("run-acceptance", "scene-acceptance:r3:0000", 1, "attempt_started", NOW.isoformat()),
+        (
+            "run-acceptance",
+            "scene-acceptance:r3:0000",
+            1,
+            "attempt_succeeded",
+            NOW.isoformat(),
+        ),
+        ("run-acceptance", "scene-acceptance:r3:0001", 1, "attempt_started", NOW.isoformat()),
+        (
+            "run-acceptance",
+            "scene-acceptance:r3:0001",
+            1,
+            "attempt_succeeded",
+            NOW.isoformat(),
+        ),
+    ]
+    started_payloads = [json.loads(bytes(row[5])) for row in attempt_rows[::2]]
+    assert started_payloads == [
+        {
+            "system_message": expected_prompt.body,
+            "user_message": call.user_prompt,
+        }
+        for call in agent.calls
+    ]
+    succeeded_payloads = [json.loads(bytes(row[5])) for row in attempt_rows[1::2]]
+    assert succeeded_payloads == [
+        {
+            "latency_ms": latency_ms,
+            "model_name": "mock",
+            "provider_name": "mock",
+            "response_messages_json": "[]",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "requests": 0},
+            "validated_extraction_json": encode_scene_chunk_extraction(
+                scripted_extractions[call.chunk_id]
+            ).decode(),
+        }
+        for call, latency_ms in zip(agent.calls, (125.0, 250.0), strict=True)
+    ]
+    assert application_tables == {"prompt_definitions", "run_events", "attempt_events"}
+    assert [path.relative_to(tmp_path) for path in tmp_path.rglob("*") if path.is_file()] == [
+        Path("agent-audit.sqlite3")
+    ]
 
 
 def test_provider_failure_is_retried_once_then_succeeds() -> None:

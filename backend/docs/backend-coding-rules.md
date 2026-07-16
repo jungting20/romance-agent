@@ -89,6 +89,25 @@ verification, and handoff workflows. If the documents conflict, follow
 - Resolve file paths beneath the configured data root and reject identifiers
   containing traversal or absolute-path components before any file access.
 
+## LLM Agent Audit
+
+- Keep provider clients behind narrow typed application ports. Select the model
+  only at an explicit composition boundary; domain services must not read model
+  settings, provider SDKs, or process globals.
+- Store editable, versioned prompt files under `backend/prompts/`. Load the
+  prompt for each explicitly requested run so edits are hot-loaded, and require
+  a version increment whenever registered prompt bytes change.
+- Persist the prompt definition, run start, and attempt start before making a
+  provider call. Treat an audit-start failure as call-blocking, and never write
+  prompts, manuscript text, model responses, or validated extraction content to
+  ordinary console logs.
+- Validate structured provider output before translating it into domain types.
+  Provider adapters must not assign durable domain IDs, candidate states, or
+  other domain-owned meaning.
+- Supply scripted, network-free adapters for service and integration tests so
+  call order, retry behavior, audit rows, and translation can be verified
+  deterministically.
+
 ## Testing Rules
 
 - Test domain and service behavior without HTTP or real infrastructure when the
