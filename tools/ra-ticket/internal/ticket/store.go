@@ -128,7 +128,7 @@ WHERE id = ?`, id))
 
 func (s *Store) List(ctx context.Context, filter *Status) ([]Ticket, error) {
 	if filter != nil && !validStatus(*filter) {
-		return nil, ErrInvalidTransition
+		return nil, ErrInvalidStatus
 	}
 	query := `
 SELECT id, title, summary, spec_path, plan_path, status,
@@ -179,13 +179,22 @@ LIMIT 1`))
 }
 
 func (s *Store) Transition(ctx context.Context, id int64, action Action) (Ticket, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
+		return Ticket{}, fmt.Errorf("acquire transition connection: %w", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return Ticket{}, fmt.Errorf("begin transition: %w", err)
 	}
-	defer tx.Rollback()
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		}
+	}()
 
-	ticket, err := scanTicket(tx.QueryRowContext(ctx, `
+	ticket, err := scanTicket(conn.QueryRowContext(ctx, `
 SELECT id, title, summary, spec_path, plan_path, status,
        created_at, updated_at, started_at, completed_at, cancelled_at
 FROM tickets
@@ -221,15 +230,16 @@ WHERE id = ?`, id))
 	}
 	ticket.Status = target
 	ticket.UpdatedAt = now
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := conn.ExecContext(ctx, `
 UPDATE tickets
 SET status = ?, updated_at = ?, started_at = ?, completed_at = ?, cancelled_at = ?
 WHERE id = ?`, ticket.Status, ticket.UpdatedAt.Format(time.RFC3339Nano), optionalTimeValue(ticket.StartedAt), optionalTimeValue(ticket.CompletedAt), optionalTimeValue(ticket.CancelledAt), ticket.ID); err != nil {
 		return Ticket{}, fmt.Errorf("update ticket transition: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
 		return Ticket{}, fmt.Errorf("commit ticket transition: %w", err)
 	}
+	committed = true
 	return ticket, nil
 }
 

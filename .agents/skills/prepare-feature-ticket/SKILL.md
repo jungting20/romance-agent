@@ -5,8 +5,8 @@ description: Use only when the user explicitly invokes `$prepare-feature-ticket`
 
 # Prepare Feature Ticket
 
-Follow this recipe in order. Treat the design and implementation-plan approvals
-as separate user decisions; never infer either approval.
+Follow this recipe in order. Treat design approval and the later implementation
+package approval as separate user decisions; never infer either approval.
 
 1. Confirm that the request is an explicit invocation of
    `$prepare-feature-ticket`, then extract the feature idea. If the invocation
@@ -19,21 +19,29 @@ as separate user decisions; never infer either approval.
 
 3. Invoke `superpowers:writing-plans` from that approved design and follow it
    completely. Write the detailed implementation plan under
-   `docs/superpowers/plans/`.
-   Review it and obtain explicit approval of the written implementation plan from the user.
-   Preserve the approved repository-relative plan path.
+   `docs/superpowers/plans/`. Review the completed written plan and preserve its
+   repository-relative path, but do not request approval yet.
 
 4. Derive a non-empty title and implementation-scope summary solely from the
-   approved design and plan. Present both values before registration; they must
-   describe the approved implementation scope, not guessed UI, data,
-   accessibility, error, or testing work.
+   approved design and the completed written plan. Do not infer scope or add
+   guessed UI, data, accessibility, error, or testing work.
 
-5. Do not register if either artifact is absent, either approval is missing,
-   the user cancels, or the title or summary is empty. Before the written plan
-   has been approved, do not invent a draft or call one registration-ready.
-   Stop and state the unmet prerequisite without creating a ticket.
+5. Present the written implementation plan, title, and summary together during
+   implementation-plan review. Ask for one explicit approval covering all
+   three as ready for implementation and registration.
+   Ambiguous, partial, or implied approval is not approval.
+   If the user requests changes to any of the three, revise the affected
+   values, present all three together again, and ask for a new explicit
+   approval.
 
-6. Work from the repository root. If `.local/bin/ra-ticket` is absent, build
+6. Do not register if either artifact is absent, either approval is missing,
+   or the title or summary is empty. If the user asks to register early, state
+   the unmet approval or artifact prerequisite and do not call `ra-ticket add`.
+   If the user cancels at any point, stop without creating or proposing a
+   ticket. Never invent a draft or call an unapproved package
+   registration-ready.
+
+7. Work from the repository root. If `.local/bin/ra-ticket` is absent, build
    it from `tools/ra-ticket/` before continuing:
 
    ```sh
@@ -41,7 +49,7 @@ as separate user decisions; never infer either approval.
    (cd tools/ra-ticket && mise exec -- go build -o ../../.local/bin/ra-ticket ./cmd/ra-ticket)
    ```
 
-7. Register only the approved values and paths with shell-safe arguments.
+8. Register only the jointly approved values and paths with shell-safe arguments.
    Substitute the current run's approved title, summary, design path, and plan
    path for these variables:
 
@@ -56,7 +64,7 @@ as separate user decisions; never infer either approval.
    )
    ```
 
-8. Parse `ticket_json` and verify the returned ticket has status `ready`.
+9. Parse `ticket_json` and verify the returned ticket has status `ready`.
    Report its ID, title, design path, and plan path. If `ra-ticket add` reports
    a duplicate plan, do not modify the database manually. Run
    `.local/bin/ra-ticket list --json`, select the item whose `plan_path`

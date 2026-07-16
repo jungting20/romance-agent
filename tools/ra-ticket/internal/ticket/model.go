@@ -27,6 +27,7 @@ var (
 	ErrNotFound          = errors.New("ticket not found")
 	ErrDuplicatePlan     = errors.New("implementation plan already registered")
 	ErrEmptyQueue        = errors.New("no ready tickets")
+	ErrInvalidStatus     = errors.New("invalid ticket status")
 	ErrInvalidTransition = errors.New("invalid ticket status transition")
 	ErrInvalidArtifact   = errors.New("invalid ticket artifact")
 )

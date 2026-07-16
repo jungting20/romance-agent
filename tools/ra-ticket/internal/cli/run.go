@@ -98,7 +98,7 @@ func runAdd(ctx context.Context, store *ticket.Store, args []string, stdout, std
 	if err != nil {
 		return reportError(stderr, *jsonOutput, err)
 	}
-	return reportTicket(stdout, *jsonOutput, created)
+	return reportTicket(stdout, stderr, *jsonOutput, created)
 }
 
 func runList(ctx context.Context, store *ticket.Store, args []string, stdout, stderr io.Writer) int {
@@ -120,7 +120,7 @@ func runList(ctx context.Context, store *ticket.Store, args []string, stdout, st
 	if err != nil {
 		return reportError(stderr, *jsonOutput, err)
 	}
-	return reportTickets(stdout, *jsonOutput, tickets)
+	return reportTickets(stdout, stderr, *jsonOutput, tickets)
 }
 
 func runNext(ctx context.Context, store *ticket.Store, args []string, stdout, stderr io.Writer) int {
@@ -136,7 +136,7 @@ func runNext(ctx context.Context, store *ticket.Store, args []string, stdout, st
 	if err != nil {
 		return reportError(stderr, *jsonOutput, err)
 	}
-	return reportTicket(stdout, *jsonOutput, next)
+	return reportTicket(stdout, stderr, *jsonOutput, next)
 }
 
 func runShow(ctx context.Context, store *ticket.Store, args []string, stdout, stderr io.Writer) int {
@@ -148,7 +148,7 @@ func runShow(ctx context.Context, store *ticket.Store, args []string, stdout, st
 	if err != nil {
 		return reportError(stderr, jsonOutput, err)
 	}
-	return reportTicket(stdout, jsonOutput, found)
+	return reportTicket(stdout, stderr, jsonOutput, found)
 }
 
 func runTransition(ctx context.Context, store *ticket.Store, action ticket.Action, args []string, stdout, stderr io.Writer) int {
@@ -160,7 +160,7 @@ func runTransition(ctx context.Context, store *ticket.Store, action ticket.Actio
 	if err != nil {
 		return reportError(stderr, jsonOutput, err)
 	}
-	return reportTicket(stdout, jsonOutput, updated)
+	return reportTicket(stdout, stderr, jsonOutput, updated)
 }
 
 func parseIDArgs(command string, args []string) (int64, bool, error) {
@@ -209,30 +209,36 @@ func visited(flags *flag.FlagSet, name string) bool {
 	return found
 }
 
-func reportTicket(stdout io.Writer, jsonOutput bool, value ticket.Ticket) int {
+func reportTicket(stdout, stderr io.Writer, jsonOutput bool, value ticket.Ticket) int {
 	if jsonOutput {
 		if err := json.NewEncoder(stdout).Encode(value); err != nil {
-			return ExitDatabase
+			return reportError(stderr, true, fmt.Errorf("write output: %w", err))
 		}
 		return ExitOK
 	}
-	_, _ = fmt.Fprintf(stdout, "ID: %d\nStatus: %s\nTitle: %s\nSummary: %s\nSpec: %s\nPlan: %s\n", value.ID, value.Status, value.Title, value.Summary, value.SpecPath, value.PlanPath)
+	if _, err := fmt.Fprintf(stdout, "ID: %d\nStatus: %s\nTitle: %s\nSummary: %s\nSpec: %s\nPlan: %s\n", value.ID, value.Status, value.Title, value.Summary, value.SpecPath, value.PlanPath); err != nil {
+		return reportError(stderr, false, fmt.Errorf("write output: %w", err))
+	}
 	return ExitOK
 }
 
-func reportTickets(stdout io.Writer, jsonOutput bool, values []ticket.Ticket) int {
+func reportTickets(stdout, stderr io.Writer, jsonOutput bool, values []ticket.Ticket) int {
 	if jsonOutput {
 		if err := json.NewEncoder(stdout).Encode(values); err != nil {
-			return ExitDatabase
+			return reportError(stderr, true, fmt.Errorf("write output: %w", err))
 		}
 		return ExitOK
 	}
 	if len(values) == 0 {
-		_, _ = fmt.Fprintln(stdout, "No tickets.")
+		if _, err := fmt.Fprintln(stdout, "No tickets."); err != nil {
+			return reportError(stderr, false, fmt.Errorf("write output: %w", err))
+		}
 		return ExitOK
 	}
 	for _, value := range values {
-		_, _ = fmt.Fprintf(stdout, "%d\t%s\t%s\t%s\n", value.ID, value.Status, value.Title, value.PlanPath)
+		if _, err := fmt.Fprintf(stdout, "%d\t%s\t%s\t%s\n", value.ID, value.Status, value.Title, value.PlanPath); err != nil {
+			return reportError(stderr, false, fmt.Errorf("write output: %w", err))
+		}
 	}
 	return ExitOK
 }
@@ -258,6 +264,8 @@ func reportError(stderr io.Writer, jsonOutput bool, err error) int {
 
 func classifyError(err error) (int, string) {
 	switch {
+	case errors.Is(err, ticket.ErrInvalidStatus):
+		return ExitUsage, "usage"
 	case errors.Is(err, ticket.ErrNotFound):
 		return ExitNotFound, "not_found"
 	case errors.Is(err, ticket.ErrInvalidTransition):

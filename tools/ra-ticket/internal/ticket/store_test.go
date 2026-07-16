@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -85,6 +86,30 @@ func TestOpenInitializesSchemaIdempotently(t *testing.T) {
 		PlanPath: plan,
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOpenRejectsUnsupportedFutureSchemaVersion(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	databasePath := filepath.Join(root, ".local", "tickets.db")
+	store, err := Open(context.Background(), root, databasePath, func() time.Time { return fixedNow })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec("PRAGMA user_version = 2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Open(context.Background(), root, databasePath, func() time.Time { return fixedNow }); err == nil {
+		t.Fatal("Open() error = nil, want unsupported future schema rejection")
+	} else if got, want := err.Error(), "unsupported ticket schema version 2"; got != want {
+		t.Fatalf("Open() error = %q, want %q", got, want)
 	}
 }
 
@@ -219,8 +244,8 @@ func TestListFiltersStatusesAndOrdersFIFOTiesByID(t *testing.T) {
 	}
 
 	invalid := Status("unknown")
-	if _, err := store.List(context.Background(), &invalid); !errors.Is(err, ErrInvalidTransition) {
-		t.Fatalf("List(unknown) error = %v, want ErrInvalidTransition", err)
+	if _, err := store.List(context.Background(), &invalid); !errors.Is(err, ErrInvalidStatus) {
+		t.Fatalf("List(unknown) error = %v, want ErrInvalidStatus", err)
 	}
 }
 
@@ -279,36 +304,69 @@ func TestNextReturnsEmptyQueueAfterReadyTicketsLeaveQueue(t *testing.T) {
 	}
 }
 
-func TestLifecycleTransitionsAndTimestamps(t *testing.T) {
-	store, root := newTestStore(t)
+func TestLifecycleTransitionsUseAdvancingClockAndResetTimestamps(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := fixedNow
+	store, err := Open(context.Background(), root, filepath.Join(root, ".local", "tickets.db"), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
 	spec, plan := writeArtifacts(t, root, "flow")
 	created, err := store.Add(context.Background(), CreateInput{Title: "Flow", Summary: "Flow summary", SpecPath: spec, PlanPath: plan})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !created.CreatedAt.Equal(fixedNow) || !created.UpdatedAt.Equal(fixedNow) {
+		t.Fatalf("created = %#v", created)
+	}
 
+	now = fixedNow.Add(time.Minute)
 	started, err := store.Transition(context.Background(), created.ID, ActionStart)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if started.Status != StatusInProgress || started.StartedAt == nil || !started.StartedAt.Equal(fixedNow) || !started.UpdatedAt.Equal(fixedNow) {
+	if started.Status != StatusInProgress || started.StartedAt == nil || !started.StartedAt.Equal(now) || !started.UpdatedAt.Equal(now) || !started.CreatedAt.Equal(fixedNow) {
 		t.Fatalf("start = %#v", started)
 	}
 
+	now = fixedNow.Add(2 * time.Minute)
 	done, err := store.Transition(context.Background(), created.ID, ActionDone)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if done.Status != StatusDone || done.CompletedAt == nil || !done.CompletedAt.Equal(fixedNow) || !done.UpdatedAt.Equal(fixedNow) {
+	if done.Status != StatusDone || done.StartedAt == nil || !done.StartedAt.Equal(fixedNow.Add(time.Minute)) || done.CompletedAt == nil || !done.CompletedAt.Equal(now) || done.CancelledAt != nil || !done.UpdatedAt.Equal(now) {
 		t.Fatalf("done = %#v", done)
 	}
 
+	now = fixedNow.Add(3 * time.Minute)
 	reopened, err := store.Transition(context.Background(), created.ID, ActionReopen)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reopened.Status != StatusReady || reopened.StartedAt != nil || reopened.CompletedAt != nil || reopened.CancelledAt != nil || !reopened.UpdatedAt.Equal(fixedNow) {
+	if reopened.Status != StatusReady || reopened.StartedAt != nil || reopened.CompletedAt != nil || reopened.CancelledAt != nil || !reopened.UpdatedAt.Equal(now) {
 		t.Fatalf("reopen = %#v", reopened)
+	}
+
+	now = fixedNow.Add(4 * time.Minute)
+	cancelled, err := store.Transition(context.Background(), created.ID, ActionCancel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.Status != StatusCancelled || cancelled.StartedAt != nil || cancelled.CompletedAt != nil || cancelled.CancelledAt == nil || !cancelled.CancelledAt.Equal(now) || !cancelled.UpdatedAt.Equal(now) {
+		t.Fatalf("cancel = %#v", cancelled)
+	}
+
+	now = fixedNow.Add(5 * time.Minute)
+	reopened, err = store.Transition(context.Background(), created.ID, ActionReopen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Status != StatusReady || reopened.StartedAt != nil || reopened.CompletedAt != nil || reopened.CancelledAt != nil || !reopened.UpdatedAt.Equal(now) {
+		t.Fatalf("second reopen = %#v", reopened)
 	}
 }
 
@@ -352,22 +410,149 @@ func TestLifecycleAllowsCancellationAndReopening(t *testing.T) {
 	}
 }
 
-func TestInvalidTransitionDoesNotMutateTicket(t *testing.T) {
-	store, root := newTestStore(t)
-	spec, plan := writeArtifacts(t, root, "flow")
-	created, err := store.Add(context.Background(), CreateInput{Title: "Flow", Summary: "Flow summary", SpecPath: spec, PlanPath: plan})
+func TestConcurrentTransitionsFromIndependentStoresSerialize(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	databasePath := filepath.Join(root, ".local", "tickets.db")
+	firstHasLock := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	clockCalls := 0
+	firstStore, err := Open(context.Background(), root, databasePath, func() time.Time {
+		clockCalls++
+		if clockCalls == 3 {
+			close(firstHasLock)
+			<-releaseFirst
+		}
+		return fixedNow.Add(time.Duration(clockCalls) * time.Second)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Transition(context.Background(), created.ID, ActionDone); !errors.Is(err, ErrInvalidTransition) {
-		t.Fatalf("Transition() error = %v, want ErrInvalidTransition", err)
-	}
-	after, err := store.Get(context.Background(), created.ID)
+	t.Cleanup(func() { _ = firstStore.Close() })
+
+	firstSpec, firstPlan := writeArtifacts(t, root, "concurrent-first")
+	first, err := firstStore.Add(context.Background(), CreateInput{
+		Title: "First", Summary: "First concurrent transition", SpecPath: firstSpec, PlanPath: firstPlan,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Status != StatusReady || !after.UpdatedAt.Equal(created.UpdatedAt) {
-		t.Fatalf("invalid transition mutated ticket: %#v", after)
+	secondSpec, secondPlan := writeArtifacts(t, root, "concurrent-second")
+	second, err := firstStore.Add(context.Background(), CreateInput{
+		Title: "Second", Summary: "Second concurrent transition", SpecPath: secondSpec, PlanPath: secondPlan,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondStore, err := Open(context.Background(), root, databasePath, func() time.Time {
+		return fixedNow.Add(10 * time.Second)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = secondStore.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := firstStore.Transition(ctx, first.ID, ActionStart)
+		firstDone <- err
+	}()
+	select {
+	case <-firstHasLock:
+	case <-ctx.Done():
+		t.Fatalf("first transition did not reach its locked section: %v", ctx.Err())
+	}
+
+	secondStarted := make(chan struct{})
+	secondDone := make(chan error, 1)
+	go func() {
+		close(secondStarted)
+		_, err := secondStore.Transition(ctx, second.ID, ActionStart)
+		secondDone <- err
+	}()
+	<-secondStarted
+
+	var secondErr error
+	secondFinished := false
+	select {
+	case secondErr = <-secondDone:
+		secondFinished = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseFirst)
+
+	select {
+	case err := <-firstDone:
+		if err != nil {
+			t.Errorf("first transition: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatalf("first transition timed out: %v", ctx.Err())
+	}
+	if !secondFinished {
+		select {
+		case secondErr = <-secondDone:
+		case <-ctx.Done():
+			t.Fatalf("second transition timed out: %v", ctx.Err())
+		}
+	}
+	if secondErr != nil {
+		t.Errorf("second transition: %v", secondErr)
+	}
+}
+
+func TestEveryInvalidTransitionAndActionRollsBack(t *testing.T) {
+	allActions := []Action{ActionStart, ActionDone, ActionCancel, ActionReopen, Action("unknown")}
+	states := []struct {
+		status Status
+		setup  []Action
+		valid  map[Action]bool
+	}{
+		{status: StatusReady, valid: map[Action]bool{ActionStart: true, ActionCancel: true}},
+		{status: StatusInProgress, setup: []Action{ActionStart}, valid: map[Action]bool{ActionDone: true, ActionCancel: true}},
+		{status: StatusDone, setup: []Action{ActionStart, ActionDone}, valid: map[Action]bool{ActionReopen: true}},
+		{status: StatusCancelled, setup: []Action{ActionCancel}, valid: map[Action]bool{ActionReopen: true}},
+	}
+
+	for _, state := range states {
+		for _, action := range allActions {
+			if state.valid[action] {
+				continue
+			}
+			t.Run(string(state.status)+"/"+string(action), func(t *testing.T) {
+				store, root := newTestStore(t)
+				spec, plan := writeArtifacts(t, root, "invalid")
+				created, err := store.Add(context.Background(), CreateInput{Title: "Invalid", Summary: "Invalid transition", SpecPath: spec, PlanPath: plan})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, setupAction := range state.setup {
+					if _, err := store.Transition(context.Background(), created.ID, setupAction); err != nil {
+						t.Fatalf("setup %q: %v", setupAction, err)
+					}
+				}
+				before, err := store.Get(context.Background(), created.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if _, err := store.Transition(context.Background(), created.ID, action); !errors.Is(err, ErrInvalidTransition) {
+					t.Fatalf("Transition(%q, %q) error = %v, want ErrInvalidTransition", state.status, action, err)
+				}
+				after, err := store.Get(context.Background(), created.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(after, before) {
+					t.Fatalf("invalid transition mutated ticket: before=%#v after=%#v", before, after)
+				}
+			})
+		}
 	}
 }
 

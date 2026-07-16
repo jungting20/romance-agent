@@ -87,6 +87,7 @@ implementation plan have been approved.
 Build the ignored CLI binary from the repository checkout:
 
 ```sh
+mkdir -p .local/bin
 cd tools/ra-ticket
 mise exec -- go build -o ../../.local/bin/ra-ticket ./cmd/ra-ticket
 ../../.local/bin/ra-ticket next

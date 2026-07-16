@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +21,12 @@ type harness struct {
 	stderr bytes.Buffer
 	deps   Dependencies
 }
+
+var errForcedWrite = errors.New("forced write failure")
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errForcedWrite }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
@@ -90,6 +97,31 @@ func TestAddJSONRegistersReadyTicketFromNestedDirectory(t *testing.T) {
 	}
 	if got.SpecPath != "docs/superpowers/specs/search-design.md" || got.PlanPath != "docs/superpowers/plans/search.md" {
 		t.Fatalf("add paths = %q, %q", got.SpecPath, got.PlanPath)
+	}
+}
+
+func TestTicketJSONUsesExactSnakeCaseKeys(t *testing.T) {
+	h := newHarness(t)
+	spec, plan := h.artifacts(t, "json-keys")
+	if got := h.run(t, "add", "--title", "JSON keys", "--summary", "Assert the JSON contract", "--spec", spec, "--plan", plan, "--json"); got != ExitOK {
+		t.Fatalf("add exit = %d, stderr = %s", got, h.stderr.String())
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(h.stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw ticket JSON %q: %v", h.stdout.Bytes(), err)
+	}
+	wantKeys := []string{
+		"id", "title", "summary", "spec_path", "plan_path", "status",
+		"created_at", "updated_at", "started_at", "completed_at", "cancelled_at",
+	}
+	if len(raw) != len(wantKeys) {
+		t.Fatalf("JSON keys = %#v, want exactly %#v", raw, wantKeys)
+	}
+	for _, key := range wantKeys {
+		if _, ok := raw[key]; !ok {
+			t.Fatalf("JSON missing key %q: %#v", key, raw)
+		}
 	}
 }
 
@@ -202,6 +234,20 @@ func TestListJSONFiltersReadyTickets(t *testing.T) {
 	}
 }
 
+func TestListJSONRejectsInvalidStatusAsUsageError(t *testing.T) {
+	h := newHarness(t)
+
+	if got := h.run(t, "list", "--status", "bogus", "--json"); got != ExitUsage {
+		t.Fatalf("list exit = %d, want %d; stderr = %s", got, ExitUsage, h.stderr.String())
+	}
+	if got, want := h.stderr.String(), "{\"error\":\"invalid ticket status\",\"code\":\"usage\"}\n"; got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
+	}
+	if h.stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", h.stdout.String())
+	}
+}
+
 func TestLifecycleCommandsApplyTransitions(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -257,6 +303,41 @@ func TestHumanOutputContract(t *testing.T) {
 	}
 	if got, want := h.stdout.String(), "1\tready\tHuman title\tdocs/superpowers/plans/human.md\n"; got != want {
 		t.Fatalf("list output = %q, want %q", got, want)
+	}
+}
+
+func TestOutputWriteFailuresReturnNonzeroDiagnostic(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		diagnostic string
+		addTicket  bool
+	}{
+		{name: "single human", args: []string{"show", "1"}, diagnostic: "write output: forced write failure\n", addTicket: true},
+		{name: "single JSON", args: []string{"show", "1", "--json"}, diagnostic: "{\"error\":\"write output: forced write failure\",\"code\":\"database\"}\n", addTicket: true},
+		{name: "list human", args: []string{"list"}, diagnostic: "write output: forced write failure\n", addTicket: true},
+		{name: "empty list human", args: []string{"list"}, diagnostic: "write output: forced write failure\n"},
+		{name: "list JSON", args: []string{"list", "--json"}, diagnostic: "{\"error\":\"write output: forced write failure\",\"code\":\"database\"}\n", addTicket: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			if tt.addTicket {
+				spec, plan := h.artifacts(t, "output-failure")
+				h.addJSON(t, "Output", "Exercise output failures", spec, plan)
+			}
+			var stderr bytes.Buffer
+
+			got := Run(context.Background(), tt.args, failingWriter{}, &stderr, h.deps)
+
+			if got == ExitOK {
+				t.Fatalf("Run(%q) exit = %d, want nonzero", tt.args, got)
+			}
+			if stderr.String() != tt.diagnostic {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), tt.diagnostic)
+			}
+		})
 	}
 }
 
