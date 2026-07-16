@@ -33,9 +33,9 @@ The Narrative Memory repository persists immutable, versioned canonical JSON
 snapshots in SQLite.
 
 Narrative Memory scene analysis is invoked explicitly; it is not attached to
-manuscript saves or a background process. `NARRATIVE_LLM_MODEL` selects the
-model only when a caller composes the analyzer. Set it to `mock` for the local,
-network-free adapter, for example:
+manuscript saves or a background process, and this slice exposes no HTTP or API
+operation. `NARRATIVE_LLM_MODEL` selects the model only when a caller composes
+the analyzer. Set it to `mock` for the local, network-free adapter, for example:
 
 ```sh
 NARRATIVE_LLM_MODEL=mock

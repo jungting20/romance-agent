@@ -302,6 +302,17 @@ def test_analyze_scene_with_mock_and_sqlite_audit_end_to_end(tmp_path: Path) -> 
     )
     prompt_registry = FilePromptRegistry(Path(__file__).parents[2] / "prompts")
     expected_prompt = prompt_registry.load("scene-analysis")
+    request = AnalyzeSceneRequest(
+        "project-acceptance",
+        "scene-acceptance",
+        3,
+        8,
+        scene_text,
+    )
+    expected_chunks = chunk_scene(request.scene_id, request.scene_revision, request.text)
+    expected_user_messages = [
+        render_scene_analysis_user_prompt(request, chunk) for chunk in expected_chunks
+    ]
     audit_path = tmp_path / "agent-audit.sqlite3"
     audit = SQLiteAgentAudit(audit_path)
     audit.initialize()
@@ -315,21 +326,13 @@ def test_analyze_scene_with_mock_and_sqlite_audit_end_to_end(tmp_path: Path) -> 
         monotonic=lambda: next(ticks),
     )
 
-    snapshot = asyncio.run(
-        service.analyze_scene(
-            AnalyzeSceneRequest(
-                "project-acceptance",
-                "scene-acceptance",
-                3,
-                8,
-                scene_text,
-            )
-        )
-    )
+    snapshot = asyncio.run(service.analyze_scene(request))
 
-    assert [call.chunk_id for call in agent.calls] == [
-        "scene-acceptance:r3:0000",
-        "scene-acceptance:r3:0001",
+    assert [(call.chunk_id, call.system_prompt, call.user_prompt) for call in agent.calls] == [
+        (chunk.chunk_id, expected_prompt.body, expected_user_message)
+        for chunk, expected_user_message in zip(
+            expected_chunks, expected_user_messages, strict=True
+        )
     ]
     assert len(snapshot.entities) == 2
     assert len(snapshot.places) == 1
@@ -344,21 +347,37 @@ def test_analyze_scene_with_mock_and_sqlite_audit_end_to_end(tmp_path: Path) -> 
             *snapshot.location_events,
         )
     } == {CandidateStatus.PENDING}
-    assert {
-        (evidence.start_offset, evidence.end_offset, evidence.text)
-        for candidate in (
-            *snapshot.entities,
-            *snapshot.places,
-            *snapshot.relationship_events,
-            *snapshot.location_events,
+
+    def complete_evidence(candidate) -> tuple[tuple[object, ...], ...]:
+        return tuple(
+            (
+                evidence.chunk_id,
+                evidence.scene_id,
+                evidence.scene_revision,
+                evidence.start_offset,
+                evidence.end_offset,
+                evidence.text,
+            )
+            for evidence in candidate.evidence
         )
-        for evidence in candidate.evidence
-    } == {
-        (phrase_start, phrase_start + 2, "서연"),
-        (phrase_start + 4, phrase_start + 6, "민준"),
-        (phrase_start + 8, phrase_start + 10, "카페"),
-        (phrase_start, phrase_start + len(phrase), phrase),
-    }
+
+    expected_source = ("scene-acceptance:r3:0001", "scene-acceptance", 3)
+    entities_by_name = {candidate.normalized_name: candidate for candidate in snapshot.entities}
+    assert complete_evidence(entities_by_name["서연"]) == (
+        (*expected_source, phrase_start, phrase_start + 2, "서연"),
+    )
+    assert complete_evidence(entities_by_name["민준"]) == (
+        (*expected_source, phrase_start + 4, phrase_start + 6, "민준"),
+    )
+    assert complete_evidence(snapshot.places[0]) == (
+        (*expected_source, phrase_start + 8, phrase_start + 10, "카페"),
+    )
+    assert complete_evidence(snapshot.relationship_events[0]) == (
+        (*expected_source, phrase_start, phrase_start + len(phrase), phrase),
+    )
+    assert complete_evidence(snapshot.location_events[0]) == (
+        (*expected_source, phrase_start, phrase_start + len(phrase), phrase),
+    )
 
     with sqlite3.connect(audit_path) as connection:
         prompt_rows = connection.execute(
@@ -435,9 +454,9 @@ def test_analyze_scene_with_mock_and_sqlite_audit_end_to_end(tmp_path: Path) -> 
     assert started_payloads == [
         {
             "system_message": expected_prompt.body,
-            "user_message": call.user_prompt,
+            "user_message": expected_user_message,
         }
-        for call in agent.calls
+        for expected_user_message in expected_user_messages
     ]
     succeeded_payloads = [json.loads(bytes(row[5])) for row in attempt_rows[1::2]]
     assert succeeded_payloads == [
