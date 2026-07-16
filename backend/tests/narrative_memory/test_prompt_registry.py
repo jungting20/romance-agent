@@ -110,11 +110,54 @@ def test_file_prompt_registry_rejects_non_positive_integer_version(tmp_path, ver
 
 
 @pytest.mark.parametrize(
-    "prompt_id", ["", "/scene-analysis", "../scene-analysis", "scene-analysis/"]
+    "prompt_id",
+    [
+        "",
+        "/scene-analysis",
+        "../scene-analysis",
+        "scene-analysis/",
+        r"..\outside",
+        r"C:\outside",
+        "C:/outside",
+        r"\\server\share\prompt",
+    ],
 )
 def test_file_prompt_registry_rejects_invalid_prompt_id(tmp_path, prompt_id: str) -> None:
     with pytest.raises(PromptDefinitionError, match="invalid prompt ID"):
         FilePromptRegistry(tmp_path).load(prompt_id)
+
+
+def test_file_prompt_registry_rejects_prompt_symlink_outside_root(tmp_path) -> None:
+    prompt_root = tmp_path / "prompts"
+    prompt_root.mkdir()
+    outside_directory = tmp_path / "outside"
+    outside_directory.mkdir()
+    (outside_directory / "system.md").write_bytes(_valid_prompt())
+    try:
+        (prompt_root / "scene-analysis").symlink_to(outside_directory, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"platform cannot create directory symlinks: {error}")
+
+    with pytest.raises(PromptDefinitionError, match="outside configured root"):
+        FilePromptRegistry(prompt_root).load("scene-analysis")
+
+
+def test_file_prompt_registry_preserves_valid_nested_prompt_ids(tmp_path) -> None:
+    prompt_id = "narrative/scene-analysis"
+    prompt_directory = tmp_path / "narrative" / "scene-analysis"
+    prompt_directory.mkdir(parents=True)
+    raw_bytes = _valid_prompt().replace(b"scene-analysis", prompt_id.encode(), 1)
+    (prompt_directory / "system.md").write_bytes(raw_bytes)
+
+    prompt = FilePromptRegistry(tmp_path).load(prompt_id)
+
+    assert prompt.prompt_id == prompt_id
+    assert prompt.raw_bytes == raw_bytes
+
+
+def test_file_prompt_registry_translates_missing_prompt_file_error(tmp_path) -> None:
+    with pytest.raises(PromptDefinitionError, match="resolve prompt path"):
+        FilePromptRegistry(tmp_path).load("scene-analysis")
 
 
 def test_file_prompt_registry_rejects_metadata_prompt_id_mismatch(tmp_path) -> None:

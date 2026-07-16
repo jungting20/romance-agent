@@ -1,6 +1,6 @@
 import json
 from hashlib import sha256
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from apps.narrative_memory.service.chunking import SceneChunk
 from apps.narrative_memory.service.scene_analysis_ports import PromptDefinition
@@ -19,10 +19,12 @@ class FilePromptRegistry:
         self._root = root
 
     def load(self, prompt_id: str) -> PromptDefinition:
-        if not prompt_id or any(part in {"", ".", ".."} for part in prompt_id.split("/")):
-            raise PromptDefinitionError("invalid prompt ID")
-        path = self._root / prompt_id / "system.md"
-        return _parse_prompt_definition(prompt_id, path.read_bytes())
+        path = _resolve_prompt_path(self._root, prompt_id)
+        try:
+            raw_bytes = path.read_bytes()
+        except OSError as error:
+            raise PromptDefinitionError("unable to read prompt definition") from error
+        return _parse_prompt_definition(prompt_id, raw_bytes)
 
 
 def render_scene_analysis_user_prompt(
@@ -101,6 +103,33 @@ def _parse_prompt_definition(prompt_id: str, raw_bytes: bytes) -> PromptDefiniti
         raw_bytes=raw_bytes,
         body="".join(lines[closing_index + 1 :]),
     )
+
+
+def _resolve_prompt_path(root: Path, prompt_id: str) -> Path:
+    posix_id = PurePosixPath(prompt_id)
+    windows_id = PureWindowsPath(prompt_id)
+    raw_parts = prompt_id.split("/")
+    windows_parts = prompt_id.replace("\\", "/").split("/")
+    if (
+        not prompt_id
+        or "\\" in prompt_id
+        or posix_id.is_absolute()
+        or windows_id.is_absolute()
+        or bool(windows_id.drive)
+        or bool(windows_id.root)
+        or any(part in {"", ".", ".."} for part in (*raw_parts, *windows_parts))
+    ):
+        raise PromptDefinitionError("invalid prompt ID")
+
+    try:
+        resolved_root = root.resolve(strict=True)
+        resolved_path = resolved_root.joinpath(*posix_id.parts, "system.md").resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise PromptDefinitionError("unable to resolve prompt path") from error
+
+    if not resolved_path.is_relative_to(resolved_root):
+        raise PromptDefinitionError("prompt path resolves outside configured root")
+    return resolved_path
 
 
 def _line_content(line: str) -> str:
