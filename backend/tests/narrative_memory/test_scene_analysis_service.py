@@ -1,5 +1,6 @@
 import asyncio
 import json
+import traceback
 from datetime import UTC, datetime
 
 import pytest
@@ -33,6 +34,7 @@ from apps.narrative_memory.service.scene_analysis_types import (
     AgentUsage,
     AnalyzeSceneRequest,
     ExtractedEntity,
+    ExtractedRelationshipEvent,
     KnownIdentity,
     RelativeEvidence,
     SceneChunkExtraction,
@@ -323,6 +325,84 @@ def test_terminal_chunk_failure_stops_later_chunks() -> None:
     assert [call.chunk_id for call in agent.calls] == ["scene:r0:0000", "scene:r0:0000"]
 
 
+class UnexpectedAgentError(RuntimeError):
+    pass
+
+
+def test_unexpected_agent_error_fails_attempt_once_without_retry_or_secret_leak() -> None:
+    audit = RecordingAudit()
+    agent = ScriptedAgent([UnexpectedAgentError("secret provider body")])
+    service, _ = _service(agent, audit)
+
+    with pytest.raises(SceneAnalysisError) as captured:
+        asyncio.run(service.analyze_scene(AnalyzeSceneRequest("project", "scene", 0, 0, "x" * 350)))
+
+    assert [call.chunk_id for call in agent.calls] == ["scene:r0:0000"]
+    assert audit.event_types == [
+        "run_started",
+        "attempt_started",
+        "attempt_failed",
+        "run_failed",
+    ]
+    failed_attempt = audit.events[-2]
+    failed_run = audit.events[-1]
+    assert isinstance(failed_attempt, AttemptFailed)
+    assert failed_attempt.error_type == "UnexpectedAgentError"
+    assert failed_attempt.error_message == "scene analysis agent call failed"
+    assert isinstance(failed_run, RunFailed)
+    assert failed_run.error_type == "UnexpectedAgentError"
+    assert failed_run.error_message == "scene analysis failed"
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert "secret provider body" not in str(captured.value)
+    assert "secret provider body" not in formatted
+    assert not any(isinstance(event, RunSucceeded) for event in audit.events)
+
+
+def test_non_json_extraction_fails_deterministically_before_attempt_success() -> None:
+    extraction = SceneChunkExtraction(
+        summary="invalid result",
+        relationship_events=(
+            ExtractedRelationshipEvent(
+                subject_ref="subject",
+                object_ref="object",
+                category="romance",
+                description="invalid confidence",
+                confidence=float("nan"),
+                evidence=(),
+            ),
+        ),
+    )
+    response = b'[{"content":"secret response body"}]'
+    audit = RecordingAudit()
+    agent = ScriptedAgent([_result(extraction, response)])
+    service, _ = _service(agent, audit)
+
+    with pytest.raises(SceneAnalysisError) as captured:
+        asyncio.run(service.analyze_scene(AnalyzeSceneRequest("project", "scene", 0, 0, "x" * 350)))
+
+    assert [call.chunk_id for call in agent.calls] == ["scene:r0:0000"]
+    assert audit.event_types == [
+        "run_started",
+        "attempt_started",
+        "attempt_failed",
+        "run_failed",
+    ]
+    failed_attempt = audit.events[-2]
+    failed_run = audit.events[-1]
+    assert isinstance(failed_attempt, AttemptFailed)
+    assert failed_attempt.error_type == "ValueError"
+    assert failed_attempt.error_message == "scene analysis extraction result is invalid"
+    assert failed_attempt.response_messages_json == response
+    assert isinstance(failed_run, RunFailed)
+    assert failed_run.error_type == "ValueError"
+    assert "secret" not in failed_run.error_message
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert "secret response body" not in str(captured.value)
+    assert "secret response body" not in formatted
+    assert not any(isinstance(event, AttemptSucceeded) for event in audit.events)
+    assert not any(isinstance(event, RunSucceeded) for event in audit.events)
+
+
 @pytest.mark.parametrize(
     "scene_request",
     [
@@ -439,6 +519,27 @@ def test_terminal_audit_failure_is_surfaced_without_claiming_snapshot(
 
     assert not any(isinstance(event, RunSucceeded) for event in audit.events)
     assert isinstance(audit.events[-1], RunFailed)
+
+
+def test_attempt_failure_audit_error_surfaces_and_records_run_failure_once() -> None:
+    audit = FailingAudit(AttemptFailed)
+    agent = ScriptedAgent([UnexpectedAgentError("secret provider body")])
+    service, _ = _service(agent, audit)
+
+    with pytest.raises(SceneAnalysisAuditError) as captured:
+        asyncio.run(service.analyze_scene(AnalyzeSceneRequest("project", "scene", 0, 0, "x" * 350)))
+
+    assert [call.chunk_id for call in agent.calls] == ["scene:r0:0000"]
+    assert audit.event_types == ["run_started", "attempt_started", "run_failed"]
+    assert sum(isinstance(event, AttemptStarted) for event in audit.events) == 1
+    assert sum(isinstance(event, AttemptFailed) for event in audit.events) == 0
+    failed_run = audit.events[-1]
+    assert isinstance(failed_run, RunFailed)
+    assert failed_run.error_type == "SceneAnalysisAuditError"
+    assert "secret" not in str(captured.value)
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert "secret provider body" not in formatted
+    assert not any(isinstance(event, RunSucceeded) for event in audit.events)
 
 
 def test_cancellation_is_recorded_when_possible_and_reraised() -> None:

@@ -38,7 +38,9 @@ _PROVIDER_FAILURE_MESSAGE = "scene analysis provider call failed"
 
 
 class SceneAnalysisError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, audit_error_type: str | None = None) -> None:
+        super().__init__(message)
+        self.audit_error_type = audit_error_type
 
 
 class SceneAnalysisProviderError(SceneAnalysisError):
@@ -115,7 +117,10 @@ class SceneAnalysisService:
             self._record_run_failure(run_id, type(error).__name__)
             raise SceneAnalysisError("scene analysis extraction is invalid") from error
         except SceneAnalysisError as error:
-            self._record_run_failure(run_id, type(error).__name__)
+            self._record_run_failure(
+                run_id,
+                error.audit_error_type or type(error).__name__,
+            )
             raise
         except Exception as error:
             service_error = SceneAnalysisError("scene analysis failed")
@@ -183,27 +188,48 @@ class SceneAnalysisService:
                 raise
             except ProviderCallError as error:
                 latency_ms = (self._monotonic() - started_at) * 1000
-                try:
-                    self._audit.append_attempt_event(
-                        AttemptFailed(
-                            run_id=run_id,
-                            chunk_id=chunk.chunk_id,
-                            attempt_number=attempt_number,
-                            occurred_at=self._clock(),
-                            latency_ms=latency_ms,
-                            error_type=type(error).__name__,
-                            error_message=_PROVIDER_FAILURE_MESSAGE,
-                        )
-                    )
-                except Exception as audit_error:
-                    raise SceneAnalysisAuditError(
-                        "unable to record scene analysis attempt failure"
-                    ) from audit_error
+                self._append_attempt_failure(
+                    run_id=run_id,
+                    chunk=chunk,
+                    attempt_number=attempt_number,
+                    latency_ms=latency_ms,
+                    error_type=type(error).__name__,
+                    error_message=_PROVIDER_FAILURE_MESSAGE,
+                )
                 if attempt_number == 2:
                     raise
                 continue
+            except Exception as error:
+                self._append_attempt_failure(
+                    run_id=run_id,
+                    chunk=chunk,
+                    attempt_number=attempt_number,
+                    latency_ms=(self._monotonic() - started_at) * 1000,
+                    error_type=type(error).__name__,
+                    error_message="scene analysis agent call failed",
+                )
+                raise SceneAnalysisError(
+                    "scene analysis agent call failed",
+                    audit_error_type=type(error).__name__,
+                ) from None
 
             latency_ms = (self._monotonic() - started_at) * 1000
+            try:
+                extraction_json = encode_scene_chunk_extraction(result.extraction)
+            except (TypeError, ValueError) as error:
+                self._append_attempt_failure(
+                    run_id=run_id,
+                    chunk=chunk,
+                    attempt_number=attempt_number,
+                    latency_ms=latency_ms,
+                    error_type=type(error).__name__,
+                    error_message="scene analysis extraction result is invalid",
+                    response_messages_json=result.response_messages_json,
+                )
+                raise SceneAnalysisError(
+                    "scene analysis extraction result is invalid",
+                    audit_error_type=type(error).__name__,
+                ) from None
             try:
                 self._audit.append_attempt_event(
                     AttemptSucceeded(
@@ -213,7 +239,7 @@ class SceneAnalysisService:
                         occurred_at=self._clock(),
                         latency_ms=latency_ms,
                         response_messages_json=result.response_messages_json,
-                        validated_extraction_json=encode_scene_chunk_extraction(result.extraction),
+                        validated_extraction_json=extraction_json,
                         provider_name=result.provider_name,
                         model_name=result.model_name,
                         usage=result.usage,
@@ -232,6 +258,36 @@ class SceneAnalysisService:
             )
 
         raise AssertionError("unreachable")
+
+    def _append_attempt_failure(
+        self,
+        *,
+        run_id: str,
+        chunk: SceneChunk,
+        attempt_number: int,
+        latency_ms: float,
+        error_type: str,
+        error_message: str,
+        response_messages_json: bytes | None = None,
+    ) -> None:
+        try:
+            self._audit.append_attempt_event(
+                AttemptFailed(
+                    run_id=run_id,
+                    chunk_id=chunk.chunk_id,
+                    attempt_number=attempt_number,
+                    occurred_at=self._clock(),
+                    latency_ms=latency_ms,
+                    error_type=error_type,
+                    error_message=error_message,
+                    response_messages_json=response_messages_json,
+                )
+            )
+        except Exception as error:
+            error.__suppress_context__ = True
+            raise SceneAnalysisAuditError(
+                "unable to record scene analysis attempt failure"
+            ) from error
 
     def _record_run_failure(self, run_id: str, error_type: str) -> None:
         try:
