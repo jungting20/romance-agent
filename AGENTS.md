@@ -59,27 +59,19 @@ The main agent owns the end-to-end result. It must:
 3. Define scope, acceptance criteria, and cross-boundary contracts.
 4. Decide whether frontend or backend implementation and review work is
    substantial and independent enough to delegate.
-5. Approve the exact UI plan used by frontend implementers and reviewers when
-   UI behavior changes.
-6. Approve the exact OpenAPI baseline used by implementers and reviewers when
+5. Approve the exact OpenAPI baseline used by implementers and reviewers when
    a consumer-facing API is involved.
-7. Triage review findings and resolve contract or implementation conflicts.
-8. Integrate delegated work and verify frontend-backend behavior.
-9. Run the final checks for every affected application.
+6. Triage review findings and resolve contract or implementation conflicts.
+7. Integrate delegated work and verify frontend-backend behavior.
+8. Run the final checks for every affected application.
 
 Delegation does not transfer responsibility for architecture, integration, or
 verification away from the main agent.
 
-## UI, OpenAPI, Implementation, and Review Subagents
+## OpenAPI, Implementation, and Review Subagents
 
 Use task-scoped subagents when multi-agent support is available.
 
-- For UI-affecting work, assign a bounded UI-planning task to the project-scoped
-  planning-only agent named `ui-planner`, defined in
-  `.codex/agents/ui-planner.toml`. Assign one exact
-  `frontend/docs/ui-plans/<feature-name>.md` output path. The UI planner owns
-  only that plan and must not author domain documents, API contracts, or
-  application code. Skip UI planning when no UI behavior changes.
 - For substantial, independently testable work under `frontend/`, spawn the
   project-scoped custom agent named `frontend`, defined in
   `.codex/agents/frontend.toml`.
@@ -91,9 +83,8 @@ Use task-scoped subagents when multi-agent support is available.
   backend subagent.
 - After substantial frontend implementation stops, assign the complete affected
   screen to the project-scoped read-only agent named `frontend-review`, defined
-  in `.codex/agents/frontend-review.toml`. Supply the approved UI plan when UI
-  work is involved and the approved OpenAPI baseline when the screen consumes
-  an API.
+  in `.codex/agents/frontend-review.toml`. Supply the approved OpenAPI baseline
+  when the screen consumes an API.
 - After substantial backend implementation stops, assign the complete affected
   operation to the project-scoped read-only agent named `backend-review`,
   defined in `.codex/agents/backend-review.toml`.
@@ -115,8 +106,8 @@ Two agents must not modify the same file concurrently.
 Review agents never edit files. Every review assignment must state the affected
 screen routes, API operation IDs when applicable, or backend entry points;
 implementation handoff; acceptance criteria; relevant domain contracts;
-approved UI plan and OpenAPI baseline when applicable; accepted deviations;
-review boundary; and safe verification commands. Reviewers return
+approved OpenAPI baseline when applicable; accepted deviations; review
+boundary; and safe verification commands. Reviewers return
 evidence-based findings with severity,
 introduced/pre-existing classification, source location, impact, repair
 direction, and re-review requirement.
@@ -160,28 +151,6 @@ each task.
 - A refactor that provably preserves domain meaning and behavior does not
   require a domain-document rewrite.
 
-## UI Planning Workflow
-
-Use this workflow for every UI-affecting feature:
-
-1. **Main assigns:** The main agent gives `ui-planner` the bounded product
-   requirements, UI target, relevant domain contracts, acceptance criteria,
-   constraints, and exact `frontend/docs/ui-plans/<feature-name>.md` path.
-2. **UI planner drafts:** The planning-only agent writes the assigned plan and
-   returns its handoff without editing domain documents, API contracts, or
-   application code.
-3. **Main approves:** The main agent reviews domain consistency, screen scope,
-   states, accessibility, shadcn/ui decisions, and unresolved questions, then
-   approves the exact UI plan before OpenAPI drafting or implementation.
-4. **Main aligns:** The main agent keeps the implementation brief's UI target
-   consistent with the approved UI plan. Any material UI-plan change requires
-   main-agent approval of the replacement before affected work proceeds.
-5. **Main delegates:** When UI behavior changes, the main agent gives the same
-   exact approved UI plan to frontend implementation and `frontend-review`.
-
-Skip this workflow when no UI behavior changes. UI planning does not replace
-main-agent approval of domain behavior, API scope, or the implementation brief.
-
 ## API Contract Workflow
 
 `docs/api/openapi.yaml` is the authoritative consumer-facing API contract and
@@ -191,11 +160,10 @@ agent is its final approver.
 
 Use this workflow for every new or changed API operation:
 
-1. **Main scopes:** The main agent uses the exact approved UI plan when UI
-   behavior changes, defines the UI use case, domain behavior, acceptance
-   criteria, validation ownership, and unresolved decisions, then explicitly
-   assigns `docs/api/openapi.yaml` to the OpenAPI agent. UI-affecting work must
-   complete UI-plan approval before OpenAPI drafting.
+1. **Main scopes:** The main agent defines the consumer use case, domain
+   behavior, acceptance criteria, validation ownership, and unresolved
+   decisions, then explicitly assigns `docs/api/openapi.yaml` to the OpenAPI
+   agent.
 2. **OpenAPI drafts:** The OpenAPI agent derives the operation from the
    assigned use case and relevant domain documents, drafts the complete
    request, response, and error contract, and returns the contract handoff
@@ -266,8 +234,6 @@ its replacement. Review agents must never edit or approve the API spec.
 - Do not use destructive Git commands to discard work.
 - Verify the smallest relevant checks during implementation, then run the full
   affected-application checks before completion.
-- For UI-affecting work, confirm frontend implementation and `frontend-review`
-  used the same exact main-agent-approved UI plan.
 - Before completing a domain-affecting task, compare the implementation diff
   with the relevant `docs/domains/*.md` diff and confirm they describe the same
   behavior and boundaries.
