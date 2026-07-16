@@ -72,8 +72,8 @@ class SceneAnalysisService:
         _validate_request(request)
         try:
             prompt = self._prompt_registry.load(_PROMPT_ID)
-        except Exception as error:
-            raise SceneAnalysisError("unable to load scene analysis prompt") from error
+        except Exception:
+            raise SceneAnalysisError("unable to load scene analysis prompt") from None
 
         run_id = self._run_id_factory()
         try:
@@ -91,8 +91,8 @@ class SceneAnalysisService:
                     occurred_at=self._clock(),
                 )
             )
-        except Exception as error:
-            raise SceneAnalysisAuditError("unable to start scene analysis audit") from error
+        except Exception:
+            raise SceneAnalysisAuditError("unable to start scene analysis audit") from None
 
         analyses: list[ChunkAnalysis] = []
         try:
@@ -112,10 +112,10 @@ class SceneAnalysisService:
             raise
         except ProviderCallError as error:
             self._record_run_failure(run_id, type(error).__name__)
-            raise SceneAnalysisProviderError(_PROVIDER_FAILURE_MESSAGE) from error
+            raise SceneAnalysisProviderError(_PROVIDER_FAILURE_MESSAGE) from None
         except ExtractionTranslationError as error:
             self._record_run_failure(run_id, type(error).__name__)
-            raise SceneAnalysisError("scene analysis extraction is invalid") from error
+            raise SceneAnalysisError("scene analysis extraction is invalid") from None
         except SceneAnalysisError as error:
             self._record_run_failure(
                 run_id,
@@ -125,7 +125,7 @@ class SceneAnalysisService:
         except Exception as error:
             service_error = SceneAnalysisError("scene analysis failed")
             self._record_run_failure(run_id, type(error).__name__)
-            raise service_error from error
+            raise service_error from None
 
         encoded_snapshot = _encode_scene_snapshot(snapshot)
         try:
@@ -136,10 +136,10 @@ class SceneAnalysisService:
                     scene_snapshot_json=encoded_snapshot,
                 )
             )
-        except Exception as error:
+        except Exception:
             audit_error = SceneAnalysisAuditError("unable to complete scene analysis audit")
             self._record_run_failure(run_id, type(audit_error).__name__)
-            raise audit_error from error
+            raise audit_error from None
         return snapshot
 
     async def _analyze_chunk(
@@ -166,8 +166,8 @@ class SceneAnalysisService:
                         user_message=call.user_prompt,
                     )
                 )
-            except Exception as error:
-                raise SceneAnalysisAuditError("unable to start scene analysis attempt") from error
+            except Exception:
+                raise SceneAnalysisAuditError("unable to start scene analysis attempt") from None
 
             started_at = self._monotonic()
             try:
@@ -246,9 +246,18 @@ class SceneAnalysisService:
                     )
                 )
             except Exception as error:
+                self._append_attempt_failure(
+                    run_id=run_id,
+                    chunk=chunk,
+                    attempt_number=attempt_number,
+                    latency_ms=latency_ms,
+                    error_type=type(error).__name__,
+                    error_message="unable to record scene analysis attempt success",
+                    response_messages_json=result.response_messages_json,
+                )
                 raise SceneAnalysisAuditError(
                     "unable to record scene analysis attempt success"
-                ) from error
+                ) from None
             return translate_chunk_extraction(
                 chunk,
                 request.scene_sequence,
@@ -283,11 +292,10 @@ class SceneAnalysisService:
                     response_messages_json=response_messages_json,
                 )
             )
-        except Exception as error:
-            error.__suppress_context__ = True
+        except Exception:
             raise SceneAnalysisAuditError(
                 "unable to record scene analysis attempt failure"
-            ) from error
+            ) from None
 
     def _record_run_failure(self, run_id: str, error_type: str) -> None:
         try:
@@ -299,8 +307,8 @@ class SceneAnalysisService:
                     error_message="scene analysis failed",
                 )
             )
-        except Exception as error:
-            raise SceneAnalysisAuditError("unable to record scene analysis failure") from error
+        except Exception:
+            raise SceneAnalysisAuditError("unable to record scene analysis failure") from None
 
     def _record_cancellation(self, run_id: str) -> None:
         with suppress(Exception):

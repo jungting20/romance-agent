@@ -527,6 +527,11 @@ def test_two_provider_failures_fail_the_run_without_a_snapshot() -> None:
     failed_run = audit.events[-1]
     assert isinstance(failed_run, RunFailed)
     assert failed_run.error_type == "ProviderCallError"
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("scene analysis provider call failed",)
+    assert "secret one" not in formatted
+    assert "secret two" not in formatted
 
 
 def test_translation_failure_is_not_retried() -> None:
@@ -550,6 +555,43 @@ def test_translation_failure_is_not_retried() -> None:
         asyncio.run(service.analyze_scene(AnalyzeSceneRequest("project", "scene", 0, 0, "text")))
 
     assert len(agent.calls) == 1
+    assert audit.event_types == [
+        "run_started",
+        "attempt_started",
+        "attempt_succeeded",
+        "run_failed",
+    ]
+    failed_run = audit.events[-1]
+    assert isinstance(failed_run, RunFailed)
+    assert failed_run.error_type == "ExtractionTranslationError"
+
+
+def test_translation_failure_traceback_does_not_expose_model_reference() -> None:
+    secret_reference = "SECRET_MODEL_REFERENCE"
+    extraction = SceneChunkExtraction(
+        summary="invalid",
+        relationship_events=(
+            ExtractedRelationshipEvent(
+                subject_ref=secret_reference,
+                object_ref="other",
+                category="romance",
+                description="model content",
+                confidence=0.5,
+                evidence=(),
+            ),
+        ),
+    )
+    audit = RecordingAudit()
+    agent = ScriptedAgent([_result(extraction)])
+    service, _ = _service(agent, audit)
+
+    with pytest.raises(SceneAnalysisError) as captured:
+        asyncio.run(service.analyze_scene(AnalyzeSceneRequest("project", "scene", 0, 0, "text")))
+
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("scene analysis extraction is invalid",)
+    assert secret_reference not in formatted
     assert audit.event_types == [
         "run_started",
         "attempt_started",
@@ -710,6 +752,22 @@ class FailingAudit(RecordingAudit):
         super().append_attempt_event(event)
 
 
+class AttemptSuccessTerminalAudit(RecordingAudit):
+    def __init__(self, *, fail_fallback: bool) -> None:
+        super().__init__()
+        self.fail_fallback = fail_fallback
+        self.terminal_append_calls: list[type[AttemptEvent]] = []
+
+    def append_attempt_event(self, event: AttemptEvent) -> None:
+        if isinstance(event, (AttemptSucceeded, AttemptFailed)):
+            self.terminal_append_calls.append(type(event))
+        if isinstance(event, AttemptSucceeded):
+            raise RuntimeError("SECRET_SYSTEM_PROMPT SECRET_RESPONSE_BODY")
+        if self.fail_fallback and isinstance(event, AttemptFailed):
+            raise RuntimeError("SECRET_SYSTEM_PROMPT SECRET_RESPONSE_BODY")
+        super().append_attempt_event(event)
+
+
 def test_prompt_load_failure_occurs_before_agent_calls() -> None:
     audit = RecordingAudit()
     agent = ScriptedAgent([])
@@ -726,6 +784,10 @@ def test_prompt_load_failure_occurs_before_agent_calls() -> None:
         asyncio.run(service.analyze_scene(AnalyzeSceneRequest("project", "scene", 0, 0, "text")))
 
     assert "secret" not in str(captured.value)
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("unable to load scene analysis prompt",)
+    assert "secret prompt failure" not in formatted
     assert agent.calls == []
     assert audit.events == []
 
@@ -766,6 +828,59 @@ def test_terminal_audit_failure_is_surfaced_without_claiming_snapshot(
 
     assert not any(isinstance(event, RunSucceeded) for event in audit.events)
     assert isinstance(audit.events[-1], RunFailed)
+
+
+def test_attempt_success_audit_failure_falls_back_to_attempt_failure_once() -> None:
+    response = b'[{"content":"SECRET_RESPONSE_BODY"}]'
+    audit = AttemptSuccessTerminalAudit(fail_fallback=False)
+    agent = ScriptedAgent([_result(SceneChunkExtraction("result"), response)])
+    service, _ = _service(agent, audit)
+
+    with pytest.raises(SceneAnalysisAuditError) as captured:
+        asyncio.run(service.analyze_scene(AnalyzeSceneRequest("project", "scene", 0, 0, "text")))
+
+    assert audit.terminal_append_calls == [AttemptSucceeded, AttemptFailed]
+    assert audit.event_types == [
+        "run_started",
+        "attempt_started",
+        "attempt_failed",
+        "run_failed",
+    ]
+    failed_attempt = audit.events[-2]
+    assert isinstance(failed_attempt, AttemptFailed)
+    assert failed_attempt.error_type == "RuntimeError"
+    assert failed_attempt.error_message == "unable to record scene analysis attempt success"
+    assert failed_attempt.response_messages_json == response
+    assert isinstance(audit.events[-1], RunFailed)
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("unable to record scene analysis attempt success",)
+    assert "SECRET_SYSTEM_PROMPT" not in formatted
+    assert "SECRET_RESPONSE_BODY" not in formatted
+    assert not any(isinstance(event, RunSucceeded) for event in audit.events)
+
+
+def test_attempt_success_and_fallback_audit_failures_surface_once() -> None:
+    audit = AttemptSuccessTerminalAudit(fail_fallback=True)
+    agent = ScriptedAgent(
+        [_result(SceneChunkExtraction("result"), b'[{"content":"SECRET_RESPONSE_BODY"}]')]
+    )
+    service, _ = _service(agent, audit)
+
+    with pytest.raises(SceneAnalysisAuditError) as captured:
+        asyncio.run(service.analyze_scene(AnalyzeSceneRequest("project", "scene", 0, 0, "text")))
+
+    assert audit.terminal_append_calls == [AttemptSucceeded, AttemptFailed]
+    assert audit.event_types == ["run_started", "attempt_started", "run_failed"]
+    assert sum(isinstance(event, AttemptStarted) for event in audit.events) == 1
+    assert sum(isinstance(event, (AttemptSucceeded, AttemptFailed)) for event in audit.events) == 0
+    assert isinstance(audit.events[-1], RunFailed)
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("unable to record scene analysis attempt failure",)
+    assert "SECRET_SYSTEM_PROMPT" not in formatted
+    assert "SECRET_RESPONSE_BODY" not in formatted
+    assert not any(isinstance(event, RunSucceeded) for event in audit.events)
 
 
 def test_attempt_failure_audit_error_surfaces_and_records_run_failure_once() -> None:
