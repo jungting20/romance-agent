@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 from dataclasses import asdict
 from pathlib import Path
@@ -29,6 +30,21 @@ _ATTEMPT_EVENT_TYPES = {
     AttemptSucceeded: "attempt_succeeded",
     AttemptFailed: "attempt_failed",
 }
+_TERMINAL_INDEX_NAME = "uq_attempt_terminal"
+_TERMINAL_INDEX_SQL = (
+    "CREATE UNIQUE INDEX uq_attempt_terminal "
+    "ON attempt_events (run_id, chunk_id, attempt_number) "
+    "WHERE event_type IN ('attempt_succeeded', 'attempt_failed')"
+)
+_TERMINAL_INDEX_COLUMNS = ("run_id", "chunk_id", "attempt_number")
+_TERMINAL_PREDICATE = re.compile(
+    r"event_type\s+in\s*\(\s*'attempt_succeeded'\s*,\s*'attempt_failed'\s*\)",
+    re.IGNORECASE,
+)
+
+
+class SQLiteAuditSchemaError(RuntimeError):
+    pass
 
 
 class SQLiteAgentAudit:
@@ -80,16 +96,7 @@ class SQLiteAgentAudit:
                 )
                 """
             )
-            try:
-                connection.execute(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_attempt_terminal "
-                    "ON attempt_events (run_id, chunk_id, attempt_number) "
-                    "WHERE event_type IN ('attempt_succeeded', 'attempt_failed')"
-                )
-            except sqlite3.IntegrityError:
-                raise AttemptAlreadyTerminal(
-                    "existing attempts contain duplicate terminal events"
-                ) from None
+            _ensure_terminal_index(connection)
             connection.commit()
         except Exception:
             connection.rollback()
@@ -222,6 +229,55 @@ def _event_payload(event: RunEvent | AttemptEvent, excluded_fields: set[str]) ->
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
+
+
+def _ensure_terminal_index(connection: sqlite3.Connection) -> None:
+    stored = connection.execute(
+        "SELECT tbl_name, sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+        (_TERMINAL_INDEX_NAME,),
+    ).fetchone()
+    if stored is None:
+        try:
+            connection.execute(_TERMINAL_INDEX_SQL)
+        except sqlite3.IntegrityError:
+            raise AttemptAlreadyTerminal(
+                "existing attempts contain duplicate terminal events"
+            ) from None
+    _validate_terminal_index(connection)
+
+
+def _validate_terminal_index(connection: sqlite3.Connection) -> None:
+    stored = connection.execute(
+        "SELECT tbl_name, sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+        (_TERMINAL_INDEX_NAME,),
+    ).fetchone()
+    index_list_row = next(
+        (
+            row
+            for row in connection.execute("PRAGMA index_list('attempt_events')")
+            if row[1] == _TERMINAL_INDEX_NAME
+        ),
+        None,
+    )
+    index_columns = tuple(
+        row[2] for row in connection.execute(f"PRAGMA index_info('{_TERMINAL_INDEX_NAME}')")
+    )
+    if (
+        stored is None
+        or stored[0] != "attempt_events"
+        or not isinstance(stored[1], str)
+        or index_list_row is None
+        or index_list_row[2] != 1
+        or index_list_row[4] != 1
+        or index_columns != _TERMINAL_INDEX_COLUMNS
+        or not _has_expected_terminal_predicate(stored[1])
+    ):
+        raise SQLiteAuditSchemaError("terminal attempt index schema is invalid") from None
+
+
+def _has_expected_terminal_predicate(index_sql: str) -> bool:
+    parts = re.split(r"\s+where\s+", index_sql, maxsplit=1, flags=re.IGNORECASE)
+    return len(parts) == 2 and _TERMINAL_PREDICATE.fullmatch(parts[1].strip()) is not None
 
 
 def _json_value(value: Any) -> Any:

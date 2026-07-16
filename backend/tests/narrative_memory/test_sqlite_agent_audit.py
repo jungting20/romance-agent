@@ -18,7 +18,7 @@ from apps.narrative_memory.repository.analysis_audit import (
 )
 from apps.narrative_memory.service.scene_analysis_ports import PromptDefinition
 from apps.narrative_memory.service.scene_analysis_types import AgentUsage
-from infrastructure.audit.sqlite_agent_audit import SQLiteAgentAudit
+from infrastructure.audit.sqlite_agent_audit import SQLiteAgentAudit, SQLiteAuditSchemaError
 
 OCCURRED_AT = datetime(2026, 7, 16, 9, 30, tzinfo=UTC)
 
@@ -380,6 +380,94 @@ def test_initialize_rejects_existing_duplicate_terminal_events_without_rewriting
         ).fetchone()
     assert rows == [("attempt_succeeded",), ("attempt_failed",)]
     assert index is None
+
+
+@pytest.mark.parametrize(
+    "index_sql",
+    [
+        (
+            "CREATE INDEX uq_attempt_terminal "
+            "ON attempt_events (run_id, chunk_id, attempt_number) "
+            "WHERE event_type IN ('attempt_succeeded', 'attempt_failed')"
+        ),
+        (
+            "CREATE UNIQUE INDEX uq_attempt_terminal "
+            "ON attempt_events (run_id, chunk_id, attempt_number, event_type) "
+            "WHERE event_type IN ('attempt_succeeded', 'attempt_failed')"
+        ),
+        (
+            "CREATE UNIQUE INDEX uq_attempt_terminal "
+            "ON attempt_events (run_id, chunk_id, attempt_number) "
+            "WHERE event_type = 'attempt_succeeded'"
+        ),
+    ],
+    ids=["nonunique", "wrong-columns", "wrong-predicate"],
+)
+def test_initialize_rejects_wrong_named_terminal_index_without_repair(
+    tmp_path, index_sql: str
+) -> None:
+    path = tmp_path / "private" / "agent-audit.sqlite3"
+    path.parent.mkdir(parents=True)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE attempt_events (
+                event_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                chunk_id TEXT NOT NULL,
+                attempt_number INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                payload_json BLOB NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO attempt_events (
+                run_id, chunk_id, attempt_number, event_type, occurred_at, payload_json
+            ) VALUES ('run', 'chunk', 1, 'attempt_started', ?, '{}')
+            """,
+            (OCCURRED_AT.isoformat(),),
+        )
+        connection.execute(index_sql)
+
+    with pytest.raises(SQLiteAuditSchemaError) as captured:
+        SQLiteAgentAudit(path).initialize()
+
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("terminal attempt index schema is invalid",)
+    with sqlite3.connect(path) as connection:
+        stored_index_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'uq_attempt_terminal'"
+        ).fetchone()
+        rows = connection.execute(
+            "SELECT event_type FROM attempt_events ORDER BY event_sequence"
+        ).fetchall()
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+    assert stored_index_sql == (index_sql,)
+    assert rows == [("attempt_started",)]
+    assert tables == {"attempt_events"}
+
+
+def test_initialize_accepts_existing_canonical_terminal_index_idempotently(tmp_path) -> None:
+    audit, path = _initialized_audit(tmp_path)
+
+    audit.initialize()
+
+    with sqlite3.connect(path) as connection:
+        rows = connection.execute(
+            "SELECT name, sql FROM sqlite_master "
+            "WHERE type = 'index' AND name = 'uq_attempt_terminal'"
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0][0] == "uq_attempt_terminal"
+    assert "CREATE UNIQUE INDEX" in rows[0][1]
 
 
 def test_invalid_utf8_event_payload_is_not_partially_committed(tmp_path) -> None:
