@@ -35,6 +35,7 @@ class PydanticAISceneAnalysisAgent:
     output_type = ChunkExtractionOutput
 
     def __init__(self, model: Model | str, *, agent: _AgentRunner | None = None) -> None:
+        self._model_name = model if isinstance(model, str) else model.model_name
         self._agent = agent or cast(
             _AgentRunner,
             Agent(
@@ -44,6 +45,10 @@ class PydanticAISceneAnalysisAgent:
                 defer_model_check=True,
             ),
         )
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
 
     async def analyze(self, call: SceneAnalysisCall) -> AgentInvocationResult:
         try:

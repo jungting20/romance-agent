@@ -12,6 +12,8 @@ type ScriptedResult = SceneChunkExtraction | Exception
 
 
 class ScriptedSceneAnalysisAgent:
+    model_name = "mock"
+
     def __init__(
         self,
         scripts: Mapping[str, Sequence[ScriptedResult]] | None = None,

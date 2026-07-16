@@ -17,11 +17,11 @@ class RunStarted:
     scene_id: str
     scene_revision: int
     scene_sequence: int
-    provider_name: str
     model_name: str
     prompt_id: str
     prompt_version: int
     occurred_at: datetime
+    provider_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

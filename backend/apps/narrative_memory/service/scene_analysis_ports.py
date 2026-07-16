@@ -30,4 +30,7 @@ class PromptRegistryPort(Protocol):
 
 
 class SceneAnalysisAgentPort(Protocol):
+    @property
+    def model_name(self) -> str: ...
+
     async def analyze(self, call: SceneAnalysisCall) -> AgentInvocationResult: ...

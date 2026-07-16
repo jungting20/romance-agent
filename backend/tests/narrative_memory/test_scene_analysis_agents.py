@@ -188,11 +188,14 @@ def test_scripted_agent_consumes_per_chunk_sequences_and_copies_input() -> None:
 
 
 def test_scripted_agent_defaults_to_empty_extraction() -> None:
-    result = asyncio.run(ScriptedSceneAnalysisAgent().analyze(_call()))
+    agent = ScriptedSceneAnalysisAgent()
+
+    result = asyncio.run(agent.analyze(_call()))
 
     assert result.extraction == SceneChunkExtraction(summary="")
     assert result.response_messages_json == b"[]"
     assert result.usage == AgentUsage()
+    assert agent.model_name == "mock"
 
 
 def test_pydantic_ai_adapter_returns_validated_output_messages_usage_and_identity() -> None:
@@ -209,6 +212,7 @@ def test_pydantic_ai_adapter_returns_validated_output_messages_usage_and_identit
     assert result.usage.output_tokens > 0
     assert result.provider_name == "test"
     assert result.model_name == "scene-test-model"
+    assert adapter.model_name == "scene-test-model"
 
 
 class _FailingAgent:
@@ -236,3 +240,9 @@ def test_pydantic_ai_adapter_translates_agent_run_errors_without_provider_body()
     assert captured.value.__cause__ is None
     assert captured.value.__suppress_context__ is True
     assert captured.value.args == ("scene analysis provider call failed",)
+
+
+def test_pydantic_ai_adapter_exposes_explicit_configured_model_name() -> None:
+    adapter = PydanticAISceneAnalysisAgent("openai:configured", agent=_FailingAgent())
+
+    assert adapter.model_name == "openai:configured"

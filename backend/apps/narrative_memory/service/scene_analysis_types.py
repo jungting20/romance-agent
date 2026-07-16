@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 from typing import Literal
 
 from apps.narrative_memory.service.models import LocationEventType
@@ -95,3 +96,13 @@ class AgentInvocationResult:
     usage: AgentUsage
     provider_name: str
     model_name: str
+
+
+def encode_scene_chunk_extraction(extraction: SceneChunkExtraction) -> bytes:
+    return json.dumps(
+        asdict(extraction),
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
