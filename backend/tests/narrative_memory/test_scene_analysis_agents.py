@@ -1,5 +1,6 @@
 import asyncio
 import math
+import traceback
 
 import pytest
 from pydantic import ValidationError
@@ -225,3 +226,13 @@ def test_pydantic_ai_adapter_translates_agent_run_errors_without_provider_body()
 
     assert "secret body" not in str(captured.value)
     assert "structured output retries exhausted" not in str(captured.value)
+    assert "secret body" not in "".join(
+        traceback.format_exception(
+            captured.type,
+            captured.value,
+            captured.tb,
+        )
+    )
+    assert captured.value.__cause__ is None
+    assert captured.value.__suppress_context__ is True
+    assert captured.value.args == ("scene analysis provider call failed",)

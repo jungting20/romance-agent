@@ -51,8 +51,8 @@ class PydanticAISceneAnalysisAgent:
                 call.user_prompt,
                 instructions=call.system_prompt,
             )
-        except AgentRunError as error:
-            raise ProviderCallError("scene analysis provider call failed") from error
+        except AgentRunError:
+            raise ProviderCallError("scene analysis provider call failed") from None
 
         return AgentInvocationResult(
             extraction=result.output.to_domain(),
