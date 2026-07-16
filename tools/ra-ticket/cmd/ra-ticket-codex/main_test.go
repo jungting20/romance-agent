@@ -16,14 +16,16 @@ func TestBuildPromptIncludesWorkerCompletionContract(t *testing.T) {
 	for _, required := range []string{
 		ticket.SpecPath,
 		ticket.PlanPath,
-		"구현·검토·검증을 모두 성공적으로 완료한 경우에만",
-		"실패, 차단 또는 미완료 상태에서는 이 마커를 출력하지 마.",
+		"작업과 검증이 모두 성공한 경우에만",
+		"앞부분: ZELLIJ_AGENT",
+		"뒷부분: _WORKER_DONE",
+		"완료 전에는 연결된 결과를 출력하거나 언급하지 마세요.",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Errorf("prompt missing %q:\n%s", required, prompt)
 		}
 	}
-	if !strings.HasSuffix(prompt, "\nZELLIJ_AGENT_WORKER_DONE") {
-		t.Errorf("prompt must end with standalone completion marker:\n%s", prompt)
+	if strings.Contains(prompt, workerCompletionMarker) {
+		t.Errorf("prompt must not contain the assembled completion marker:\n%s", prompt)
 	}
 }

@@ -1,0 +1,6 @@
+version: 1
+max_workers: 3
+poll_interval: 30s
+worker:
+  command: [".local/bin/ra-ticket-codex"]
+  completion_marker: "ZELLIJ_AGENT_WORKER_DONE"

@@ -19,6 +19,8 @@ type claimedTicket struct {
 	PlanPath string `json:"plan_path"`
 }
 
+const workerCompletionMarker = "ZELLIJ_AGENT_WORKER_DONE"
+
 func main() {
 	if err := run(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
@@ -72,10 +74,20 @@ brainstorming과 writing-plans는 다시 수행하지 말고,
 feature-development의 전체 구현·검토·검증 절차를 따라줘.
 티켓에 없는 범위를 추측해서 추가하지 마.
 
-구현·검토·검증을 모두 성공적으로 완료한 경우에만 최종 응답의 마지막 줄에
-아래 종료 마커를 다른 문자 없이 단독으로 출력해.
-실패, 차단 또는 미완료 상태에서는 이 마커를 출력하지 마.
-ZELLIJ_AGENT_WORKER_DONE`, ticket.SpecPath, ticket.PlanPath)
+%s`, ticket.SpecPath, ticket.PlanPath, completionInstruction(workerCompletionMarker))
+}
+
+func completionInstruction(marker string) string {
+	split := len(marker) / 2
+
+	return fmt.Sprintf(
+		"작업과 검증이 모두 성공한 경우에만 다음 두 조각을 공백 없이 연결한 결과를 별도의 한 줄로 출력하세요.\n"+
+			"앞부분: %s\n"+
+			"뒷부분: %s\n"+
+			"완료 전에는 연결된 결과를 출력하거나 언급하지 마세요.",
+		marker[:split],
+		marker[split:],
+	)
 }
 
 func claimNext(ticketBinary, root string) (claimedTicket, error) {
