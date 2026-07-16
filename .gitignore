@@ -1,5 +1,6 @@
 .superpowers/
 .mise.local.toml
+.env
 node_modules/
 dist/
 coverage/
