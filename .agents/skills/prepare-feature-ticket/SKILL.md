@@ -37,18 +37,22 @@ Never claim a command was run, a file was checked, or a result exists unless it 
 
 6. Do not register if either artifact is absent, either approval is missing,
    or the title or summary is empty. If the user asks to register early, state
-   the unmet approval or artifact prerequisite and do not call `ra-ticket add`.
-   If the user cancels at any point, stop without creating or proposing a
-   ticket. Never invent a draft or call an unapproved package
-   registration-ready.
+   the unmet approval or artifact prerequisite and do not call
+   `zellij-agent ticket-worker add`. If the user cancels at any point, stop
+   without creating or proposing a ticket. Never invent a draft or call an
+   unapproved package registration-ready.
 
-7. Work from the repository root. If `.local/bin/ra-ticket` is absent, build
-   it from `tools/ra-ticket/` before continuing:
+7. Work from the repository root. Verify that the ticket-worker CLI is
+   available:
 
    ```sh
-   mkdir -p .local/bin
-   (cd tools/ra-ticket && mise exec -- go build -o ../../.local/bin/ra-ticket ./cmd/ra-ticket)
+   zellij-agent ticket-worker --help
    ```
+
+   Then run `zellij-agent ticket-worker list --json`. If and only if it reports
+   that ticket-worker is not initialized, run
+   `zellij-agent ticket-worker init` once and continue. Stop on an unavailable
+   CLI or any other initialization check failure.
 
 8. Register only the jointly approved values and paths with shell-safe arguments.
    Substitute the current run's approved title, summary, design path, and plan
@@ -56,7 +60,7 @@ Never claim a command was run, a file was checked, or a result exists unless it 
 
    ```sh
    ticket_json=$(
-     .local/bin/ra-ticket add \
+     zellij-agent ticket-worker add \
        --title "$title" \
        --summary "$summary" \
        --spec "$spec_path" \
@@ -66,9 +70,10 @@ Never claim a command was run, a file was checked, or a result exists unless it 
    ```
 
 9. Parse `ticket_json` and verify the returned ticket has status `ready`.
-   Report its ID, title, design path, and plan path. If `ra-ticket add` reports
-   a duplicate plan, do not modify the database manually. Run
-   `.local/bin/ra-ticket list --json`, select the item whose `plan_path`
+   Report its ID, title, design path, and plan path. If
+   `zellij-agent ticket-worker add` returns the JSON error code `duplicate`, do
+   not modify the database manually. Run
+   `zellij-agent ticket-worker list --json`, select the item whose `plan_path`
    exactly matches the approved repository-relative `plan_path`, and report
    that existing ticket instead. If no exact match exists or the command fails
    for another reason, stop and report the failure without claiming that a

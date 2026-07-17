@@ -17,6 +17,14 @@ require() {
   grep -Fq -- "$marker" "$skill_file" || fail "missing $label: $marker"
 }
 
+forbid() {
+  marker=$1
+  label=$2
+  if grep -Fq -- "$marker" "$skill_file"; then
+    fail "found obsolete $label: $marker"
+  fi
+}
+
 require 'name: prepare-feature-ticket' 'skill name'
 require 'only when the user explicitly invokes' 'explicit invocation gate'
 require 'superpowers:brainstorming' 'brainstorming stage'
@@ -33,9 +41,14 @@ require 'Ambiguous, partial, or implied approval is not approval' 'ambiguous app
 require 'If the user cancels at any point' 'cancellation handling'
 require 'Never claim a command was run, a file was checked, or a result exists unless it was actually observed' 'observed-evidence gate'
 require 'In a dry run, describe the intended duplicate-plan recovery' 'dry-run duplicate recovery'
-require 'ra-ticket add' 'registration command'
+require 'zellij-agent ticket-worker --help' 'ticket-worker availability check'
+require 'zellij-agent ticket-worker list --json' 'ticket-worker initialization and duplicate lookup command'
+require 'zellij-agent ticket-worker init' 'ticket-worker initialization command'
+require 'zellij-agent ticket-worker add' 'registration command'
 require '--json' 'machine-readable registration'
 require 'ready' 'initial ticket status'
+forbid '.local/bin/ra-ticket' 'local ra-ticket binary'
+forbid 'tools/ra-ticket' 'removed ra-ticket source tree'
 
 brainstorm_line=$(grep -n -F 'superpowers:brainstorming' "$skill_file" | head -1 | cut -d: -f1)
 design_approval_line=$(grep -n -F 'explicit approval of the written design' "$skill_file" | head -1 | cut -d: -f1)
@@ -43,7 +56,7 @@ plan_line=$(grep -n -F 'superpowers:writing-plans' "$skill_file" | head -1 | cut
 title_line=$(grep -n -F 'Derive a non-empty title' "$skill_file" | head -1 | cut -d: -f1)
 present_line=$(grep -n -F 'Present the written implementation plan, title, and summary together' "$skill_file" | head -1 | cut -d: -f1)
 plan_approval_line=$(grep -n -F 'one explicit approval covering all' "$skill_file" | head -1 | cut -d: -f1)
-register_line=$(grep -n -F 'ra-ticket add' "$skill_file" | head -1 | cut -d: -f1)
+register_line=$(grep -n -F 'zellij-agent ticket-worker add' "$skill_file" | head -1 | cut -d: -f1)
 
 [ "$brainstorm_line" -lt "$design_approval_line" ] || fail 'design approval must follow brainstorming'
 [ "$design_approval_line" -lt "$plan_line" ] || fail 'writing plan must follow design approval'
