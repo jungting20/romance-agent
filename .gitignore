@@ -13,3 +13,4 @@ __pycache__/
 .ruff_cache/
 .worktrees/
 .local/
+.zellij-agent/ticket-worker/
