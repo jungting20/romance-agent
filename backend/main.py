@@ -3,9 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from apps.health.router.health import router as health_router
-from apps.story_bible.router.story_bible import (
-    StoryBibleDependencyError,
-)
+from apps.story_bible.composition import StoryBibleDependencyError
 from apps.story_bible.router.story_bible import (
     router as story_bible_router,
 )

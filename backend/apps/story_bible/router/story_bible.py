@@ -1,14 +1,11 @@
 import logging
-import os
-import uuid
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi import Path as PathParameter
 from fastapi.responses import JSONResponse
 
-from apps.story_bible.repository.story_bible import FileStoryBibleRepository
+from apps.story_bible.composition import get_story_bible_service
 from apps.story_bible.schemas.story_bible import (
     ApiErrorResponse,
     CharacterResponse,
@@ -18,38 +15,23 @@ from apps.story_bible.schemas.story_bible import (
     StoryBibleSnapshotResponse,
     WorldEntryResponse,
 )
-from apps.story_bible.service.story_bible import (
-    InvalidWorldEntriesError,
+from apps.story_bible.service.commands import (
     SaveWorldEntriesCommand,
-    StoryBibleNotFoundError,
-    StoryBiblePersistenceError,
-    StoryBibleRevisionConflictError,
-    StoryBibleService,
-    StoryBibleSnapshot,
     WorldEntryAddition,
     WorldEntryUpdate,
 )
+from apps.story_bible.service.errors import (
+    InvalidWorldEntriesError,
+    StoryBibleNotFoundError,
+    StoryBiblePersistenceError,
+    StoryBibleRevisionConflictError,
+)
+from apps.story_bible.service.models import StoryBibleSnapshot
+from apps.story_bible.service.story_bible import StoryBibleService
 
 router = APIRouter(tags=["Story Bible"])
 logger = logging.getLogger(__name__)
 ProjectIdPath = Annotated[str, PathParameter(alias="projectId", min_length=1)]
-
-
-class StoryBibleDependencyError(Exception):
-    """The Story Bible service could not be composed for a request."""
-
-
-def get_story_bible_service() -> StoryBibleService:
-    try:
-        data_root = Path(os.environ["ROMANCE_AGENT_DATA_ROOT"])
-        repository = FileStoryBibleRepository(data_root)
-        return StoryBibleService(
-            repository,
-            lambda project_id: f"{project_id}-world-{uuid.uuid4().hex}",
-        )
-    except Exception as error:
-        logger.exception("Could not compose Story Bible service")
-        raise StoryBibleDependencyError from error
 
 
 @router.get(

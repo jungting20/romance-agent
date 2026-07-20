@@ -2,19 +2,19 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from apps.story_bible.service.story_bible import (
-    Character,
+from apps.story_bible.domain.models import Character, StoryBible, WorldEntry
+from apps.story_bible.service.commands import (
     FieldError,
-    InvalidWorldEntriesError,
     SaveWorldEntriesCommand,
-    StoryBible,
-    StoryBibleRevisionConflictError,
-    StoryBibleService,
-    StoryBibleSnapshot,
-    WorldEntry,
     WorldEntryAddition,
     WorldEntryUpdate,
 )
+from apps.story_bible.service.errors import (
+    InvalidWorldEntriesError,
+    StoryBibleRevisionConflictError,
+)
+from apps.story_bible.service.models import StoryBibleSnapshot
+from apps.story_bible.service.story_bible import StoryBibleService
 
 
 def snapshot(*, revision: int = 1) -> StoryBibleSnapshot:
@@ -209,6 +209,69 @@ def test_invalid_command_is_all_or_nothing(
     assert raised.value.field_errors == expected_errors
     assert repository.replace_calls == []
     assert repository.current == snapshot()
+
+
+@pytest.mark.parametrize(
+    ("addition", "expected_error"),
+    [
+        (
+            WorldEntryAddition("place", "  ", "설명"),
+            FieldError("additions[0].title", "제목을 입력해 주세요."),
+        ),
+        (
+            WorldEntryAddition("place", "제목", "\n"),
+            FieldError("additions[0].description", "설명을 입력해 주세요."),
+        ),
+    ],
+)
+def test_save_translates_domain_errors_to_existing_field_errors(
+    addition: WorldEntryAddition,
+    expected_error: FieldError,
+) -> None:
+    repository = RecordingRepository()
+
+    with pytest.raises(InvalidWorldEntriesError) as raised:
+        StoryBibleService(repository, lambda _project_id: "world-2").save_world_entries(
+            "silver-garden", command(additions=(addition,))
+        )
+
+    assert raised.value.message == "세계관 항목을 확인해 주세요."
+    assert raised.value.field_errors == (expected_error,)
+    assert repository.replace_calls == []
+
+
+def test_save_accumulates_all_domain_field_errors_for_one_addition() -> None:
+    repository = RecordingRepository()
+
+    with pytest.raises(InvalidWorldEntriesError) as raised:
+        StoryBibleService(repository, lambda _project_id: "world-2").save_world_entries(
+            "silver-garden",
+            command(additions=(WorldEntryAddition("place", "  ", "\n"),)),
+        )
+
+    assert raised.value.message == "세계관 항목을 확인해 주세요."
+    assert raised.value.field_errors == (
+        FieldError("additions[0].title", "제목을 입력해 주세요."),
+        FieldError("additions[0].description", "설명을 입력해 주세요."),
+    )
+    assert repository.replace_calls == []
+
+
+def test_invalid_addition_does_not_generate_an_id() -> None:
+    repository = RecordingRepository()
+
+    def fail_if_called(_project_id: str) -> str:
+        raise AssertionError("ID generator must not run for invalid commands")
+
+    with pytest.raises(InvalidWorldEntriesError) as raised:
+        StoryBibleService(repository, fail_if_called).save_world_entries(
+            "silver-garden",
+            command(additions=(WorldEntryAddition("place", "  ", "설명"),)),
+        )
+
+    assert raised.value.message == "세계관 항목을 확인해 주세요."
+    assert raised.value.field_errors == (FieldError("additions[0].title", "제목을 입력해 주세요."),)
+    assert repository.replace_calls == []
 
 
 def test_generated_ids_avoid_existing_and_same_command_collisions() -> None:

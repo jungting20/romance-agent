@@ -6,15 +6,14 @@ from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from apps.story_bible.service.story_bible import (
-    Character,
-    StoryBible,
+from apps.story_bible.domain.errors import InvalidDomainValueError
+from apps.story_bible.domain.models import Character, StoryBible, WorldEntry
+from apps.story_bible.service.errors import (
     StoryBibleNotFoundError,
     StoryBiblePersistenceError,
     StoryBibleRevisionConflictError,
-    StoryBibleSnapshot,
-    WorldEntry,
 )
+from apps.story_bible.service.models import StoryBibleSnapshot
 
 _SCHEMA_VERSION = 1
 
@@ -91,6 +90,7 @@ class FileStoryBibleRepository:
             OSError,
             UnicodeError,
             json.JSONDecodeError,
+            InvalidDomainValueError,
             TypeError,
             ValueError,
             KeyError,

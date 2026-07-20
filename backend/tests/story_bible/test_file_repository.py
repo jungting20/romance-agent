@@ -5,15 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from apps.story_bible.domain.models import Character, StoryBible, WorldEntry
 from apps.story_bible.repository import story_bible as repository_module
 from apps.story_bible.repository.story_bible import FileStoryBibleRepository
-from apps.story_bible.service.story_bible import (
-    Character,
-    StoryBible,
+from apps.story_bible.service.errors import (
     StoryBibleNotFoundError,
     StoryBiblePersistenceError,
     StoryBibleRevisionConflictError,
-    WorldEntry,
 )
 
 
@@ -114,6 +112,43 @@ def test_missing_story_bible_raises_not_found(tmp_path: Path) -> None:
                 },
             }
         ),
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "storyBibleRevision": 1,
+                "storyBible": {
+                    "projectId": "silver-garden",
+                    "characters": [
+                        {
+                            "id": "",
+                            "name": "서윤",
+                            "role": "protagonist",
+                            "desire": "",
+                            "hiddenFeeling": "",
+                        }
+                    ],
+                    "worldEntries": [],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "storyBibleRevision": 1,
+                "storyBible": {
+                    "projectId": "silver-garden",
+                    "characters": [],
+                    "worldEntries": [
+                        {
+                            "id": "world-1",
+                            "kind": "place",
+                            "title": "  ",
+                            "description": "설명",
+                        }
+                    ],
+                },
+            }
+        ),
     ],
 )
 def test_malformed_or_unsupported_envelope_is_a_persistence_error(
@@ -122,6 +157,52 @@ def test_malformed_or_unsupported_envelope_is_a_persistence_error(
     path = story_bible_path(tmp_path)
     path.parent.mkdir(parents=True)
     path.write_text(document, encoding="utf-8")
+
+    with pytest.raises(StoryBiblePersistenceError):
+        FileStoryBibleRepository(tmp_path).get("silver-garden")
+
+
+def test_stored_duplicate_character_ids_are_a_persistence_error(tmp_path: Path) -> None:
+    path = story_bible_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "storyBibleRevision": 1,
+                "storyBible": {
+                    "projectId": "silver-garden",
+                    "characters": [
+                        {
+                            "id": "silver-garden-character-1",
+                            "name": "서윤",
+                            "role": "protagonist",
+                            "desire": "선택을 지키고 싶다.",
+                            "hiddenFeeling": "진심을 확인하고 싶다.",
+                        },
+                        {
+                            "id": "silver-garden-character-1",
+                            "name": "민준",
+                            "role": "protagonist",
+                            "desire": "서윤을 지키고 싶다.",
+                            "hiddenFeeling": "후회를 숨기고 싶다.",
+                        },
+                    ],
+                    "worldEntries": [
+                        {
+                            "id": "silver-garden-world-1",
+                            "kind": "place",
+                            "title": "비가 그친 온실",
+                            "description": "마지막 만남의 장소",
+                        }
+                    ],
+                },
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
 
     with pytest.raises(StoryBiblePersistenceError):
         FileStoryBibleRepository(tmp_path).get("silver-garden")
