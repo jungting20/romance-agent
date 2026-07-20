@@ -44,8 +44,11 @@ approval.
 
 ## E2E Test Planning and Generation
 
-After implementing a frontend feature, use the project-scoped custom agents in
-the following order before handing the work back to the main agent:
+After frontend implementation stops, hand the implementation and verification
+evidence back to the main agent for read-only application review and any
+required remediation/re-review. Do not start E2E planning or generation until
+the main agent confirms that the affected application review gate has cleared.
+Then use the project-scoped custom agents in the following order:
 
 1. Use `.codex/agents/playwright_test_planner.toml` to inspect the implemented
    behavior and produce an E2E test plan covering the acceptance criteria,
@@ -63,9 +66,14 @@ paths and must not change product behavior to make a test pass.
 
 Review the generated tests against the implemented behavior and E2E plan, run
 the relevant Playwright verification, and include the plan, generated test
-paths, commands, and results in the frontend handoff. If either custom agent is
+paths, commands, and results in the final E2E handoff. If either custom agent is
 missing or unavailable, report that blocker to the main agent instead of
 silently skipping or replacing the required E2E step.
+
+If E2E work exposes a product defect, the generator must not change product
+behavior. Report the defect to the main agent so the owning implementer can fix
+it, then repeat the affected application review before rerunning E2E. Changes
+limited to the E2E plan or Playwright tests do not reopen application review.
 
 ## API Contract Authority and Handoff
 

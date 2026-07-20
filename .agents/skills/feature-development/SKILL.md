@@ -19,7 +19,7 @@ Coordinate substantial feature work through this conditional pipeline:
 
 ```text
 implementation brief -> UI plan -> approved OpenAPI -> parallel implementation
--> frontend E2E -> parallel application reviews -> remediation/re-review
+-> parallel application reviews -> remediation/re-review -> frontend E2E
 -> main-agent final verification
 ```
 
@@ -135,33 +135,9 @@ operation returns to the main agent with affected `operationId`, consumer or
 implementation impact, and a concrete proposal. Accepted changes return to
 `openapi`; affected work resumes only from a newly approved exact baseline.
 
-## 6. Plan and generate frontend E2E tests
+## 6. Dispatch read-only application review
 
-After frontend implementation and before application review, follow
-`frontend/AGENTS.md` in order:
-
-1. Dispatch the configured planner in
-   `.codex/agents/playwright_test_planner.toml` with implementation paths,
-   acceptance criteria, relevant domain contracts, approved UI-plan artifact
-   and assigned `REQ-*` IDs, exact plan output, and verification commands. It
-   plans critical flows, failure states, and accessibility interactions without
-   editing implementation or tests.
-2. Review the plan, then dispatch the configured generator in
-   `.codex/agents/playwright_test_generator.toml` with that exact plan, owned
-   Playwright test paths, the same requirements and artifacts, and exact
-   verification commands. The generator changes no product behavior.
-3. Review generated tests against the plan and implementation, run the required
-   Playwright checks, and retain paths, commands, and results for review.
-
-If either required custom agent is missing or unavailable, mark the affected
-frontend pipeline blocked, stop downstream application review and final
-verification, and report the missing or unavailable custom agent to the user.
-Do not silently skip the stage or substitute a generic agent. Skip E2E
-delegation when frontend is unaffected.
-
-## 7. Dispatch read-only application review
-
-Wait until implementation and required E2E work stop editing their boundaries.
+Wait until implementation work stops editing its application boundaries.
 Dispatch the registered project-scoped, read-only `frontend-review` and
 `backend-review` agents in parallel when both applications changed. Skip only
 the unaffected reviewer; retain review in the main thread only for a trivial or
@@ -209,7 +185,7 @@ never an `approved` verdict, merge permission, or final approval. The main
 agent must record the native conclusion and normalized verdict for every
 affected reviewer.
 
-## 8. Triage, remediate, and re-review
+## 7. Triage, remediate, and re-review
 
 The main agent verifies every finding against repository facts, the diff,
 requirements, domain contracts, UI plan, approved OpenAPI baseline, and tests.
@@ -229,11 +205,41 @@ for any fix that materially changes reviewed behavior. Continue remediation and
 re-review until the reviewer resolves those findings and no affected review has
 a `changes-required` verdict.
 
-Final verification is blocked while a validated Critical or Important finding
-remains, any accepted finding remains unresolved, or an affected reviewer is
-`Blocked`/`Changes required` (normalized `changes-required`). A native `No
-blocking findings` conclusion clears only the review gate; the main agent still
-owns the completion decision.
+Frontend E2E and final verification are blocked while a validated Critical or
+Important finding remains, any accepted finding remains unresolved, or an
+affected reviewer is `Blocked`/`Changes required` (normalized
+`changes-required`). A native `No blocking findings` conclusion clears only the
+review gate; the main agent still owns the completion decision.
+
+## 8. Plan and generate frontend E2E tests
+
+After every affected application review gate clears and required
+remediation/re-review finishes, follow `frontend/AGENTS.md` in order:
+
+1. Dispatch the configured planner in
+   `.codex/agents/playwright_test_planner.toml` with the reviewed implementation
+   paths, acceptance criteria, relevant domain contracts, approved UI-plan
+   artifact and assigned `REQ-*` IDs, resolved review findings and dispositions,
+   exact plan output, and verification commands. It plans critical flows,
+   failure states, and accessibility interactions without editing implementation
+   or tests.
+2. Review the plan, then dispatch the configured generator in
+   `.codex/agents/playwright_test_generator.toml` with that exact plan, owned
+   Playwright test paths, the same requirements and artifacts, and exact
+   verification commands. The generator changes no product behavior.
+3. Review generated tests against the plan and reviewed implementation, run the
+   required Playwright checks, and retain paths, commands, and results for final
+   verification.
+
+If either required custom agent is missing or unavailable, mark the affected
+frontend pipeline blocked, stop final verification, and report the missing or
+unavailable custom agent to the user. Do not silently skip the stage or
+substitute a generic agent. Skip E2E delegation when frontend is unaffected.
+
+If E2E work exposes a product defect that requires implementation changes,
+return the correction to the owning implementer and repeat the affected
+application review and remediation/re-review gates before rerunning E2E. Changes
+limited to the E2E plan or Playwright tests do not reopen application review.
 
 ## 9. Integrate, verify, and report
 
@@ -257,19 +263,20 @@ For backend work, use commands defined by `backend/README.md` and nested
 The final report includes implemented behavior and changed paths; approved
 UI-plan path/revision with `REQ-*` implementation and verification traceability;
 approved OpenAPI baseline and operations; domain updates; implementation and
-E2E handoffs; each review's native conclusion, normalized verdict, findings,
-and dispositions; exact verification commands and results; accepted deviations;
-and remaining risks. Only the main agent declares completion.
+review handoffs; each review's native conclusion, normalized verdict, findings,
+and dispositions; E2E handoffs; exact verification commands and results;
+accepted deviations; and remaining risks. Only the main agent declares
+completion.
 
 ## Conditional paths
 
 | Feature shape | Required path |
 | --- | --- |
-| Cross-stack UI and API | Brief -> `ui-planner` -> `openapi` -> parallel frontend/backend -> frontend E2E -> parallel reviews -> remediation/re-review -> main verification |
-| Frontend-only substantial implementation with UI behavior change | Brief -> `ui-planner` -> frontend -> E2E -> `frontend-review` -> remediation/re-review -> main verification |
+| Cross-stack UI and API | Brief -> `ui-planner` -> `openapi` -> parallel frontend/backend -> parallel reviews -> remediation/re-review -> frontend E2E -> main verification |
+| Frontend-only substantial implementation with UI behavior change | Brief -> `ui-planner` -> frontend -> `frontend-review` -> remediation/re-review -> E2E -> main verification |
 | Backend-only | Brief -> `openapi` first only if a consumer operation changes -> backend -> `backend-review` -> remediation/re-review -> main verification |
 | API-only or API without UI | Brief -> `openapi` -> affected implementers -> affected reviewers -> remediation/re-review -> main verification |
-| Trivial or tightly coupled | Main thread may retain implementation and proportional review, but UI behavior changes still require `ui-planner` and exact plan approval; all other applicable approval, contract, domain, and final-verification gates remain |
+| Trivial or tightly coupled | Main thread may retain implementation and proportional review, but UI behavior changes still require `ui-planner`, exact plan approval, review/remediation before E2E, and all other applicable approval, contract, domain, and final-verification gates |
 
 ## Common mistakes
 
@@ -279,6 +286,8 @@ and remaining risks. Only the main agent declares completion.
   ownership.
 - Omitting `REQ-*`, artifact revisions, exclusions, or exact verification
   commands from downstream assignments.
+- Running E2E before the affected application review and remediation gates
+  clear.
 - Skipping planner-to-generator E2E work or silently replacing a missing custom
   agent.
 - Letting reviewers edit code, review moving targets, or inspect an unbounded
@@ -286,5 +295,7 @@ and remaining risks. Only the main agent declares completion.
 - Treating `No blocking findings` as approval or ignoring a
   `changes-required` verdict.
 - Fixing validated severe findings without rerunning checks and re-review.
+- Changing product behavior during E2E work without repeating the affected
+  application review.
 - Delegating contract approval, integration, final verification, or the final
   completion decision.
