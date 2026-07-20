@@ -52,6 +52,12 @@ conflict before editing.
 - Use semantic HTML, accessible names, visible focus behavior, and
   keyboard-compatible interactions. Do not rely on color alone to communicate
   state.
+- Group related form controls semantically and expose asynchronously rendered
+  validation feedback through an appropriate live-region or alert mechanism.
+- HTML validation constraints and product guidance must agree with the owning
+  domain contract and approved OpenAPI baseline. The frontend must not silently
+  add a stricter business invariant; focused tests must cover each required or
+  optional behavior enforced by the UI.
 - Model loading, empty, error, disabled, and success states when the use case
   can reach them.
 - Avoid effects for values that can be derived during rendering. Isolate actual
@@ -66,6 +72,16 @@ conflict before editing.
 - Pages coordinate data-loading states and compose modules and features. They
   must not directly implement domain workflows or detailed presentation
   behavior.
+- Production files under `src/pages` must not import `src/app/infrastructure`.
+  Transport requests, transport error classes, and contract-to-UI error
+  conversion belong to feature or infrastructure adapters.
+- Production page files must not own detailed presentation draft state through
+  `useState`, `useReducer`, or `useRef`. Put that state in the feature or
+  presentation unit that owns the interaction. TanStack Query and routing hooks
+  used for page composition remain allowed.
+- A type assertion is not a validation boundary. Production page files must not
+  use non-`const` type assertions; narrow route, API, DOM, and other boundary
+  values with an authoritative guard, parser, or adapter.
 - When one user action coordinates multiple domains, feature state,
   persistence, or UI selection state, move that workflow into a feature-level
   application hook or handler. Pages should pass a concise callback to the
@@ -156,6 +172,12 @@ conflict before editing.
 - Preserve state transitions and race-condition behavior with focused tests
   when extracting a hook or state machine. Splitting code across files alone
   does not constitute a responsibility boundary.
+- Editing one field must not erase a server error for an unchanged field. Tie
+  error visibility to the affected field or submitted-value snapshot instead
+  of resetting the whole mutation from a generic field-change handler.
+- Use a reducer only for explicit related transitions or a discriminated state
+  machine that prevents impossible states. Do not replace independent setters
+  mechanically or duplicate TanStack Query lifecycle state in a reducer.
 
 ## Component Extraction and Colocation
 
@@ -250,3 +272,14 @@ conflict before editing.
 - A responsibility-preserving refactor does not require a domain-document
   update. If domain behavior, ownership, invariants, or cross-domain workflows
   change, update the matching domain contract in the same change.
+- Every temporary page-boundary exception must name the file, enumerate the
+  exact accepted violations and removal condition, and have an automated test
+  that prevents its baseline from increasing.
+- The only temporary page-boundary exception is
+  `src/pages/writing-workspace/writing-workspace-page.tsx`. Its accepted
+  baseline is two infrastructure imports
+  (`@/app/infrastructure/api/api-client` and
+  `@/app/infrastructure/api/contracts`), four `useState` calls, four `useRef`
+  calls, and one non-`const` type assertion. Remove the exception when the full
+  writing-workspace page has been extracted into the appropriate feature and
+  presentation owners.

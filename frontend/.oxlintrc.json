@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "overrides": [
+    {
+      "files": ["src/pages/**/*.ts", "src/pages/**/*.tsx"],
+      "excludeFiles": [
+        "src/pages/**/*.test.ts",
+        "src/pages/**/*.test.tsx",
+        "src/pages/writing-workspace/writing-workspace-page.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "react",
+                "importNames": ["useState", "useReducer", "useRef"],
+                "message": "Page files compose routes and features; move local interaction state to its feature or presentation owner."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["@/app/infrastructure/**"],
+                "message": "Page files must consume typed feature interfaces instead of infrastructure contracts or errors."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
