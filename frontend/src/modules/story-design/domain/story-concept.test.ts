@@ -1,6 +1,26 @@
 import { describe, expect, test } from "vitest";
 
 describe("Story design", () => {
+  test.each([
+    "rivals-to-lovers",
+    "contract-romance",
+    "reunion",
+    "friends-to-lovers",
+  ])("recognizes the approved trope id %s", async (tropeId) => {
+    const { isTropeId } = await import("./story-concept");
+
+    expect(isTropeId(tropeId)).toBe(true);
+  });
+
+  test.each([undefined, null, 1, "unknown-trope"])(
+    "rejects an unapproved trope id %s",
+    async (value) => {
+      const { isTropeId } = await import("./story-concept");
+
+      expect(isTropeId(value)).toBe(false);
+    },
+  );
+
   test("offers the four approved romance tropes", async () => {
     const { TROPE_TEMPLATES } = await import("./story-concept");
 

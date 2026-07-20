@@ -1,9 +1,22 @@
+export const TROPE_IDS = [
+  "rivals-to-lovers",
+  "contract-romance",
+  "reunion",
+  "friends-to-lovers",
+] as const;
+
+export type TropeId = (typeof TROPE_IDS)[number];
+
 export interface TropeTemplate {
-  id: string;
+  id: TropeId;
   title: string;
   summary: string;
   tags: string[];
   starterLogline: string;
+}
+
+export function isTropeId(value: unknown): value is TropeId {
+  return typeof value === "string" && TROPE_IDS.some((tropeId) => tropeId === value);
 }
 
 export const TROPE_TEMPLATES: TropeTemplate[] = [
@@ -44,12 +57,16 @@ export const TROPE_TEMPLATES: TropeTemplate[] = [
 export interface StoryConcept {
   id: string;
   projectId: string;
-  tropeId: string;
+  tropeId: TropeId;
   logline: string;
   protagonistNames: [string, string];
 }
 
-export interface CreateStoryConceptInput extends Omit<StoryConcept, "protagonistNames"> {
+export interface CreateStoryConceptInput extends Omit<
+  StoryConcept,
+  "tropeId" | "protagonistNames"
+> {
+  tropeId: string;
   protagonistNames: [string, string];
 }
 
@@ -64,7 +81,7 @@ export function getTropeTemplate(tropeId: string): TropeTemplate {
 }
 
 export function createStoryConcept(input: CreateStoryConceptInput): StoryConcept {
-  getTropeTemplate(input.tropeId);
+  const trope = getTropeTemplate(input.tropeId);
   const protagonistNames = input.protagonistNames.map((name) => name.trim()) as [string, string];
 
   if (protagonistNames.some((name) => !name)) {
@@ -73,6 +90,7 @@ export function createStoryConcept(input: CreateStoryConceptInput): StoryConcept
 
   return {
     ...input,
+    tropeId: trope.id,
     logline: input.logline.trim(),
     protagonistNames,
   };

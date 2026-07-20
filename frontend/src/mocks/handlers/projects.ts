@@ -1,5 +1,6 @@
 import { http, HttpResponse, type HttpResponseResolver, type RequestHandler } from "msw";
 
+import { isTropeId } from "@/modules/story-design";
 import type {
   ApiError,
   ApiManuscript,
@@ -11,7 +12,6 @@ import type {
   SaveManuscriptRequest,
   SaveManuscriptResponse,
   SceneDiffRow,
-  TropeId,
 } from "@/app/infrastructure/api/contracts";
 import {
   addMockWorkspace,
@@ -24,13 +24,6 @@ import {
   PROJECT_API_BASE_URL,
   replaceMockWorkspaceAtRevision,
 } from "@/mocks/data/project-workspaces";
-
-const tropeIds: readonly TropeId[] = [
-  "rivals-to-lovers",
-  "contract-romance",
-  "reunion",
-  "friends-to-lovers",
-];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -51,10 +44,6 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isNonEmptyStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isNonEmptyString);
-}
-
-function isTropeId(value: unknown): value is TropeId {
-  return typeof value === "string" && tropeIds.some((tropeId) => tropeId === value);
 }
 
 function isApiManuscript(value: unknown): value is ApiManuscript {

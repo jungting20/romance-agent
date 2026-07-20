@@ -1,22 +1,29 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Handshake, HeartHandshake, RefreshCcw, Swords } from "lucide-react";
+import {
+  ArrowRight,
+  Handshake,
+  HeartHandshake,
+  RefreshCcw,
+  Swords,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TROPE_TEMPLATES } from "@/modules/story-design";
+import { TROPE_TEMPLATES, type TropeId } from "@/modules/story-design";
 
 const icons = {
   "rivals-to-lovers": Swords,
   "contract-romance": Handshake,
   reunion: RefreshCcw,
   "friends-to-lovers": HeartHandshake,
-};
+} satisfies Record<TropeId, LucideIcon>;
 
 export function TropeSelector() {
   return (
     <div className="grid gap-5 md:grid-cols-2">
       {TROPE_TEMPLATES.map((trope, index) => {
-        const Icon = icons[trope.id as keyof typeof icons] ?? HeartHandshake;
+        const Icon = icons[trope.id];
         return (
           <Link
             key={trope.id}

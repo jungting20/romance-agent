@@ -1,12 +1,12 @@
 import { createInitialManuscript, type Manuscript } from "@/modules/manuscript";
 import { createProject, type Project } from "@/modules/projects";
 import { createInitialStoryBible, type StoryBible } from "@/modules/story-bible";
-import { createStoryConcept, type StoryConcept } from "@/modules/story-design";
+import { createStoryConcept, type StoryConcept, type TropeId } from "@/modules/story-design";
 
 export interface CreateProjectFromTropeInput {
   title: string;
   logline: string;
-  tropeId: string;
+  tropeId: TropeId;
   protagonistNames: [string, string];
 }
 
