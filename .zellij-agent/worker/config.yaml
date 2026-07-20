@@ -1,6 +1,0 @@
-version: 1
-max_workers: 3
-poll_interval: 30s
-worker:
-  command: ["go", "run", "./cmd/ticket-worker"]
-  completion_marker: "ZELLIJ_AGENT_WORKER_DONE"
