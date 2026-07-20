@@ -70,7 +70,11 @@ describe("SetupPage", () => {
     await user.type(await screen.findByLabelText("작품 제목"), "겹치는 제목");
     await user.click(screen.getByRole("button", { name: "작업 공간 열기" }));
 
-    expect(await screen.findByText("이미 사용 중인 작품 제목이에요.")).toBeInTheDocument();
+    expect(await screen.findByText("이미 사용 중인 작품 제목이에요.")).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(screen.getByText("두 주인공의 이름을 확인해 주세요.")).toHaveAttribute("role", "alert");
     expect(screen.getByLabelText("작품 제목")).toHaveAccessibleDescription(
       "이미 사용 중인 작품 제목이에요.",
     );
@@ -149,13 +153,77 @@ describe("SetupPage", () => {
       protagonistNames: ["서윤", "도현"],
     });
   });
+
+  test("redirects an invalid trope search value to trope selection", async () => {
+    const router = renderSetup("/new/setup?trope=unknown-trope");
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/new");
+    });
+  });
+
+  test("allows the contract-optional logline to be empty", async () => {
+    let submittedRequest: CreateProjectRequest | undefined;
+    server.use(
+      http.post("/api/projects", async ({ request }) => {
+        submittedRequest = (await request.json()) as CreateProjectRequest;
+        return HttpResponse.json(createWorkspace("blank-logline-project"), { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderSetup();
+
+    await user.type(await screen.findByLabelText("작품 제목"), "빈 로그라인 이야기");
+    await user.clear(screen.getByLabelText("한 줄 아이디어"));
+    await user.click(screen.getByRole("button", { name: "작업 공간 열기" }));
+
+    await waitFor(() => expect(submittedRequest?.logline).toBe(""));
+  });
+
+  test("keeps an unchanged protagonist error after the title changes", async () => {
+    server.use(
+      http.post("/api/projects", () =>
+        HttpResponse.json(
+          {
+            code: "INVALID_PROTAGONISTS",
+            message: "입력 내용을 확인해 주세요.",
+            fieldErrors: [
+              { path: "title", message: "이미 사용 중인 작품 제목이에요." },
+              { path: "protagonistNames", message: "두 주인공의 이름을 확인해 주세요." },
+            ],
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderSetup();
+
+    const title = await screen.findByLabelText("작품 제목");
+    await user.type(title, "겹치는 제목");
+    await user.click(screen.getByRole("button", { name: "작업 공간 열기" }));
+    await screen.findByText("이미 사용 중인 작품 제목이에요.");
+
+    await user.type(title, " 수정");
+
+    expect(screen.queryByText("이미 사용 중인 작품 제목이에요.")).not.toBeInTheDocument();
+    expect(screen.getByText("두 주인공의 이름을 확인해 주세요.")).toBeInTheDocument();
+  });
+
+  test("uses contract-consistent guidance and semantic protagonist grouping", async () => {
+    renderSetup();
+
+    expect(await screen.findByPlaceholderText("작품 제목을 입력해 주세요")).toBeRequired();
+    expect(screen.getByLabelText("한 줄 아이디어")).not.toBeRequired();
+    expect(screen.getByRole("group", { name: "두 주인공" })).toBeInTheDocument();
+  });
 });
 
-function renderSetup() {
+function renderSetup(initialEntry = "/new/setup?trope=reunion") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const router = createAppMemoryRouter(["/new/setup?trope=reunion"]);
+  const router = createAppMemoryRouter([initialEntry]);
 
   render(
     <QueryClientProvider client={queryClient}>

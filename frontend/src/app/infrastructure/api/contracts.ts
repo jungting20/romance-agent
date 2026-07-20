@@ -1,4 +1,6 @@
-export type TropeId = "rivals-to-lovers" | "contract-romance" | "reunion" | "friends-to-lovers";
+import type { TropeId } from "@/modules/story-design";
+
+export type { TropeId } from "@/modules/story-design";
 
 export type ApiErrorCode =
   | "MALFORMED_REQUEST"
