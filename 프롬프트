@@ -1,0 +1,8 @@
+다음 승인된 문서를 authoritative implementation input으로 사용해 기능을 구현해줘.
+
+- 설계: %s
+- 구현 계획: %s
+
+brainstorming과 writing-plans는 다시 수행하지 말고,
+feature-development의 전체 구현·검토·검증 절차를 따라줘.
+티켓에 없는 범위를 추측해서 추가하지 마.
