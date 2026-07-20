@@ -257,6 +257,23 @@ def test_save_accumulates_all_domain_field_errors_for_one_addition() -> None:
     assert repository.replace_calls == []
 
 
+def test_invalid_addition_does_not_generate_an_id() -> None:
+    repository = RecordingRepository()
+
+    def fail_if_called(_project_id: str) -> str:
+        raise AssertionError("ID generator must not run for invalid commands")
+
+    with pytest.raises(InvalidWorldEntriesError) as raised:
+        StoryBibleService(repository, fail_if_called).save_world_entries(
+            "silver-garden",
+            command(additions=(WorldEntryAddition("place", "  ", "설명"),)),
+        )
+
+    assert raised.value.message == "세계관 항목을 확인해 주세요."
+    assert raised.value.field_errors == (FieldError("additions[0].title", "제목을 입력해 주세요."),)
+    assert repository.replace_calls == []
+
+
 def test_generated_ids_avoid_existing_and_same_command_collisions() -> None:
     repository = RecordingRepository()
     generated = iter(

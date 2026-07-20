@@ -80,21 +80,18 @@ class StoryBibleService:
                 )
             seen_update_ids.add(update.id)
 
-        validated_additions: list[WorldEntry] = []
-        used_ids = set(existing_ids)
+        validated_addition_values: list[WorldEntry] = []
         for index, addition in enumerate(command.additions):
-            new_id = self._next_unique_id(project_id, used_ids)
             validated = self._validate_world_entry(
                 path=f"additions[{index}]",
-                entry_id=new_id,
+                entry_id="validation-id",
                 kind=addition.kind,
                 title=addition.title,
                 description=addition.description,
                 field_errors=field_errors,
             )
             if validated is not None:
-                validated_additions.append(validated)
-            used_ids.add(new_id)
+                validated_addition_values.append(validated)
 
         if field_errors:
             if any("중복" in error.message for error in field_errors):
@@ -104,6 +101,20 @@ class StoryBibleService:
             else:
                 message = "세계관 항목을 확인해 주세요."
             raise InvalidWorldEntriesError(message, tuple(field_errors))
+
+        validated_additions: list[WorldEntry] = []
+        used_ids = set(existing_ids)
+        for addition in validated_addition_values:
+            new_id = self._next_unique_id(project_id, used_ids)
+            validated_additions.append(
+                WorldEntry(
+                    id=new_id,
+                    kind=addition.kind,
+                    title=addition.title,
+                    description=addition.description,
+                )
+            )
+            used_ids.add(new_id)
 
         replacement = current.story_bible.apply_world_entry_changes(
             updates=tuple(validated_updates),
