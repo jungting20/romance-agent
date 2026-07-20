@@ -8,11 +8,7 @@ export interface ProjectSetupDraft {
   protagonistNames: [string, string];
 }
 
-export type ProjectSetupField =
-  | "title"
-  | "logline"
-  | "firstProtagonist"
-  | "secondProtagonist";
+export type ProjectSetupField = "title" | "logline" | "firstProtagonist" | "secondProtagonist";
 
 export interface ProjectSetupErrors {
   title?: string;
@@ -21,8 +17,7 @@ export interface ProjectSetupErrors {
   form?: string;
 }
 
-const genericCreateProjectError =
-  "프로젝트를 만들지 못했어요. 잠시 후 다시 시도해 주세요.";
+const genericCreateProjectError = "프로젝트를 만들지 못했어요. 잠시 후 다시 시도해 주세요.";
 
 export function createProjectSetupDraft(starterLogline: string): ProjectSetupDraft {
   return {
@@ -93,9 +88,7 @@ export function projectSetupErrors(
     : undefined;
   const hasUnmappedField =
     fieldErrors.length === 0 ||
-    fieldErrors.some(
-      ({ path }) => !["title", "logline", "protagonistNames"].includes(path),
-    );
+    fieldErrors.some(({ path }) => !["title", "logline", "protagonistNames"].includes(path));
 
   return compactErrors({
     title,

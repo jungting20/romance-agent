@@ -131,12 +131,7 @@ export function ProjectSetupForm({ setup }: ProjectSetupFormProps) {
             </p>
           )}
 
-          <Button
-            type="submit"
-            size="lg"
-            disabled={isPending}
-            className="h-11 w-full rounded-xl"
-          >
+          <Button type="submit" size="lg" disabled={isPending} className="h-11 w-full rounded-xl">
             {isPending ? "작업 공간 여는 중" : "작업 공간 열기"}{" "}
             <ArrowRight data-icon="inline-end" />
           </Button>

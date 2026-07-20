@@ -74,10 +74,7 @@ describe("SetupPage", () => {
       "role",
       "alert",
     );
-    expect(screen.getByText("두 주인공의 이름을 확인해 주세요.")).toHaveAttribute(
-      "role",
-      "alert",
-    );
+    expect(screen.getByText("두 주인공의 이름을 확인해 주세요.")).toHaveAttribute("role", "alert");
     expect(screen.getByLabelText("작품 제목")).toHaveAccessibleDescription(
       "이미 사용 중인 작품 제목이에요.",
     );
