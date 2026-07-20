@@ -275,6 +275,8 @@ conflict before editing.
 - Every temporary page-boundary exception must name the file, enumerate the
   exact accepted violations and removal condition, and have an automated test
   that prevents its baseline from increasing.
+- New exception files are not allowed without an approved design and matching
+  rule-document update.
 - The only temporary page-boundary exception is
   `src/pages/writing-workspace/writing-workspace-page.tsx`. Its accepted
   baseline is two infrastructure imports

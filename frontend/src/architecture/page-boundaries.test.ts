@@ -76,8 +76,11 @@ export function analyzePageSource(sourceText: string, fileName: string): PageBou
         }
 
         if (ts.isAsExpression(node)) {
-          const suffix = parsedSourceFile.text.slice(node.expression.end, node.end).trim();
-          if (suffix !== "as const") {
+          const isConstAssertion =
+            ts.isTypeReferenceNode(node.type) &&
+            ts.isIdentifier(node.type.typeName) &&
+            node.type.typeName.text === "const";
+          if (!isConstAssertion) {
             violations.push({ kind: "type-assertion", detail: "non-const" });
           }
         }
@@ -151,6 +154,12 @@ describe("page boundary analyzer", () => {
 
   test("allows const assertions", () => {
     expect(analyzePageSource(`const values = ["one"] as const;`, "fixture.ts")).toEqual([]);
+  });
+
+  test("allows const assertions with comments before the const type", () => {
+    expect(
+      analyzePageSource(`const values = ["one"] as /* explanation */ const;`, "fixture.ts"),
+    ).toEqual([]);
   });
 });
 
