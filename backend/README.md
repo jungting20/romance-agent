@@ -10,6 +10,7 @@ backend/
 ├── apps/                   # Domain-owned backend packages
 │   ├── narrative_memory/   # Versioned narrative analysis snapshots
 │   └── <domain>/
+│       ├── domain/         # Entities, aggregates, value objects, domain errors
 │       ├── router/         # HTTP request and response boundary
 │       ├── service/        # Application workflows and domain coordination
 │       ├── repository/     # Persistence ports and implementations

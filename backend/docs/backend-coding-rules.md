@@ -9,7 +9,9 @@ verification, and handoff workflows. If the documents conflict, follow
 
 ## Architecture and Request Handling
 
-- Put domain code under `apps/{domain}/{router,service,repository,schemas}`.
+- Put backend code under
+  `apps/<domain>/{domain,router,service,repository,schemas}`, omitting a package
+  only when that responsibility is not needed.
 - Routers translate HTTP input into typed application inputs, invoke a service
   or application use case, and translate its result into the approved response.
   Keep HTTP and Pydantic concerns in `router` and `schemas`.
@@ -25,6 +27,24 @@ verification, and handoff workflows. If the documents conflict, follow
   when required.
 - Keep request and response shapes, validation ownership, status codes, and
   error semantics aligned with the main-agent-approved OpenAPI baseline.
+
+## Domain Model Ownership
+
+- Put behavior-bearing entities, aggregate roots, value objects, and domain
+  errors under `apps/<domain>/domain/`.
+- An entity owns invariants and state transitions local to its identity. An
+  aggregate root owns invariants and atomic state transitions spanning the
+  state inside its aggregate boundary.
+- Application services load aggregates, coordinate explicit external
+  dependencies, invoke domain behavior, and persist the resulting aggregate.
+  They must not reconstruct aggregate-owned state or duplicate
+  aggregate-owned business rules.
+- Keep transport commands, persistence representations, and domain models as
+  separate concepts. Translate between them at the router, application, and
+  repository boundaries that own those conversions.
+- Do not introduce an entity or aggregate solely to satisfy a package
+  structure. Use one when identity, lifecycle, invariant, or state-transition
+  ownership gives the model meaningful behavior.
 
 ## Dependencies and Interfaces
 
@@ -62,8 +82,10 @@ verification, and handoff workflows. If the documents conflict, follow
 
 ## Validation and Defensive Handling
 
-- Validate transport syntax and shape in schemas or routers. Enforce business
-  invariants in domain or service code owned by the authoritative domain.
+- Validate transport syntax and shape in schemas or routers. Enforce
+  entity-local invariants in the owning entity and aggregate-wide invariants in
+  the aggregate root. Application services may enforce workflow preconditions
+  that span aggregates or external ports and do not belong to one domain model.
 - Do not duplicate a business rule across schemas, services, and repositories.
   Make its authoritative owner explicit and translate failures at boundaries.
 - Do not add `None` handling, fallback values, broad exception catches, or

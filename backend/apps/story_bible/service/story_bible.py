@@ -119,14 +119,16 @@ class StoryBibleService:
         )
         updates_by_id = {update.id: update for update in normalized_updates}
         entries = tuple(
-            WorldEntry(
-                id=entry.id,
-                kind=update.kind,
-                title=update.title,
-                description=update.description,
+            (
+                WorldEntry(
+                    id=entry.id,
+                    kind=update.kind,
+                    title=update.title,
+                    description=update.description,
+                )
+                if (update := updates_by_id.get(entry.id)) is not None
+                else entry
             )
-            if (update := updates_by_id.get(entry.id)) is not None
-            else entry
             for entry in current.story_bible.world_entries
         )
 
@@ -149,7 +151,9 @@ class StoryBibleService:
             characters=current.story_bible.characters,
             world_entries=entries + tuple(added_entries),
         )
-        return self._repository.replace(project_id, command.expected_revision, replacement)
+        return self._repository.replace(
+            project_id, command.expected_revision, replacement
+        )
 
     def _next_unique_id(self, project_id: str, used_ids: set[str]) -> str:
         while (candidate := self._world_entry_id_factory(project_id)) in used_ids:
@@ -165,8 +169,12 @@ class StoryBibleService:
             raise InvalidWorldEntriesError(
                 "수정하거나 추가할 세계관 항목이 필요합니다.",
                 (
-                    FieldError("updates", "수정 또는 추가 항목을 한 개 이상 입력해 주세요."),
-                    FieldError("additions", "수정 또는 추가 항목을 한 개 이상 입력해 주세요."),
+                    FieldError(
+                        "updates", "수정 또는 추가 항목을 한 개 이상 입력해 주세요."
+                    ),
+                    FieldError(
+                        "additions", "수정 또는 추가 항목을 한 개 이상 입력해 주세요."
+                    ),
                 ),
             )
 
@@ -180,23 +188,30 @@ class StoryBibleService:
             title = update.title.strip()
             description = update.description.strip()
             if not title:
-                field_errors.append(FieldError(f"updates[{index}].title", "제목을 입력해 주세요."))
+                field_errors.append(
+                    FieldError(f"updates[{index}].title", "제목을 입력해 주세요.")
+                )
             if not description:
                 field_errors.append(
                     FieldError(f"updates[{index}].description", "설명을 입력해 주세요.")
                 )
             if update.id in seen_update_ids:
                 field_errors.append(
-                    FieldError(f"updates[{index}].id", "수정 항목 식별자가 중복되었습니다.")
+                    FieldError(
+                        f"updates[{index}].id", "수정 항목 식별자가 중복되었습니다."
+                    )
                 )
             elif update.id not in existing_ids:
                 field_errors.append(
                     FieldError(
-                        f"updates[{index}].id", "현재 세계관에 존재하는 항목을 선택해 주세요."
+                        f"updates[{index}].id",
+                        "현재 세계관에 존재하는 항목을 선택해 주세요.",
                     )
                 )
             seen_update_ids.add(update.id)
-            normalized_updates.append(WorldEntryUpdate(update.id, update.kind, title, description))
+            normalized_updates.append(
+                WorldEntryUpdate(update.id, update.kind, title, description)
+            )
 
         for index, addition in enumerate(command.additions):
             title = addition.title.strip()
@@ -207,9 +222,13 @@ class StoryBibleService:
                 )
             if not description:
                 field_errors.append(
-                    FieldError(f"additions[{index}].description", "설명을 입력해 주세요.")
+                    FieldError(
+                        f"additions[{index}].description", "설명을 입력해 주세요."
+                    )
                 )
-            normalized_additions.append(WorldEntryAddition(addition.kind, title, description))
+            normalized_additions.append(
+                WorldEntryAddition(addition.kind, title, description)
+            )
 
         if field_errors:
             if any("중복" in error.message for error in field_errors):

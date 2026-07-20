@@ -25,19 +25,36 @@ Never claim a command was run, a file was checked, or a result exists unless it 
 
 4. Derive a non-empty title and implementation-scope summary solely from the
    approved design and the completed written plan. Do not infer scope or add
-   guessed UI, data, accessibility, error, or testing work.
+   guessed UI, data, accessibility, error, or testing work. Build a non-empty
+   implementation prompt from the approved repository-relative design and plan
+   paths using this exact structure:
 
-5. Present the written implementation plan, title, and summary together during
-   implementation-plan review. Ask for one explicit approval covering all
-   three as ready for implementation and registration.
+   ```text
+   다음 승인된 문서를 authoritative implementation input으로 사용해 기능을 구현해줘.
+   brainstorming과 writing-plans는 다시 수행하지 말고,
+   feature-development의 전체 구현·검토·검증 절차를 따라줘.
+   티켓에 없는 범위를 추측해서 추가하지 마.
+   - 설계: <approved design path>
+   - 구현 계획: <approved plan path>
+   ```
+
+   The prompt must name the `feature-development` skill and contain both
+   approved document paths. Do not replace either path with a summary, an
+   absolute path, or an unapproved location.
+
+5. Present the written implementation plan, title, summary, and implementation
+   prompt together during implementation-plan review. Ask for one explicit
+   approval covering all four as ready for implementation and registration.
    Ambiguous, partial, or implied approval is not approval.
-   If the user requests changes to any of the three, revise the affected
-   values, present all three together again, and ask for a new explicit
+   If the user requests changes to any of the four, revise the affected values,
+   present all four together again, and ask for a new explicit
    approval.
 
 6. Do not register if either artifact is absent, either approval is missing,
-   or the title or summary is empty. If the user asks to register early, state
-   the unmet approval or artifact prerequisite and do not call
+   the title, summary, or prompt is empty, or the prompt does not name
+   `feature-development` and contain both approved document paths. If the user
+   asks to register early, state the unmet approval, artifact, or prompt
+   prerequisite and do not call
    `zellij-agent ticket-worker add`. If the user cancels at any point, stop
    without creating or proposing a ticket. Never invent a draft or call an
    unapproved package registration-ready.
@@ -54,9 +71,9 @@ Never claim a command was run, a file was checked, or a result exists unless it 
    `zellij-agent ticket-worker init` once and continue. Stop on an unavailable
    CLI or any other initialization check failure.
 
-8. Register only the jointly approved values and paths with shell-safe arguments.
-   Substitute the current run's approved title, summary, design path, and plan
-   path for these variables:
+8. Register only the jointly approved values and paths with shell-safe
+   arguments. Substitute the current run's approved title, summary, design
+   path, plan path, and implementation prompt for these variables:
 
    ```sh
    ticket_json=$(
@@ -65,18 +82,21 @@ Never claim a command was run, a file was checked, or a result exists unless it 
        --summary "$summary" \
        --spec "$spec_path" \
        --plan "$plan_path" \
+       --prompt "$prompt" \
        --json
    )
    ```
 
-9. Parse `ticket_json` and verify the returned ticket has status `ready`.
-   Report its ID, title, design path, and plan path. If
+9. Parse `ticket_json` and verify the returned ticket has status `ready` and
+   its prompt exactly matches the jointly approved implementation prompt.
+   Report its ID, title, design path, plan path, and prompt. If
    `zellij-agent ticket-worker add` returns the JSON error code `duplicate`, do
    not modify the database manually. Run
    `zellij-agent ticket-worker list --json`, select the item whose `plan_path`
-   exactly matches the approved repository-relative `plan_path`, and report
-   that existing ticket instead. If no exact match exists or the command fails
-   for another reason, stop and report the failure without claiming that a
-   ticket was registered.
+   exactly matches the approved repository-relative `plan_path`, and verify
+   that its prompt exactly matches the jointly approved implementation prompt
+   before reporting that existing ticket. If no exact plan and prompt match
+   exists or the command fails for another reason, stop and report the failure
+   without claiming that a ticket was registered.
    In a dry run, describe the intended duplicate-plan recovery and stop without
    claiming any command, file, or result outcome.
