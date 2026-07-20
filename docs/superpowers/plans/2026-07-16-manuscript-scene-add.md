@@ -11,21 +11,19 @@
 ## Global Constraints
 
 - Approved design: `docs/superpowers/specs/2026-07-16-manuscript-scene-add-design.md`.
-- Approved UI plan: `frontend/docs/ui-plans/manuscript-scene-add.md`.
 - Default title is exactly `제목 없는 장면`; the new scene has empty content and empty related-character/world-entry arrays.
 - The next chapter number is the current maximum chapter number plus one.
 - Rename, reorder, delete, nested table-of-contents hierarchy, new dependencies, and new API operations are out of scope.
 - Continue using `saveManuscript` and the existing whole-Manuscript OpenAPI schema; do not edit `docs/api/openapi.yaml`.
 - Domain operations stay deterministic, immutable, and free of React, browser, persistence, and network dependencies.
 - During implementation, the frontend agent owns frontend code and `docs/domains/manuscript.md`; the main agent retains integration approval.
-- After frontend editing stops, run the required Playwright planning/generation agents and the read-only `frontend-review` against this exact UI plan.
+- After frontend editing stops, run the read-only `frontend-review`; only after that review gate clears, run the required Playwright planning and generation agents against the approved design.
 
 ---
 
 ## File Map
 
 - `docs/domains/manuscript.md`: authoritative scene-addition, selection, and invariant language.
-- `frontend/docs/ui-plans/manuscript-scene-add.md`: exact approved screen behavior used by implementation and review.
 - `frontend/src/modules/manuscript/domain/manuscript.ts`: immutable `addScene` and `selectScene` operations.
 - `frontend/src/modules/manuscript/domain/manuscript.test.ts`: domain behavior and failure tests.
 - `frontend/src/modules/manuscript/ui/scene-tree.tsx`: accessible add/select presentation and active state.
@@ -36,9 +34,15 @@
 - `frontend/src/features/manuscript-autosave/use-manuscript-autosave.ts`: expose the acknowledged base to conflict resolution.
 - `frontend/src/features/manuscript-autosave/use-manuscript-conflict-resolution.ts`: load and resolve body versus structural conflicts.
 - `frontend/src/features/manuscript-autosave/use-manuscript-autosave.test.tsx`: autosave structural-conflict integration tests.
+- `frontend/src/features/project-persistence/api/project-queries.ts`: reusable workspace query options for explicit conflict refresh.
+- `frontend/src/features/project-persistence/api/project-queries.test.tsx`: query-options cache and refresh behavior.
+- `frontend/src/features/project-persistence/index.ts`: public query-options export.
 - `frontend/src/features/manuscript-conflict/ui/manuscript-conflict-dialog.tsx`: structural-conflict copy and actions.
 - `frontend/src/features/manuscript-conflict/ui/manuscript-conflict-dialog.test.tsx`: dialog-mode tests.
-- `frontend/src/pages/writing-workspace/writing-workspace-page.tsx`: scene ID generation, draft coordination, focus, announcement, and mobile close.
+- `frontend/src/features/manuscript-scene-navigation/use-manuscript-scene-navigation.ts`: scene-add/select coordination, selection reset, announcement, and editor focus.
+- `frontend/src/features/manuscript-scene-navigation/use-manuscript-scene-navigation.test.tsx`: focused application-hook behavior.
+- `frontend/src/features/manuscript-scene-navigation/index.ts`: public feature exports.
+- `frontend/src/pages/writing-workspace/writing-workspace-page.tsx`: compose the scene-navigation feature with SceneTree, editor, header, and responsive context panel.
 - `frontend/src/pages/writing-workspace/writing-workspace-page.test.tsx`: complete screen acceptance tests.
 - `frontend/test-plans/manuscript-scene-add-e2e.md`: generated E2E plan after implementation.
 - `frontend/manuscript-scene-add.spec.ts`: generated Playwright flow.
@@ -394,11 +398,15 @@ git commit -m "feat: merge local manuscript scene additions"
 - Modify: `frontend/src/features/manuscript-autosave/use-manuscript-autosave.ts`
 - Modify: `frontend/src/features/manuscript-autosave/use-manuscript-conflict-resolution.ts`
 - Modify: `frontend/src/features/manuscript-autosave/use-manuscript-autosave.test.tsx`
+- Modify: `frontend/src/features/project-persistence/api/project-queries.ts`
+- Modify: `frontend/src/features/project-persistence/api/project-queries.test.tsx`
+- Modify: `frontend/src/features/project-persistence/index.ts`
 - Modify: `frontend/src/features/manuscript-conflict/ui/manuscript-conflict-dialog.tsx`
 - Modify: `frontend/src/features/manuscript-conflict/ui/manuscript-conflict-dialog.test.tsx`
 
 **Interfaces:**
 - Consumes: `findLocalSceneAdditions` and `mergeLocalSceneAdditions` from Task 3.
+- Produces: `projectWorkspaceQueryOptions(projectId)` so feature code can refetch the workspace without importing infrastructure APIs.
 - Produces: `conflictKind: "scene-content" | "scene-structure" | null` from `useManuscriptAutosave`.
 - Produces: conflict dialog prop `kind: "scene-content" | "scene-structure"`.
 - Produces: `ManuscriptStructureConflict` containing `serverManuscript` and `serverRevision`.
@@ -418,7 +426,7 @@ expect(saveRequests[1]?.manuscript.scenes.map(({ id }) => id)).toEqual([
 ]);
 ```
 
-Add companion tests that `applyServer()` drops the local-only scene, merge failure retains the local draft and exposes `isConflictResolutionError`, and existing scene-content conflict tests remain unchanged.
+Add these companion assertions in separate tests using the same MSW setup: after `applyServer()`, expect `draft.scenes` to equal the refreshed server scenes and `status` to be `saved`; after an ID or chapter collision, expect the local-only scene to remain in `draft`, `status` to stay `conflict`, and `isConflictResolutionError` to be true. Keep the existing scene-content conflict tests in the same focused run to prove their comparison and resolution behavior is unchanged.
 
 - [ ] **Step 2: Add failing dialog-mode tests**
 
@@ -439,16 +447,33 @@ mise exec -- pnpm test -- src/features/manuscript-autosave/use-manuscript-autosa
 
 Expected: FAIL because structural conflict state and dialog mode do not exist.
 
-- [ ] **Step 4: Expose the acknowledged base and load the latest workspace**
+- [ ] **Step 4: Add reusable project-workspace query options**
+
+Extract the existing workspace query definition and reuse it from `useProjectWorkspaceQuery`:
+
+```ts
+export function projectWorkspaceQueryOptions(projectId: string) {
+  return queryOptions({
+    queryKey: projectKeys.workspace(projectId),
+    queryFn: () => getProjectWorkspace(projectId),
+  });
+}
+
+export function useProjectWorkspaceQuery(projectId: string) {
+  return useQuery(projectWorkspaceQueryOptions(projectId));
+}
+```
+
+Export `projectWorkspaceQueryOptions` through the feature index. Extend `project-queries.test.tsx` to call `queryClient.fetchQuery(projectWorkspaceQueryOptions("silver-garden"))` and assert the returned workspace and populated `projectKeys.workspace("silver-garden")` cache entry.
+
+- [ ] **Step 5: Model conflict phases and load the latest workspace**
 
 Add `getAcknowledgedManuscript` to the conflict host using `acknowledgedManuscriptRef.current`.
 On a 409, call `findLocalSceneAdditions(base, currentDraft)`:
 
-- When additions exist, fetch `getProjectWorkspace(currentDraft.projectId)`, store its manuscript and revision as a structural comparison, and set `conflictKind` to `scene-structure`.
+- When additions exist, fetch `queryClient.fetchQuery(projectWorkspaceQueryOptions(currentDraft.projectId))`, store its manuscript and revision as a structural comparison, and set the kind to `scene-structure`.
 - When none exist, keep the current `scene-diffs` request and `scene-content` behavior.
-- Reuse existing comparing, retry, resolving, and error states; never clear the draft on a fetch failure.
-
-For `keepLocal`, call `mergeLocalSceneAdditions` and save at the fetched server revision. For `applyServer`, adopt the fetched server manuscript/revision and update the workspace query cache. A repeated 409 reloads the structural comparison.
+- Replace the touched hook's independent comparison/resolution booleans with one discriminated state; derive the existing public booleans from its phase so impossible combinations cannot occur. Never clear the draft on a fetch failure.
 
 ```ts
 interface ManuscriptStructureConflict {
@@ -456,22 +481,37 @@ interface ManuscriptStructureConflict {
   serverRevision: number;
 }
 
+type ConflictPayload =
+  | { kind: "scene-content"; comparison: CompareManuscriptSceneResponse }
+  | { kind: "scene-structure"; comparison: ManuscriptStructureConflict };
+
+type ConflictState =
+  | { phase: "idle" }
+  | { phase: "loading"; kind: ConflictPayload["kind"] }
+  | { phase: "load-error"; kind: ConflictPayload["kind"] }
+  | ({ phase: "ready" | "resolving" | "resolve-error" } & ConflictPayload);
+
 const base = host.getAcknowledgedManuscript();
 const local = host.getDraft();
 if (findLocalSceneAdditions(base, local).length > 0) {
-  const latest = await getProjectWorkspace(local.projectId);
-  setConflictKind("scene-structure");
-  setStructureConflict({
-    serverManuscript: latest.manuscript,
-    serverRevision: latest.manuscriptRevision,
+  setConflictState({ phase: "loading", kind: "scene-structure" });
+  const latest = await queryClient.fetchQuery(projectWorkspaceQueryOptions(local.projectId));
+  setConflictState({
+    phase: "ready",
+    kind: "scene-structure",
+    comparison: {
+      serverManuscript: latest.manuscript,
+      serverRevision: latest.manuscriptRevision,
+    },
   });
 } else {
-  setConflictKind("scene-content");
   requestLatestDraftComparison();
 }
 ```
 
-- [ ] **Step 5: Render the structural dialog mode**
+For `keepLocal`, switch on the ready payload kind: use `updateSceneContent` for scene-content conflicts and `mergeLocalSceneAdditions` for scene-structure conflicts, then save at the comparison's server revision. `applyServer` adopts the comparison's server manuscript and revision for either kind. A repeated 409 transitions back to `loading` and refreshes the matching comparison.
+
+- [ ] **Step 6: Render the structural dialog mode**
 
 Add a `kind` prop. In structural mode, replace the diff table with the approved explanatory copy and use `내 새 장면 유지`; retain the existing scene-content table and `내 편집본 유지` copy in content mode. Both modes keep existing focus trapping, close behavior, progress disabling, alerts, and retry actions.
 
@@ -504,35 +544,151 @@ Add a `kind` prop. In structural mode, replace the diff table with the approved 
 Prefix the existing loading/error/table JSX block with `kind === "scene-content" &&` and otherwise
 leave its current markup unchanged. Do not extract or rename the existing diff table helpers.
 
-- [ ] **Step 6: Run focused autosave and dialog tests**
+- [ ] **Step 7: Run focused autosave, persistence, and dialog tests**
 
 ```sh
-mise exec -- pnpm test -- src/features/manuscript-autosave/manuscript-structure-conflict.test.ts src/features/manuscript-autosave/use-manuscript-autosave.test.tsx src/features/manuscript-conflict/ui/manuscript-conflict-dialog.test.tsx
+mise exec -- pnpm test -- src/features/manuscript-autosave/manuscript-structure-conflict.test.ts src/features/manuscript-autosave/use-manuscript-autosave.test.tsx src/features/project-persistence/api/project-queries.test.tsx src/features/manuscript-conflict/ui/manuscript-conflict-dialog.test.tsx
 mise exec -- pnpm typecheck
 ```
 
 Expected: PASS, including all pre-existing scene-content conflict tests.
 
-- [ ] **Step 7: Commit conflict support**
+- [ ] **Step 8: Commit conflict support**
 
 ```sh
-git add frontend/src/features/manuscript-autosave frontend/src/features/manuscript-conflict/ui/manuscript-conflict-dialog.tsx frontend/src/features/manuscript-conflict/ui/manuscript-conflict-dialog.test.tsx
+git add frontend/src/features/manuscript-autosave frontend/src/features/project-persistence frontend/src/features/manuscript-conflict/ui/manuscript-conflict-dialog.tsx frontend/src/features/manuscript-conflict/ui/manuscript-conflict-dialog.test.tsx
 git commit -m "feat: resolve manuscript structure conflicts"
 ```
 
 ---
 
-### Task 5: Complete writing-workspace scene workflow
+### Task 5: Feature-level scene navigation workflow
+
+**Files:**
+- Create: `frontend/src/features/manuscript-scene-navigation/use-manuscript-scene-navigation.ts`
+- Create: `frontend/src/features/manuscript-scene-navigation/use-manuscript-scene-navigation.test.tsx`
+- Create: `frontend/src/features/manuscript-scene-navigation/index.ts`
+
+**Interfaces:**
+- Consumes: `addScene(manuscript, sceneId)`, `selectScene(manuscript, sceneId)`, the current `Manuscript`, and an autosave-compatible functional draft updater.
+- Produces: `useManuscriptSceneNavigation(options)` with active-scene derivation, editor selection state, `editorRef`, `announcement`, `addNewScene()`, and `activateScene(sceneId)`.
+
+- [ ] **Step 1: Write failing hook tests**
+
+Use `renderHook` with a stateful Manuscript wrapper. Inject `createSceneId: () => "scene-3"`, mock `requestAnimationFrame` to invoke immediately, and assert that adding creates and activates one scene, resets the selection, announces `3장 장면을 추가했어요`, closes only the mobile context panel, and focuses the editor ref. Add a second test that selecting the first scene preserves both scene objects and clears the selection.
+
+```tsx
+const { result } = renderHook(() => {
+  const [manuscript, setManuscript] = useState(() =>
+    addScene(createInitialManuscript("project-1"), "scene-2"),
+  );
+  return useManuscriptSceneNavigation({
+    manuscript,
+    updateDraft: setManuscript,
+    contextIsInline: false,
+    onCloseContext: closeContext,
+    createSceneId: () => "scene-3",
+  });
+});
+
+act(() => result.current.addNewScene());
+expect(result.current.activeScene?.id).toBe("scene-3");
+expect(result.current.announcement).toBe("3장 장면을 추가했어요");
+expect(closeContext).toHaveBeenCalledOnce();
+```
+
+- [ ] **Step 2: Run the hook test and observe the missing-module failure**
+
+```sh
+mise exec -- pnpm test -- src/features/manuscript-scene-navigation/use-manuscript-scene-navigation.test.tsx
+```
+
+Expected: FAIL because the feature module does not exist.
+
+- [ ] **Step 3: Implement the focused application hook**
+
+Keep browser ID generation, focus scheduling, mobile panel coordination, and selection reset in this feature instead of the page. Use an injectable ID factory for deterministic tests while defaulting to `crypto.randomUUID()` in production.
+
+```ts
+type DraftUpdate = Manuscript | ((current: Manuscript) => Manuscript);
+
+interface UseManuscriptSceneNavigationOptions {
+  manuscript: Manuscript;
+  updateDraft: (update: DraftUpdate) => void;
+  contextIsInline: boolean;
+  onCloseContext: () => void;
+  createSceneId?: (manuscript: Manuscript) => string;
+}
+
+export function useManuscriptSceneNavigation({
+  manuscript,
+  updateDraft,
+  contextIsInline,
+  onCloseContext,
+  createSceneId = (current) => `${current.projectId}-scene-${crypto.randomUUID()}`,
+}: UseManuscriptSceneNavigationOptions) {
+  const [selection, setSelection] = useState<TextRange | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const activeScene = manuscript.scenes.find(({ id }) => id === manuscript.activeSceneId);
+
+  const finishNavigation = () => {
+    setSelection(null);
+    if (!contextIsInline) onCloseContext();
+    requestAnimationFrame(() => editorRef.current?.focus());
+  };
+
+  const addNewScene = () => {
+    let chapterNumber = 0;
+    updateDraft((current) => {
+      const next = addScene(current, createSceneId(current));
+      chapterNumber = next.scenes.find(({ id }) => id === next.activeSceneId)!.chapterNumber;
+      return next;
+    });
+    setAnnouncement(`${chapterNumber}장 장면을 추가했어요`);
+    finishNavigation();
+  };
+
+  const activateScene = (sceneId: string) => {
+    updateDraft((current) => selectScene(current, sceneId));
+    finishNavigation();
+  };
+
+  return { activeScene, selection, setSelection, editorRef, announcement, addNewScene, activateScene };
+}
+```
+
+Export only `useManuscriptSceneNavigation` from the feature `index.ts`.
+
+- [ ] **Step 4: Run focused hook verification**
+
+```sh
+mise exec -- pnpm test -- src/features/manuscript-scene-navigation/use-manuscript-scene-navigation.test.tsx
+mise exec -- pnpm typecheck
+```
+
+Expected: both commands PASS.
+
+- [ ] **Step 5: Commit the feature workflow**
+
+```sh
+git add frontend/src/features/manuscript-scene-navigation
+git commit -m "feat: coordinate manuscript scene navigation"
+```
+
+---
+
+### Task 6: Complete writing-workspace scene integration
 
 **Files:**
 - Modify: `frontend/src/pages/writing-workspace/writing-workspace-page.tsx`
 - Modify: `frontend/src/pages/writing-workspace/writing-workspace-page.test.tsx`
 
 **Interfaces:**
-- Consumes: `addScene`, `selectScene`, SceneTree callbacks, editor ref, and `conflictKind`.
-- Produces: the complete `/projects/$projectId/write` screen behavior from the approved UI plan.
+- Consumes: `useManuscriptSceneNavigation`, SceneTree callbacks, editor ref, and `conflictKind` from Tasks 2, 4, and 5.
+- Produces: complete add/select behavior on `/projects/$projectId/write` without adding detailed scene workflow state to the page.
 
-- [ ] **Step 1: Write failing desktop acceptance test**
+- [ ] **Step 1: Write failing desktop acceptance tests**
 
 Stub `crypto.randomUUID()` to `scene-2`, collect PUT bodies, click the existing add button, and assert exact behavior:
 
@@ -551,9 +707,9 @@ await waitFor(() => expect(saveRequests[0]?.manuscript.scenes).toHaveLength(2));
 
 Then select `1장 비가 그친 뒤의 정원` and assert the original content and dynamic header return without losing the second scene.
 
-- [ ] **Step 2: Write failing mobile and state tests**
+- [ ] **Step 2: Write failing mobile and persistence-state tests**
 
-At 375px, open `원고 보기`, add a scene, assert the Sheet closes and the editor has focus. Add tests that the add control is disabled during structural conflict, remains available after a normal save error, retry preserves the new scene, and a reload-equivalent workspace response restores `activeSceneId`.
+At 375px, open `원고 보기`, add a scene, and assert the Sheet closes and the editor has focus. Add tests that the add control is disabled during structural conflict, remains available after a normal save error, retry preserves the new scene, and a reload-equivalent workspace response restores `activeSceneId`.
 
 - [ ] **Step 3: Run the screen test and observe failures**
 
@@ -561,40 +717,29 @@ At 375px, open `원고 보기`, add a scene, assert the Sheet closes and the edi
 mise exec -- pnpm test -- src/pages/writing-workspace/writing-workspace-page.test.tsx
 ```
 
-Expected: FAIL because the SceneTree callbacks, dynamic header, focus, and announcement are not wired.
+Expected: FAIL because the feature hook, SceneTree callbacks, dynamic header, focus, and announcement are not wired.
 
-- [ ] **Step 4: Wire scene add and selection**
+- [ ] **Step 4: Wire the feature into the screen**
 
-Import `addScene` and `selectScene`. Create `editorRef` and `sceneAnnouncement` state. Use functional draft updates:
+Remove the page-owned manuscript `selection` state and use the feature hook instead:
 
 ```ts
-const handleAddScene = () => {
-  let chapterNumber = 0;
-  updateDraft((current) => {
-    const next = addScene(current, `${current.id}-scene-${crypto.randomUUID()}`);
-    chapterNumber = next.scenes.find(({ id }) => id === next.activeSceneId)!.chapterNumber;
-    return next;
-  });
-  setSelection(null);
-  setSceneAnnouncement(`${chapterNumber}장 장면을 추가했어요`);
-  if (!contextIsInline) setContextOpen(false);
-  requestAnimationFrame(() => editorRef.current?.focus());
-};
-
-const handleSelectScene = (sceneId: string) => {
-  updateDraft((current) => selectScene(current, sceneId));
-  setSelection(null);
-  if (!contextIsInline) setContextOpen(false);
-  requestAnimationFrame(() => editorRef.current?.focus());
-};
+const sceneNavigation = useManuscriptSceneNavigation({
+  manuscript: draft,
+  updateDraft,
+  contextIsInline,
+  onCloseContext: () => setContextOpen(false),
+});
+const scene = sceneNavigation.activeScene;
+const selection = sceneNavigation.selection;
 ```
 
-Pass callbacks through every `ContextPanelContent` composition, pass `addDisabled={status === "conflict"}`, pass `ref={editorRef}` to `ManuscriptEditor`, render a polite scene live region, and change the header subtitle from fixed `제1장` to `${scene.chapterNumber}장 · ${scene.title}`.
+Pass `sceneNavigation.setSelection` to the editor and writing-suggestion flow, `sceneNavigation.editorRef` to `ManuscriptEditor`, and `sceneNavigation.addNewScene`/`activateScene` through every `ContextPanelContent` composition into `SceneTree`. Pass `addDisabled={status === "conflict"}`, render `<p className="sr-only" aria-live="polite">{sceneNavigation.announcement}</p>`, and change the fixed header subtitle to `${scene.chapterNumber}장 · ${scene.title}`.
 
 - [ ] **Step 5: Run screen and related focused tests**
 
 ```sh
-mise exec -- pnpm test -- src/pages/writing-workspace/writing-workspace-page.test.tsx src/modules/manuscript/ui/scene-tree.test.tsx
+mise exec -- pnpm test -- src/pages/writing-workspace/writing-workspace-page.test.tsx src/features/manuscript-scene-navigation/use-manuscript-scene-navigation.test.tsx src/modules/manuscript/ui/scene-tree.test.tsx
 mise exec -- pnpm typecheck
 ```
 
@@ -609,7 +754,7 @@ git commit -m "feat: add scenes from writing workspace"
 
 ---
 
-### Task 6: E2E artifacts, review wave, and final verification
+### Task 7: Review, E2E artifacts, and final verification
 
 **Files:**
 - Create: `frontend/test-plans/manuscript-scene-add-e2e.md`
@@ -617,22 +762,30 @@ git commit -m "feat: add scenes from writing workspace"
 - Review only: all files listed in the File Map
 
 **Interfaces:**
-- Consumes: completed screen, approved design, and exact approved UI plan.
-- Produces: required E2E plan/test, frontend review findings, and verification evidence.
+- Consumes: stopped frontend implementation and `docs/superpowers/specs/2026-07-16-manuscript-scene-add-design.md`.
+- Produces: resolved frontend-review findings, required E2E plan/test, and final verification evidence.
 
-- [ ] **Step 1: Stop frontend implementation editing and dispatch the required Playwright planner**
+- [ ] **Step 1: Stop frontend editing and dispatch read-only frontend review**
 
-Give `.codex/agents/playwright_test_planner.toml` the route `/projects/silver-garden/write`, acceptance criteria REQ-SCENE-01 through REQ-SCENE-09, relevant domain contract, owned output `frontend/test-plans/manuscript-scene-add-e2e.md`, and the approved UI plan. The planner must not edit implementation or test code.
+Give `frontend-review` the complete `/projects/$projectId/write` screen; implementation handoff; the approved design completion criteria; `docs/domains/manuscript.md`; no OpenAPI change; affected entry points `SceneTree`, `useManuscriptSceneNavigation`, `useManuscriptAutosave`, and `ManuscriptConflictDialog`; and safe commands limited to focused tests plus `pnpm check`/`pnpm build`. The reviewer edits no files.
 
-- [ ] **Step 2: Main-agent review of the E2E plan**
+- [ ] **Step 2: Triage and resolve every accepted review finding**
 
-Require flows for immediate add/focus, typing and autosave, existing-scene reselection, mobile Sheet closure, save failure/retry, and structural conflict choices. Reject any rename/reorder/delete or invented API operation.
+Record severity, introduced/pre-existing classification, source location, impact, repair direction, and re-review requirement. Return accepted findings to the frontend implementer. Re-run `frontend-review` for blocking/high findings or material behavior changes; record concrete rationale for rejected findings. Do not start E2E planning until the application review gate clears.
 
-- [ ] **Step 3: Dispatch the required Playwright generator**
+- [ ] **Step 3: Dispatch the required Playwright planner**
+
+Give `.codex/agents/playwright_test_planner.toml` the route `/projects/silver-garden/write`, the approved design, `docs/domains/manuscript.md`, implementation handoff, and sole ownership of `frontend/test-plans/manuscript-scene-add-e2e.md`. Require flows for immediate add/focus, typing and autosave, existing-scene reselection, mobile Sheet closure, save failure/retry, safe structural merge, and server-latest adoption. The planner must not edit implementation or test code.
+
+- [ ] **Step 4: Review and approve the E2E plan**
+
+Confirm every approved completion criterion has a user-visible assertion, structural-conflict choices are covered, and no rename/reorder/delete or invented API operation appears. Return gaps to the planner before generation.
+
+- [ ] **Step 5: Dispatch the required Playwright generator**
 
 Give `.codex/agents/playwright_test_generator.toml` the approved E2E plan and sole ownership of `frontend/manuscript-scene-add.spec.ts`. Tests must use the real route and user-visible roles/names; they may install no dependencies or change product behavior.
 
-- [ ] **Step 4: Run Playwright verification**
+- [ ] **Step 6: Run Playwright verification**
 
 In one terminal from `frontend/`:
 
@@ -650,15 +803,7 @@ mise exec -- pnpm exec playwright test manuscript-scene-add.spec.ts
 
 Expected: PASS. Stop the development server after the test.
 
-- [ ] **Step 5: Dispatch read-only frontend review**
-
-Give `frontend-review` the complete `/projects/$projectId/write` screen; implementation handoff; REQ-SCENE-01 through REQ-SCENE-09; `docs/domains/manuscript.md`; approved UI plan; no OpenAPI change; accepted deviation that `ui-planner` failed three times and the main agent authored/reviewed the plan; and safe commands limited to focused tests plus `pnpm check`/`pnpm build`. The reviewer edits no files.
-
-- [ ] **Step 6: Triage and resolve every accepted review finding**
-
-Record severity, introduced/pre-existing classification, source location, impact, repair direction, and re-review requirement. Return accepted findings to the frontend implementer. Re-run `frontend-review` for blocking/high findings or material behavior changes; record concrete rationale for rejected findings.
-
-- [ ] **Step 7: Run the full affected-application checks**
+- [ ] **Step 7: Run full affected-application checks**
 
 From `frontend/`:
 
@@ -667,13 +812,13 @@ mise exec -- pnpm check
 mise exec -- pnpm build
 ```
 
-Expected: both commands exit 0. Also run `git diff --check` from the repository root and confirm the implementation diff and `docs/domains/manuscript.md` describe identical behavior.
+Expected: both commands exit 0. Also run `git diff --check` from the repository root and compare the implementation diff with `docs/domains/manuscript.md` to confirm they describe identical behavior and boundaries.
 
-- [ ] **Step 8: Commit E2E and any reviewed repairs**
+- [ ] **Step 8: Commit E2E and reviewed repairs**
 
 ```sh
 git add frontend/test-plans/manuscript-scene-add-e2e.md frontend/manuscript-scene-add.spec.ts
 git commit -m "test: cover manuscript scene addition"
 ```
 
-Do not claim completion until all accepted findings are resolved and the final check/build outputs have been observed.
+Do not claim completion until all accepted findings are resolved and the focused tests, Playwright test, full check, build, and domain-document comparison have been observed.
