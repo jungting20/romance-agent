@@ -1,5 +1,5 @@
 from apps.story_bible.domain.errors import InvalidDomainValueError
-from apps.story_bible.domain.models import WorldEntry
+from apps.story_bible.domain.models import WorldEntry, WorldEntryKind
 from apps.story_bible.service.commands import (
     FieldError,
     SaveWorldEntriesCommand,
@@ -57,22 +57,16 @@ class StoryBibleService:
         existing_ids = {entry.id for entry in current.story_bible.world_entries}
 
         for index, update in enumerate(command.updates):
-            try:
-                validated_updates.append(
-                    WorldEntry(
-                        id=update.id,
-                        kind=update.kind,
-                        title=update.title,
-                        description=update.description,
-                    )
-                )
-            except InvalidDomainValueError as error:
-                field_errors.append(
-                    FieldError(
-                        f"updates[{index}].{error.field}",
-                        _FIELD_MESSAGES[error.field],
-                    )
-                )
+            validated = self._validate_world_entry(
+                path=f"updates[{index}]",
+                entry_id=update.id,
+                kind=update.kind,
+                title=update.title,
+                description=update.description,
+                field_errors=field_errors,
+            )
+            if validated is not None:
+                validated_updates.append(validated)
             if update.id in seen_update_ids:
                 field_errors.append(
                     FieldError(f"updates[{index}].id", "수정 항목 식별자가 중복되었습니다.")
@@ -90,22 +84,16 @@ class StoryBibleService:
         used_ids = set(existing_ids)
         for index, addition in enumerate(command.additions):
             new_id = self._next_unique_id(project_id, used_ids)
-            try:
-                validated_additions.append(
-                    WorldEntry(
-                        id=new_id,
-                        kind=addition.kind,
-                        title=addition.title,
-                        description=addition.description,
-                    )
-                )
-            except InvalidDomainValueError as error:
-                field_errors.append(
-                    FieldError(
-                        f"additions[{index}].{error.field}",
-                        _FIELD_MESSAGES[error.field],
-                    )
-                )
+            validated = self._validate_world_entry(
+                path=f"additions[{index}]",
+                entry_id=new_id,
+                kind=addition.kind,
+                title=addition.title,
+                description=addition.description,
+                field_errors=field_errors,
+            )
+            if validated is not None:
+                validated_additions.append(validated)
             used_ids.add(new_id)
 
         if field_errors:
@@ -127,3 +115,46 @@ class StoryBibleService:
         while (candidate := self._world_entry_id_factory(project_id)) in used_ids:
             pass
         return candidate
+
+    @staticmethod
+    def _validate_world_entry(
+        *,
+        path: str,
+        entry_id: str,
+        kind: WorldEntryKind,
+        title: str,
+        description: str,
+        field_errors: list[FieldError],
+    ) -> WorldEntry | None:
+        candidate_id = entry_id
+        candidate_kind = kind
+        candidate_title = title
+        candidate_description = description
+        is_valid = True
+
+        while True:
+            try:
+                entry = WorldEntry(
+                    id=candidate_id,
+                    kind=candidate_kind,
+                    title=candidate_title,
+                    description=candidate_description,
+                )
+            except InvalidDomainValueError as error:
+                is_valid = False
+                field_errors.append(
+                    FieldError(
+                        f"{path}.{error.field}",
+                        _FIELD_MESSAGES[error.field],
+                    )
+                )
+                if error.field == "id":
+                    candidate_id = "validation-id"
+                elif error.field == "kind":
+                    candidate_kind = "place"
+                elif error.field == "title":
+                    candidate_title = "validation-title"
+                elif error.field == "description":
+                    candidate_description = "validation-description"
+                continue
+            return entry if is_valid else None

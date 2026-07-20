@@ -240,6 +240,23 @@ def test_save_translates_domain_errors_to_existing_field_errors(
     assert repository.replace_calls == []
 
 
+def test_save_accumulates_all_domain_field_errors_for_one_addition() -> None:
+    repository = RecordingRepository()
+
+    with pytest.raises(InvalidWorldEntriesError) as raised:
+        StoryBibleService(repository, lambda _project_id: "world-2").save_world_entries(
+            "silver-garden",
+            command(additions=(WorldEntryAddition("place", "  ", "\n"),)),
+        )
+
+    assert raised.value.message == "세계관 항목을 확인해 주세요."
+    assert raised.value.field_errors == (
+        FieldError("additions[0].title", "제목을 입력해 주세요."),
+        FieldError("additions[0].description", "설명을 입력해 주세요."),
+    )
+    assert repository.replace_calls == []
+
+
 def test_generated_ids_avoid_existing_and_same_command_collisions() -> None:
     repository = RecordingRepository()
     generated = iter(
