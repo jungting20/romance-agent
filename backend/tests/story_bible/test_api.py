@@ -3,19 +3,21 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.story_bible import composition as composition_module
+from apps.story_bible.composition import (
+    StoryBibleDependencyError,
+    get_story_bible_service,
+)
+from apps.story_bible.domain.models import Character, StoryBible, WorldEntry
 from apps.story_bible.router import story_bible as router_module
-from apps.story_bible.router.story_bible import get_story_bible_service
-from apps.story_bible.service.story_bible import (
-    Character,
-    FieldError,
+from apps.story_bible.service.commands import FieldError
+from apps.story_bible.service.errors import (
     InvalidWorldEntriesError,
-    StoryBible,
     StoryBibleNotFoundError,
     StoryBiblePersistenceError,
     StoryBibleRevisionConflictError,
-    StoryBibleSnapshot,
-    WorldEntry,
 )
+from apps.story_bible.service.models import StoryBibleSnapshot
 from main import app
 
 
@@ -287,14 +289,23 @@ def test_dependency_construction_failure_maps_to_internal_error(
     def fail_repository_construction(_data_root: object) -> None:
         raise OSError("resolve failed")
 
-    monkeypatch.setattr(router_module, "FileStoryBibleRepository", fail_repository_construction)
+    monkeypatch.setattr(
+        composition_module,
+        "FileStoryBibleRepository",
+        fail_repository_construction,
+    )
 
     with TestClient(app, raise_server_exceptions=False) as test_client:
         response = test_client.request(method, path, **request_kwargs)
 
+    assert StoryBibleDependencyError in app.exception_handlers
     assert response.status_code == 500
     assert response.headers["content-type"].startswith("application/json")
     assert response.json() == error("INTERNAL_ERROR", "잠시 후 다시 시도해 주세요.")
+
+
+def test_router_does_not_own_runtime_repository_composition() -> None:
+    assert not hasattr(router_module, "FileStoryBibleRepository")
 
 
 def test_story_bible_operations_preserve_approved_operation_ids() -> None:
