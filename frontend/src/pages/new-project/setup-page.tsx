@@ -1,68 +1,35 @@
-import { type FormEvent, useState } from "react";
 import { Link, Navigate, useNavigate, useSearch } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Heart, Sparkles } from "lucide-react";
+import { ArrowLeft, Heart } from "lucide-react";
 
-import { ApiRequestError } from "@/app/infrastructure/api/api-client";
-import type { CreateProjectRequest } from "@/app/infrastructure/api/contracts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { useCreateProjectMutation } from "@/features/project-persistence";
-import { TROPE_TEMPLATES } from "@/modules/story-design";
+import { ProjectSetupForm, useProjectSetup } from "@/features/create-project";
+import { TROPE_TEMPLATES, type TropeTemplate } from "@/modules/story-design";
 import { BrandMark } from "@/shared/ui/brand-mark";
 
 export function SetupPage() {
   const { trope: tropeId } = useSearch({ from: "/new_/setup" });
-  const navigate = useNavigate({ from: "/new/setup" });
-  const createProject = useCreateProjectMutation();
   const trope = TROPE_TEMPLATES.find(({ id }) => id === tropeId);
-  const [title, setTitle] = useState("");
-  const [logline, setLogline] = useState(trope?.starterLogline ?? "");
-  const [firstName, setFirstName] = useState("서윤");
-  const [secondName, setSecondName] = useState("도현");
-  const apiError = createProject.error instanceof ApiRequestError ? createProject.error : undefined;
-  const fieldErrors = apiError?.status === 422 ? apiError.error.fieldErrors : [];
-  const titleError = fieldErrors.find(({ path }) => path === "title")?.message;
-  const loglineError = fieldErrors.find(({ path }) => path === "logline")?.message;
-  const protagonistError = fieldErrors.find(({ path }) => path === "protagonistNames")?.message;
-  const hasVisibleFieldError = Boolean(titleError || loglineError || protagonistError);
-  const formError = createProject.isError
-    ? apiError?.status === 422 && !hasVisibleFieldError
-      ? apiError.error.message
-      : apiError?.status !== 422
-        ? "프로젝트를 만들지 못했어요. 잠시 후 다시 시도해 주세요."
-        : undefined
-    : undefined;
 
   if (!trope) {
     return <Navigate to="/new" replace />;
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!trope || createProject.isPending) {
-      return;
-    }
+  return <SetupPageContent key={trope.id} trope={trope} />;
+}
 
-    try {
-      const workspace = await createProject.mutateAsync({
-        title,
-        logline,
-        // The template lookup above is the UI's validation boundary for this transport enum.
-        tropeId: trope.id as CreateProjectRequest["tropeId"],
-        protagonistNames: [firstName, secondName],
-      });
-      void navigate({
+function SetupPageContent({ trope }: { trope: TropeTemplate }) {
+  const navigate = useNavigate({ from: "/new/setup" });
+  const setup = useProjectSetup({
+    tropeId: trope.id,
+    starterLogline: trope.starterLogline,
+    onCreated: (projectId) =>
+      navigate({
         to: "/projects/$projectId/write",
-        params: { projectId: workspace.project.id },
-      });
-    } catch {
-      // The mutation state renders contract field errors or the generic failure state.
-    }
-  }
+        params: { projectId },
+      }),
+  });
 
   return (
     <div className="min-h-svh bg-background">
@@ -110,124 +77,7 @@ export function SetupPage() {
           </Card>
         </aside>
 
-        <Card className="border-border/70 bg-card px-1 py-2 shadow-[0_28px_90px_-55px_rgba(75,45,34,0.6)] sm:px-4 sm:py-5">
-          <CardContent>
-            <form
-              aria-label="새 프로젝트 설정"
-              aria-busy={createProject.isPending}
-              className="space-y-7"
-              onSubmit={handleSubmit}
-            >
-              <div className="space-y-2.5">
-                <Label htmlFor="project-title">작품 제목</Label>
-                <Input
-                  id="project-title"
-                  aria-describedby={titleError ? "project-title-error" : undefined}
-                  aria-invalid={titleError ? true : undefined}
-                  value={title}
-                  onChange={(event) => {
-                    createProject.reset();
-                    setTitle(event.target.value);
-                  }}
-                  placeholder="아직 제목이 없어도 괜찮아요"
-                  required
-                  disabled={createProject.isPending}
-                  className="h-11 bg-background/60"
-                />
-                {titleError && (
-                  <p id="project-title-error" className="text-sm text-destructive">
-                    {titleError}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2.5">
-                <Label htmlFor="project-logline">한 줄 아이디어</Label>
-                <Textarea
-                  id="project-logline"
-                  aria-describedby={loglineError ? "project-logline-error" : "project-logline-help"}
-                  aria-invalid={loglineError ? true : undefined}
-                  value={logline}
-                  onChange={(event) => {
-                    createProject.reset();
-                    setLogline(event.target.value);
-                  }}
-                  rows={4}
-                  required
-                  disabled={createProject.isPending}
-                  className="resize-none bg-background/60 leading-6"
-                />
-                {loglineError && (
-                  <p id="project-logline-error" className="text-sm text-destructive">
-                    {loglineError}
-                  </p>
-                )}
-                <p
-                  id="project-logline-help"
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
-                >
-                  <Sparkles className="size-3.5 text-primary" /> 선택한 트로프에서 시작 문장을
-                  준비했어요.
-                </p>
-              </div>
-              <div>
-                <p className="mb-3 text-sm font-medium">두 주인공</p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2.5">
-                    <Label htmlFor="first-protagonist">첫 번째 주인공</Label>
-                    <Input
-                      id="first-protagonist"
-                      aria-describedby={protagonistError ? "project-protagonists-error" : undefined}
-                      aria-invalid={protagonistError ? true : undefined}
-                      value={firstName}
-                      onChange={(event) => {
-                        createProject.reset();
-                        setFirstName(event.target.value);
-                      }}
-                      required
-                      disabled={createProject.isPending}
-                      className="h-11 bg-background/60"
-                    />
-                  </div>
-                  <div className="space-y-2.5">
-                    <Label htmlFor="second-protagonist">두 번째 주인공</Label>
-                    <Input
-                      id="second-protagonist"
-                      aria-describedby={protagonistError ? "project-protagonists-error" : undefined}
-                      aria-invalid={protagonistError ? true : undefined}
-                      value={secondName}
-                      onChange={(event) => {
-                        createProject.reset();
-                        setSecondName(event.target.value);
-                      }}
-                      required
-                      disabled={createProject.isPending}
-                      className="h-11 bg-background/60"
-                    />
-                  </div>
-                </div>
-                {protagonistError && (
-                  <p id="project-protagonists-error" className="mt-2 text-sm text-destructive">
-                    {protagonistError}
-                  </p>
-                )}
-              </div>
-              {formError && (
-                <p role="alert" className="text-sm text-destructive">
-                  {formError}
-                </p>
-              )}
-              <Button
-                type="submit"
-                size="lg"
-                disabled={createProject.isPending}
-                className="h-11 w-full rounded-xl"
-              >
-                {createProject.isPending ? "작업 공간 여는 중" : "작업 공간 열기"}{" "}
-                <ArrowRight data-icon="inline-end" />
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        <ProjectSetupForm setup={setup} />
       </main>
     </div>
   );
