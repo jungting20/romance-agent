@@ -5,15 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from apps.story_bible.domain.models import Character, StoryBible, WorldEntry
 from apps.story_bible.repository import story_bible as repository_module
 from apps.story_bible.repository.story_bible import FileStoryBibleRepository
-from apps.story_bible.service.story_bible import (
-    Character,
-    StoryBible,
+from apps.story_bible.service.errors import (
     StoryBibleNotFoundError,
     StoryBiblePersistenceError,
     StoryBibleRevisionConflictError,
-    WorldEntry,
 )
 
 
@@ -111,6 +109,43 @@ def test_missing_story_bible_raises_not_found(tmp_path: Path) -> None:
                     "projectId": "other",
                     "characters": [],
                     "worldEntries": [],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "storyBibleRevision": 1,
+                "storyBible": {
+                    "projectId": "silver-garden",
+                    "characters": [
+                        {
+                            "id": "",
+                            "name": "서윤",
+                            "role": "protagonist",
+                            "desire": "",
+                            "hiddenFeeling": "",
+                        }
+                    ],
+                    "worldEntries": [],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "storyBibleRevision": 1,
+                "storyBible": {
+                    "projectId": "silver-garden",
+                    "characters": [],
+                    "worldEntries": [
+                        {
+                            "id": "world-1",
+                            "kind": "place",
+                            "title": "  ",
+                            "description": "설명",
+                        }
+                    ],
                 },
             }
         ),
