@@ -48,7 +48,10 @@ describe("WritingWorkspacePage", () => {
 
     const { container } = renderWorkspace();
 
-    expect(await screen.findByRole("status")).toHaveTextContent("작업 공간을 불러오는 중이에요.");
+    const loadingWorkspace = await screen.findByRole("status");
+
+    expect(loadingWorkspace).toHaveTextContent("작업 공간을 불러오는 중이에요.");
+    expect(loadingWorkspace).toHaveClass("h-svh", "min-h-0", "overflow-hidden");
     expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(3);
   });
 
@@ -132,6 +135,19 @@ describe("WritingWorkspacePage", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "원고 목차" })).toBeInTheDocument();
     expect(router.state.location.search).toEqual({});
+  });
+
+  test("keeps document scrolling locked to the manuscript editor region", async () => {
+    setViewportWidth(1024);
+    const { container } = renderWorkspace();
+
+    const manuscript = await screen.findByRole("textbox", { name: "원고 본문" });
+    const editorRegion = manuscript.closest("main");
+    const workspace = container.firstElementChild;
+
+    expect(workspace).toHaveClass("h-svh", "overflow-hidden");
+    expect(editorRegion).toHaveClass("min-h-0", "overflow-y-auto");
+    expect(editorRegion?.parentElement).toHaveClass("min-h-0", "overflow-hidden");
   });
 
   test("opens the world editor from the populated read panel with canonical URL state", async () => {

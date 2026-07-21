@@ -111,7 +111,7 @@ export function WritingWorkspacePage() {
 
   if (workspaceQuery.isPending) {
     return (
-      <main role="status" className="flex min-h-svh flex-col overflow-hidden bg-[#ede6dd]">
+      <main role="status" className="flex h-svh min-h-0 flex-col overflow-hidden bg-[#ede6dd]">
         <span className="sr-only">작업 공간을 불러오는 중이에요.</span>
         <header aria-hidden="true" className="flex h-16 items-center gap-3 border-b bg-card px-5">
           <Skeleton className="size-8 rounded-full" />
@@ -307,7 +307,7 @@ function LoadedWritingWorkspace({
   );
 
   const editor = (
-    <main className="h-full min-w-0 overflow-y-auto p-3 sm:p-5 lg:p-6">
+    <main className="h-full min-h-0 min-w-0 overflow-y-auto p-3 sm:p-5 lg:p-6">
       <ManuscriptEditor
         scene={scene}
         onChange={(content) => updateDraft(updateSceneContent(draft, scene.id, content))}
@@ -317,7 +317,7 @@ function LoadedWritingWorkspace({
   );
 
   return (
-    <div className="flex min-h-svh flex-col overflow-hidden bg-[#ede6dd]">
+    <div className="flex h-svh min-h-0 flex-col overflow-hidden bg-[#ede6dd]">
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card/95 px-3 shadow-sm lg:px-5">
         <div className="flex min-w-0 items-center gap-2.5">
           <Button variant="ghost" size="icon" asChild>
@@ -405,7 +405,7 @@ function LoadedWritingWorkspace({
                 </ScrollArea>
               </SheetContent>
             </Sheet>
-            <div className="min-w-0 flex-1">{editor}</div>
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{editor}</div>
           </>
         ) : desktopIsResizable ? (
           <ResizablePanelGroup orientation="horizontal" className="min-w-0 flex-1">
@@ -420,7 +420,7 @@ function LoadedWritingWorkspace({
               </ScrollArea>
             </ResizablePanel>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize="55%" minSize="40%">
+            <ResizablePanel defaultSize="55%" minSize="40%" className="min-h-0 overflow-hidden">
               {editor}
             </ResizablePanel>
             {assistantOpen && (
@@ -442,7 +442,7 @@ function LoadedWritingWorkspace({
                 editWorldButtonRef={worldLaunchRef}
               />
             </aside>
-            <div className="min-w-0 flex-1">{editor}</div>
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{editor}</div>
           </>
         )}
         {!desktopIsResizable && (
