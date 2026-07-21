@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__REPORT_TITLE__</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero"><p>브라우저 버그 탐색 보고서</p><h1>__REPORT_TITLE__</h1><p>생성 시각: <time datetime="__GENERATED_AT_ISO__">__GENERATED_AT_KO__</time></p></header>
+  <section class="panel"><h2>탐색 범위</h2><p>__SCOPE_DESCRIPTION__</p><h3>제외 범위</h3><p>__EXCLUDED_SCOPE__</p></section>
+  <section class="panel"><h2>실행 환경</h2><dl><dt>대상 라우트</dt><dd><code>__TARGET_ROUTE__</code></dd><dt>시작 상태</dt><dd>__STARTING_STATE__</dd><dt>뷰포트</dt><dd>__VIEWPORTS__</dd><dt>실행 기준</dt><dd><code>__REVISION__</code></dd></dl></section>
+  <section class="panel"><h2>결과 요약</h2><div class="grid"><div class="metric">확정<strong>__CONFIRMED_COUNT__</strong></div><div class="metric">등록<strong>__REGISTERED_COUNT__</strong></div><div class="metric">중복<strong>__DUPLICATE_COUNT__</strong></div><div class="metric">제외<strong>__EXCLUDED_COUNT__</strong></div></div></section>
+  <section class="panel"><h2>등록한 버그</h2>
+    <article class="bug-card" id="bug-001"><p><span class="severity severity-__BUG_SEVERITY_CLASS__">심각도 __BUG_SEVERITY_KO__</span></p><h3>__BUG_TITLE__</h3>
+      <dl><dt>티켓</dt><dd><code>#__TICKET_ID__</code> · <code>ready</code></dd><dt>재현 절차</dt><dd><ol>__REPRODUCTION_STEPS__</ol></dd><dt>기대 결과</dt><dd>__EXPECTED_RESULT__</dd><dt>실제 결과</dt><dd>__ACTUAL_RESULT__</dd><dt>사용자 영향</dt><dd>__USER_IMPACT__</dd><dt>관련 위치</dt><dd><code>__RELATED_LOCATION__</code></dd><dt>문서</dt><dd><a href="__SPEC_LINK__">설계</a> · <a href="__PLAN_LINK__">구현 계획</a></dd></dl>
+      <figure><img class="evidence" src="__BUG_SCREENSHOT_PATH__" alt="__BUG_SCREENSHOT_ALT__"><figcaption>__BUG_SCREENSHOT_CAPTION__</figcaption></figure>
+    </article>
+  </section>
+  <section class="panel"><h2>중복된 관찰</h2><p>__DUPLICATE_OBSERVATIONS__</p></section>
+  <section class="panel"><h2>제외한 관찰</h2><p>__EXCLUDED_OBSERVATIONS__</p></section>
+  <section class="panel"><h2>수행한 검사</h2><ul>__CHECK_RESULTS__</ul></section>
+  <section class="panel"><h2>제약 및 미확인 항목</h2><p>__LIMITATIONS__</p></section>
+</main>
+</body>
+</html>
