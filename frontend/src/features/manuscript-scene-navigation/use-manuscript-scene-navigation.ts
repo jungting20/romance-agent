@@ -31,12 +31,9 @@ export function useManuscriptSceneNavigation({
   };
 
   const addNewScene = () => {
-    let chapterNumber = 0;
-    updateDraft((current) => {
-      const next = addScene(current, createSceneId(current));
-      chapterNumber = next.scenes.find(({ id }) => id === next.activeSceneId)!.chapterNumber;
-      return next;
-    });
+    const sceneId = createSceneId(manuscript);
+    const chapterNumber = Math.max(...manuscript.scenes.map((scene) => scene.chapterNumber)) + 1;
+    updateDraft((current) => addScene(current, sceneId));
     setAnnouncement(`${chapterNumber}장 장면을 추가했어요`);
     finishNavigation();
   };

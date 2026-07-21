@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { addScene, createInitialManuscript, type Manuscript } from "@/modules/manuscript";
@@ -7,20 +7,6 @@ import { addScene, createInitialManuscript, type Manuscript } from "@/modules/ma
 import { useManuscriptSceneNavigation } from "./use-manuscript-scene-navigation";
 
 type DraftUpdate = Manuscript | ((current: Manuscript) => Manuscript);
-
-function useSynchronousManuscriptState(initialManuscript: Manuscript) {
-  const [manuscript, setManuscript] = useState(initialManuscript);
-  const manuscriptRef = useRef(manuscript);
-  manuscriptRef.current = manuscript;
-
-  const updateDraft = (update: DraftUpdate) => {
-    const next = typeof update === "function" ? update(manuscriptRef.current) : update;
-    manuscriptRef.current = next;
-    setManuscript(next);
-  };
-
-  return { manuscript, updateDraft };
-}
 
 describe("useManuscriptSceneNavigation", () => {
   beforeEach(() => {
@@ -45,10 +31,10 @@ describe("useManuscriptSceneNavigation", () => {
     const focusEditor = vi.spyOn(editor, "focus");
 
     const { result } = renderHook(() => {
-      const { manuscript, updateDraft } = useSynchronousManuscriptState(initialManuscript);
+      const [manuscript, setManuscript] = useState(initialManuscript);
       const navigation = useManuscriptSceneNavigation({
         manuscript,
-        updateDraft,
+        updateDraft: setManuscript,
         contextIsInline: false,
         onCloseContext: closeContext,
         createSceneId,
@@ -81,10 +67,10 @@ describe("useManuscriptSceneNavigation", () => {
     const [firstScene, secondScene] = initialManuscript.scenes;
 
     const { result } = renderHook(() => {
-      const { manuscript, updateDraft } = useSynchronousManuscriptState(initialManuscript);
+      const [manuscript, setManuscript] = useState(initialManuscript);
       const navigation = useManuscriptSceneNavigation({
         manuscript,
-        updateDraft,
+        updateDraft: setManuscript,
         contextIsInline: true,
         onCloseContext: closeContext,
       });
@@ -101,5 +87,39 @@ describe("useManuscriptSceneNavigation", () => {
     expect(result.current.manuscript.scenes[1]).toBe(secondScene);
     expect(result.current.navigation.selection).toBeNull();
     expect(closeContext).not.toHaveBeenCalled();
+  });
+
+  test("업데이터가 지연되거나 재시도되어도 장면 ID는 한 번만 생성한다", () => {
+    const initialManuscript = addScene(createInitialManuscript("project-1"), "scene-2");
+    const createSceneId = vi.fn(() => "scene-3");
+    let capturedUpdater: ((current: Manuscript) => Manuscript) | undefined;
+    const updateDraft = vi.fn((update: DraftUpdate) => {
+      if (typeof update === "function") capturedUpdater = update;
+    });
+
+    const { result } = renderHook(() =>
+      useManuscriptSceneNavigation({
+        manuscript: initialManuscript,
+        updateDraft,
+        contextIsInline: true,
+        onCloseContext: vi.fn(),
+        createSceneId,
+      }),
+    );
+
+    act(() => result.current.addNewScene());
+
+    expect(createSceneId).toHaveBeenCalledOnce();
+    expect(result.current.announcement).toBe("3장 장면을 추가했어요");
+    expect(capturedUpdater).toBeTypeOf("function");
+    if (!capturedUpdater) throw new Error("기대한 원고 업데이터가 없습니다.");
+
+    const firstResult = capturedUpdater(initialManuscript);
+    const retriedResult = capturedUpdater(initialManuscript);
+
+    expect(createSceneId).toHaveBeenCalledOnce();
+    expect(firstResult).toEqual(retriedResult);
+    expect(firstResult.scenes).toHaveLength(3);
+    expect(firstResult.activeSceneId).toBe("scene-3");
   });
 });
