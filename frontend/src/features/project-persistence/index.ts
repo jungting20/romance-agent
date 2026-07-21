@@ -1,5 +1,6 @@
 export {
   projectKeys,
+  projectWorkspaceQueryOptions,
   useCompareManuscriptSceneMutation,
   useCreateProjectMutation,
   useProjectsQuery,

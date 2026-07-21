@@ -51,6 +51,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -80,6 +81,7 @@ describe("ManuscriptConflictDialog", () => {
     const { rerender } = render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -103,6 +105,7 @@ describe("ManuscriptConflictDialog", () => {
     rerender(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -130,6 +133,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={null}
         isComparing={false}
         isResolving={false}
@@ -150,6 +154,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -173,6 +178,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving
@@ -203,6 +209,7 @@ describe("ManuscriptConflictDialog", () => {
           </button>
           <ManuscriptConflictDialog
             open={open}
+            kind="scene-content"
             comparison={getComparison()}
             isComparing={false}
             isResolving={false}
@@ -239,6 +246,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -255,5 +263,27 @@ describe("ManuscriptConflictDialog", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("내 편집본을 서버에 저장하지 못했어요");
     await user.click(screen.getByRole("button", { name: "내 편집본 저장 다시 시도" }));
     expect(onRetryKeepLocal).toHaveBeenCalledOnce();
+  });
+
+  test("offers structural conflict actions without a scene diff table", () => {
+    render(
+      <ManuscriptConflictDialog
+        open
+        kind="scene-structure"
+        comparison={null}
+        isComparing={false}
+        isResolving={false}
+        compareError={false}
+        onOpenChange={vi.fn()}
+        onKeepLocal={vi.fn()}
+        onApplyServer={vi.fn()}
+        onRetryCompare={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("서버 최신 원고에 아직 없는 새 장면이 있어요.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "내 새 장면 유지" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "서버 최신본 적용" })).toBeEnabled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });

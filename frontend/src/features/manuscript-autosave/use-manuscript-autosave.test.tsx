@@ -13,7 +13,7 @@ import type {
 import { projectKeys } from "@/features/project-persistence";
 import { findMockWorkspace } from "@/mocks/data/project-workspaces";
 import { server } from "@/mocks/server";
-import { updateSceneContent } from "@/modules/manuscript";
+import { addScene, updateSceneContent } from "@/modules/manuscript";
 
 import { useManuscriptAutosave } from "./use-manuscript-autosave";
 
@@ -50,6 +50,65 @@ async function flushPromises() {
       await Promise.resolve();
     }
   });
+}
+
+function createServerManuscript(
+  workspace: ProjectWorkspaceResponse,
+  sceneId = "server-only-scene",
+  chapterNumber = 3,
+) {
+  return {
+    ...workspace.manuscript,
+    scenes: [
+      workspace.manuscript.scenes[0],
+      {
+        ...workspace.manuscript.scenes[0],
+        id: sceneId,
+        title: "서버에서 추가된 장면",
+        chapterNumber,
+      },
+    ],
+  };
+}
+
+function installStructuralConflictHandlers({
+  workspace,
+  serverManuscript,
+  saveRequests,
+  resolveSave = true,
+}: {
+  workspace: ProjectWorkspaceResponse;
+  serverManuscript: ProjectWorkspaceResponse["manuscript"];
+  saveRequests: SaveManuscriptRequest[];
+  resolveSave?: boolean;
+}) {
+  server.use(
+    http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+      const body = (await request.json()) as SaveManuscriptRequest;
+      saveRequests.push(body);
+      if (saveRequests.length === 1 || !resolveSave) {
+        return HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        );
+      }
+      return HttpResponse.json({
+        manuscript: body.manuscript,
+        manuscriptRevision: 8,
+        projectActivity: {
+          projectId: workspace.project.id,
+          updatedAt: "2026-07-14T04:00:00Z",
+        },
+      } satisfies SaveManuscriptResponse);
+    }),
+    http.get("/api/projects/:projectId/workspace", () =>
+      HttpResponse.json({
+        ...workspace,
+        manuscript: serverManuscript,
+        manuscriptRevision: 7,
+      }),
+    ),
+  );
 }
 
 describe("useManuscriptAutosave", () => {
@@ -524,6 +583,184 @@ describe("useManuscriptAutosave", () => {
     });
     expect(result.current.status).toBe("saved");
   });
+
+  test("merges a local-only scene onto the refreshed server manuscript", async () => {
+    const workspace = getWorkspace();
+    const localDraft = addScene(workspace.manuscript, "local-new-scene");
+    const serverManuscript = createServerManuscript(workspace);
+    const saveRequests: SaveManuscriptRequest[] = [];
+    installStructuralConflictHandlers({ workspace, serverManuscript, saveRequests });
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() => result.current.updateDraft(localDraft));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+
+    expect(result.current.conflictKind).toBe("scene-structure");
+    await act(async () => result.current.keepLocal());
+    await flushPromises();
+
+    expect(saveRequests[1]?.expectedRevision).toBe(7);
+    expect(saveRequests[1]?.manuscript.scenes.map(({ id }) => id)).toEqual([
+      "silver-garden-scene-1",
+      "server-only-scene",
+      "local-new-scene",
+    ]);
+    expect(result.current.status).toBe("saved");
+  });
+
+  test("applies the refreshed server manuscript for a structural conflict", async () => {
+    const workspace = getWorkspace();
+    const localDraft = addScene(workspace.manuscript, "local-new-scene");
+    const serverManuscript = createServerManuscript(workspace);
+    const saveRequests: SaveManuscriptRequest[] = [];
+    installStructuralConflictHandlers({ workspace, serverManuscript, saveRequests });
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() => result.current.updateDraft(localDraft));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+    act(() => result.current.applyServer());
+
+    expect(result.current.draft.scenes).toEqual(serverManuscript.scenes);
+    expect(result.current.status).toBe("saved");
+  });
+
+  test("refreshes the structural comparison after a repeated revision conflict", async () => {
+    const workspace = getWorkspace();
+    const localDraft = addScene(workspace.manuscript, "local-new-scene");
+    const serverManuscript = createServerManuscript(workspace);
+    const saveRequests: SaveManuscriptRequest[] = [];
+    let workspaceRequestCount = 0;
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        saveRequests.push((await request.json()) as SaveManuscriptRequest);
+        return HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        );
+      }),
+      http.get("/api/projects/:projectId/workspace", () => {
+        workspaceRequestCount += 1;
+        return HttpResponse.json({
+          ...workspace,
+          manuscript: serverManuscript,
+          manuscriptRevision: 6 + workspaceRequestCount,
+        });
+      }),
+    );
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() => result.current.updateDraft(localDraft));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+    await act(async () => result.current.keepLocal());
+    await flushPromises();
+
+    expect(saveRequests).toHaveLength(2);
+    expect(saveRequests[1]?.expectedRevision).toBe(7);
+    expect(workspaceRequestCount).toBe(2);
+    expect(result.current.conflictKind).toBe("scene-structure");
+    expect(result.current.status).toBe("conflict");
+    expect(result.current.isComparingConflict).toBe(false);
+    expect(result.current.draft).toEqual(localDraft);
+  });
+
+  test("preserves the structural draft when the latest workspace cannot be loaded", async () => {
+    const workspace = getWorkspace();
+    const localDraft = addScene(workspace.manuscript, "local-new-scene");
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        ),
+      ),
+      http.get("/api/projects/:projectId/workspace", () =>
+        HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "작업 공간 조회 실패", fieldErrors: [] },
+          { status: 500 },
+        ),
+      ),
+    );
+    const { result } = renderHook(
+      () =>
+        useManuscriptAutosave({
+          manuscript: workspace.manuscript,
+          manuscriptRevision: workspace.manuscriptRevision,
+        }),
+      { wrapper: createWrapper(createTestQueryClient()) },
+    );
+
+    act(() => result.current.updateDraft(localDraft));
+    await act(async () => vi.advanceTimersByTimeAsync(800));
+    await flushPromises();
+
+    expect(result.current.conflictKind).toBe("scene-structure");
+    expect(result.current.isConflictCompareError).toBe(true);
+    expect(result.current.status).toBe("conflict");
+    expect(result.current.draft).toEqual(localDraft);
+  });
+
+  test.each([
+    ["scene id", "local-new-scene", 3],
+    ["chapter number", "server-only-scene", 2],
+  ])(
+    "preserves the local-only scene when the server has a %s collision",
+    async (_, sceneId, chapterNumber) => {
+      const workspace = getWorkspace();
+      const localDraft = addScene(workspace.manuscript, "local-new-scene");
+      const serverManuscript = createServerManuscript(workspace, sceneId, chapterNumber);
+      const saveRequests: SaveManuscriptRequest[] = [];
+      installStructuralConflictHandlers({
+        workspace,
+        serverManuscript,
+        saveRequests,
+        resolveSave: false,
+      });
+      const { result } = renderHook(
+        () =>
+          useManuscriptAutosave({
+            manuscript: workspace.manuscript,
+            manuscriptRevision: workspace.manuscriptRevision,
+          }),
+        { wrapper: createWrapper(createTestQueryClient()) },
+      );
+
+      act(() => result.current.updateDraft(localDraft));
+      await act(async () => vi.advanceTimersByTimeAsync(800));
+      await flushPromises();
+      await act(async () => result.current.keepLocal());
+      await flushPromises();
+
+      expect(result.current.draft.scenes).toContainEqual(
+        expect.objectContaining({ id: "local-new-scene" }),
+      );
+      expect(result.current.status).toBe("conflict");
+      expect(result.current.isConflictResolutionError).toBe(true);
+    },
+  );
 
   test("requests a fresh diff after local resolution meets another conflict", async () => {
     const workspace = getWorkspace();
