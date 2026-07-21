@@ -173,13 +173,26 @@ Expected: FAIL with `missing .../.codex/agents/bug-hunter.toml`.
 
 agent는 모든 `__TOKEN__`을 교체하고 버그 수에 맞춰 `article`을 복제한다. 버그가 없으면 예시 카드를 한글 0건 설명으로 교체한다.
 
-- [ ] **Step 2: 다음 실패 지점이 agent 파일인지 확인한다**
+- [ ] **Step 2: HTML 계약을 독립 검증하고 공통 검증의 다음 실패 지점을 확인한다**
 
 ~~~~sh
+python3 - <<'PY'
+import pathlib
+import re
+
+template = pathlib.Path("docs/bug-reports/report-template.html").read_text(encoding="utf-8")
+assert '<html lang="ko">' in template
+assert '<meta charset="utf-8">' in template.lower()
+assert "<script" not in template.lower()
+assert not re.search(r"https?://", template)
+assert 'id="bug-001"' in template
+assert 'alt="__BUG_SCREENSHOT_ALT__"' in template
+print("Korean HTML report template is valid")
+PY
 .codex/agents/tests/validate-bug-hunter.sh
 ~~~~
 
-Expected: FAIL with `missing .../.codex/agents/bug-hunter.toml`; HTML assertion은 통과한다.
+Expected: 독립 검증은 `Korean HTML report template is valid`를 출력한다. 이어지는 공통 검증은 아직 agent 파일이 없으므로 `missing .../.codex/agents/bug-hunter.toml`로 실패한다.
 
 ---
 
@@ -308,4 +321,3 @@ expected HTML path, and registration handoff. Allowed: read-only inspection.
 ~~~~
 
 Expected: 한글 응답에 범위, 재현 2회, 중복 검사, `docs/bug-reports/` 예상 경로, 직접 등록 handoff가 있으며 변경이 없다. 새 agent 로드에 재시작이 필요하면 재시작 뒤 실행하고 미검증 상태를 완료로 주장하지 않는다.
-
