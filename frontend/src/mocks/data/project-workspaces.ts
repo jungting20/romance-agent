@@ -5,6 +5,7 @@ import type {
   SaveWorldEntriesRequest,
   StoryBibleSnapshot,
 } from "@/app/infrastructure/api/contracts";
+import type { PersistedManuscriptSession } from "@/mocks/data/manuscript-session-store";
 
 export const PROJECT_API_BASE_URL = "/api";
 export const MOCK_NOW = "2026-07-14T03:00:00.000Z";
@@ -141,6 +142,7 @@ function cloneWorkspaces(
 
 let projectWorkspaces = cloneWorkspaces(initialProjectWorkspaces);
 let storyBibleRevisions = createInitialStoryBibleRevisions();
+let manuscriptPersistor: ((session: PersistedManuscriptSession) => void) | undefined;
 
 function createInitialStoryBibleRevisions(): Map<string, number> {
   return new Map(initialProjectWorkspaces.map(({ project }) => [project.id, 1]));
@@ -177,6 +179,54 @@ export function findMockWorkspaceBySceneId(sceneId: string): ProjectWorkspaceRes
 export function addMockWorkspace(workspace: ProjectWorkspaceResponse): void {
   projectWorkspaces.push(structuredClone(workspace));
   storyBibleRevisions.set(workspace.project.id, 1);
+}
+
+export function hydrateMockManuscripts(session: PersistedManuscriptSession | undefined): void {
+  for (const entry of session?.entries ?? []) {
+    const workspaceIndex = projectWorkspaces.findIndex(
+      ({ project }) => project.id === entry.projectId,
+    );
+
+    if (workspaceIndex < 0) {
+      continue;
+    }
+
+    const workspace = projectWorkspaces[workspaceIndex];
+    projectWorkspaces[workspaceIndex] = {
+      ...workspace,
+      project: { ...workspace.project, updatedAt: entry.projectUpdatedAt },
+      manuscript: structuredClone(entry.manuscript),
+      manuscriptRevision: entry.manuscriptRevision,
+    };
+  }
+}
+
+export function setMockManuscriptPersistor(
+  persistor: ((session: PersistedManuscriptSession) => void) | undefined,
+): void {
+  manuscriptPersistor = persistor;
+}
+
+function persistMockManuscripts(): void {
+  if (!manuscriptPersistor) {
+    return;
+  }
+
+  const session: PersistedManuscriptSession = {
+    schemaVersion: 1,
+    entries: projectWorkspaces.map(({ project, manuscript, manuscriptRevision }) => ({
+      projectId: project.id,
+      manuscript: structuredClone(manuscript),
+      manuscriptRevision,
+      projectUpdatedAt: project.updatedAt,
+    })),
+  };
+
+  try {
+    manuscriptPersistor(session);
+  } catch {
+    console.warn("Failed to persist the MSW manuscript session snapshot.");
+  }
 }
 
 export function getMockStoryBibleSnapshot(projectId: string): StoryBibleSnapshot | undefined {
@@ -358,6 +408,7 @@ export function replaceMockWorkspaceAtRevision(
 
   const storedWorkspace = structuredClone(replacement);
   projectWorkspaces[workspaceIndex] = storedWorkspace;
+  persistMockManuscripts();
 
   return { status: "replaced", workspace: structuredClone(storedWorkspace) };
 }
@@ -365,4 +416,5 @@ export function replaceMockWorkspaceAtRevision(
 export function resetProjectWorkspaceMockData(): void {
   projectWorkspaces = cloneWorkspaces(initialProjectWorkspaces);
   storyBibleRevisions = createInitialStoryBibleRevisions();
+  manuscriptPersistor = undefined;
 }

@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import type {
   ApiError,
@@ -11,7 +11,16 @@ import type {
   SaveManuscriptRequest,
   SaveManuscriptResponse,
 } from "@/app/infrastructure/api/contracts";
-import { apiErrors, MOCK_NOW } from "@/mocks/data/project-workspaces";
+import {
+  apiErrors,
+  findMockWorkspace,
+  hydrateMockManuscripts,
+  MOCK_NOW,
+  replaceMockWorkspaceAtRevision,
+  resetProjectWorkspaceMockData,
+  setMockManuscriptPersistor,
+} from "@/mocks/data/project-workspaces";
+import type { PersistedManuscriptSession } from "@/mocks/data/manuscript-session-store";
 import { server } from "@/mocks/server";
 
 const API_ORIGIN = window.location.origin;
@@ -240,6 +249,83 @@ describe("project persistence API handlers", () => {
 
     const loadedAfterConflict = await getSeedWorkspace();
     expect(loadedAfterConflict).toEqual(loadedAfterSave);
+  });
+
+  test("restores a saved manuscript after mock runtime reload", () => {
+    const seedWorkspace = findMockWorkspace("silver-garden")!;
+    const changedWorkspace = structuredClone(seedWorkspace);
+    changedWorkspace.manuscript.scenes[0].content = "새로고침 뒤에도 남는 고유 원고";
+    changedWorkspace.manuscriptRevision = 2;
+    changedWorkspace.project.updatedAt = "2026-07-21T08:00:00.000Z";
+    const persistedSessions: PersistedManuscriptSession[] = [];
+    setMockManuscriptPersistor((session) => persistedSessions.push(session));
+
+    expect(
+      replaceMockWorkspaceAtRevision(seedWorkspace.manuscript.id, 1, changedWorkspace),
+    ).toMatchObject({ status: "replaced" });
+    expect(persistedSessions).toHaveLength(1);
+
+    resetProjectWorkspaceMockData();
+    hydrateMockManuscripts(persistedSessions[0]);
+
+    const restored = findMockWorkspace("silver-garden")!;
+    expect(restored.manuscript.scenes[0].content).toBe("새로고침 뒤에도 남는 고유 원고");
+    expect(restored.manuscriptRevision).toBe(2);
+    expect(restored.project.updatedAt).toBe("2026-07-21T08:00:00.000Z");
+    expect(restored.storyBible).toEqual(seedWorkspace.storyBible);
+    expect(restored.concept).toEqual(seedWorkspace.concept);
+
+    const nextWorkspace = structuredClone(restored);
+    nextWorkspace.manuscript.scenes[0].content += " 다음 편집";
+    nextWorkspace.manuscriptRevision = 3;
+    expect(replaceMockWorkspaceAtRevision(restored.manuscript.id, 2, nextWorkspace)).toMatchObject({
+      status: "replaced",
+      workspace: { manuscriptRevision: 3 },
+    });
+  });
+
+  test("does not persist failed or conflicting manuscript saves", async () => {
+    const persist = vi.fn();
+    setMockManuscriptPersistor(persist);
+    const workspace = await getSeedWorkspace();
+
+    const malformedResponse = await fetch(
+      `${API_ORIGIN}/api/manuscripts/${workspace.manuscript.id}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: "{",
+      },
+    );
+    const conflictingResponse = await fetch(
+      `${API_ORIGIN}/api/manuscripts/${workspace.manuscript.id}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manuscript: workspace.manuscript, expectedRevision: 2 }),
+      },
+    );
+
+    expect(malformedResponse.status).toBe(400);
+    expect(conflictingResponse.status).toBe(409);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  test("keeps a successful manuscript save when session persistence fails", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    setMockManuscriptPersistor(() => {
+      throw new Error("storage unavailable");
+    });
+
+    const saved = await saveSeedSceneContent("저장소 오류와 무관하게 유지되는 원고");
+
+    expect(saved.manuscriptRevision).toBe(2);
+    expect(saved.manuscript.scenes[0].content).toBe("저장소 오류와 무관하게 유지되는 원고");
+    expect(warning).toHaveBeenCalledWith("Failed to persist the MSW manuscript session snapshot.");
+    expect(warning.mock.calls.flat().join(" ")).not.toContain(
+      "저장소 오류와 무관하게 유지되는 원고",
+    );
+    warning.mockRestore();
   });
 
   test("allows exactly one of two concurrent writes at the same revision", async () => {
