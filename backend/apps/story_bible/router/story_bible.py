@@ -50,7 +50,9 @@ def get_story_bible(
     try:
         return _snapshot_response(service.get_story_bible(project_id))
     except StoryBibleNotFoundError:
-        return _error_response(404, "STORY_BIBLE_NOT_FOUND", "세계관 정보를 찾을 수 없습니다.")
+        return _error_response(
+            404, "STORY_BIBLE_NOT_FOUND", "세계관 정보를 찾을 수 없습니다."
+        )
     except StoryBiblePersistenceError:
         return _error_response(500, "INTERNAL_ERROR", "잠시 후 다시 시도해 주세요.")
     except Exception:
@@ -89,7 +91,9 @@ def save_world_entries(
     try:
         return _snapshot_response(service.save_world_entries(project_id, command))
     except StoryBibleNotFoundError:
-        return _error_response(404, "STORY_BIBLE_NOT_FOUND", "세계관 정보를 찾을 수 없습니다.")
+        return _error_response(
+            404, "STORY_BIBLE_NOT_FOUND", "세계관 정보를 찾을 수 없습니다."
+        )
     except StoryBibleRevisionConflictError:
         return _error_response(
             409,
@@ -152,4 +156,6 @@ def _error_response(
         message=message,
         fieldErrors=field_errors,
     )
-    return JSONResponse(status_code=status_code, content=error.model_dump(by_alias=True))
+    return JSONResponse(
+        status_code=status_code, content=error.model_dump(by_alias=True)
+    )

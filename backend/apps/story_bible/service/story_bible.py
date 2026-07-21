@@ -1,18 +1,12 @@
 from apps.story_bible.domain.errors import InvalidDomainValueError
 from apps.story_bible.domain.models import WorldEntry, WorldEntryKind
-from apps.story_bible.service.commands import (
-    FieldError,
-    SaveWorldEntriesCommand,
-)
+from apps.story_bible.service.commands import FieldError, SaveWorldEntriesCommand
 from apps.story_bible.service.errors import (
     InvalidWorldEntriesError,
     StoryBibleRevisionConflictError,
 )
 from apps.story_bible.service.models import StoryBibleSnapshot
-from apps.story_bible.service.ports import (
-    StoryBibleRepository,
-    WorldEntryIdGenerator,
-)
+from apps.story_bible.service.ports import StoryBibleRepository, WorldEntryIdGenerator
 
 _FIELD_MESSAGES = {
     "id": "수정할 세계관 항목을 선택해 주세요.",
@@ -46,8 +40,12 @@ class StoryBibleService:
             raise InvalidWorldEntriesError(
                 "수정하거나 추가할 세계관 항목이 필요합니다.",
                 (
-                    FieldError("updates", "수정 또는 추가 항목을 한 개 이상 입력해 주세요."),
-                    FieldError("additions", "수정 또는 추가 항목을 한 개 이상 입력해 주세요."),
+                    FieldError(
+                        "updates", "수정 또는 추가 항목을 한 개 이상 입력해 주세요."
+                    ),
+                    FieldError(
+                        "additions", "수정 또는 추가 항목을 한 개 이상 입력해 주세요."
+                    ),
                 ),
             )
 
@@ -69,7 +67,9 @@ class StoryBibleService:
                 validated_updates.append(validated)
             if update.id in seen_update_ids:
                 field_errors.append(
-                    FieldError(f"updates[{index}].id", "수정 항목 식별자가 중복되었습니다.")
+                    FieldError(
+                        f"updates[{index}].id", "수정 항목 식별자가 중복되었습니다."
+                    )
                 )
             elif update.id not in existing_ids:
                 field_errors.append(
@@ -120,7 +120,9 @@ class StoryBibleService:
             updates=tuple(validated_updates),
             additions=tuple(validated_additions),
         )
-        return self._repository.replace(project_id, command.expected_revision, replacement)
+        return self._repository.replace(
+            project_id, command.expected_revision, replacement
+        )
 
     def _next_unique_id(self, project_id: str, used_ids: set[str]) -> str:
         while (candidate := self._world_entry_id_factory(project_id)) in used_ids:

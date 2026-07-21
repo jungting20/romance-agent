@@ -33,7 +33,9 @@ class FileStoryBibleRepository:
     ) -> StoryBibleSnapshot:
         path = self._story_bible_path(project_id)
         if story_bible.project_id != project_id:
-            raise StoryBiblePersistenceError("Story Bible project does not match its path")
+            raise StoryBiblePersistenceError(
+                "Story Bible project does not match its path"
+            )
         if not path.parent.is_dir():
             raise StoryBibleNotFoundError
 
@@ -58,7 +60,9 @@ class FileStoryBibleRepository:
             or not candidate.is_relative_to(self._data_root)
             or not candidate.is_relative_to(projects_root)
         ):
-            raise StoryBiblePersistenceError("Project path escapes the configured data root")
+            raise StoryBiblePersistenceError(
+                "Project path escapes the configured data root"
+            )
         return candidate
 
     @contextmanager
@@ -158,14 +162,18 @@ def _encode_snapshot(snapshot: StoryBibleSnapshot) -> dict[str, Any]:
 
 
 def _decode_snapshot(document: object, project_id: str) -> StoryBibleSnapshot:
-    envelope = _object_with_keys(document, {"schemaVersion", "storyBibleRevision", "storyBible"})
+    envelope = _object_with_keys(
+        document, {"schemaVersion", "storyBibleRevision", "storyBible"}
+    )
     if _integer(envelope["schemaVersion"]) != _SCHEMA_VERSION:
         raise StoryBiblePersistenceError("Unsupported Story Bible schema version")
     revision = _integer(envelope["storyBibleRevision"])
     if revision < 1:
         raise StoryBiblePersistenceError("Story Bible revision must be positive")
 
-    payload = _object_with_keys(envelope["storyBible"], {"projectId", "characters", "worldEntries"})
+    payload = _object_with_keys(
+        envelope["storyBible"], {"projectId", "characters", "worldEntries"}
+    )
     stored_project_id = _nonempty_string(payload["projectId"])
     if stored_project_id != project_id:
         raise StoryBiblePersistenceError("Story Bible project does not match its path")
