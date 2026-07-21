@@ -1,0 +1,4 @@
+interface:
+  display_name: "빠른 기능 티켓 준비"
+  short_description: "간단한 작업을 FAST 모드로 정리해 즉시 티켓 등록"
+  default_prompt: "$prepare-feature-ticket-fast 간단한 수정 작업을 바로 티켓으로 등록해줘."
