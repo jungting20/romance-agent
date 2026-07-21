@@ -131,6 +131,27 @@ Subagents are temporary specialists, not sources of persistent project truth.
 They must reload the relevant repository instructions and domain contracts for
 each task.
 
+## Browser Bug-Hunting Subagent
+
+When the user requests browser-based defect discovery for a bounded screen or
+flow, use the project-scoped `bug-hunter` agent defined in
+`.codex/agents/bug-hunter.toml`. Do not dispatch it for an application-wide
+audit or while an implementation agent is modifying the same screen boundary.
+
+Every assignment must state the target route, user flow, starting state and
+data, authentication state, viewport sizes, applicable requirements or
+acceptance criteria, allowed server and verification commands, excluded
+actions, and data-mutation limits.
+
+The `bug-hunter` owns browser exploration, two clean-state reproductions,
+duplicate checks, bug-specific spec and plan creation, direct `ticket-worker`
+registration, and one Korean HTML report under `docs/bug-reports/`. It may
+commit only newly created bug documents, report, and evidence assets.
+
+The main agent reviews the report and every registered ticket before assigning
+implementation. Direct registration does not transfer integration, review, or
+final-verification responsibility away from the main agent.
+
 ## Shared Contracts and Domain Boundaries
 
 - Use the names and meanings defined in `docs/domains/` consistently in code,
