@@ -93,16 +93,32 @@ export function ManuscriptConflictDialog({
         </DialogHeader>
 
         <div className="min-h-48 overflow-auto px-5">
-          {kind === "scene-structure" && (
-            <div className="grid min-h-48 place-items-center text-center">
-              <div>
-                <p className="font-medium">서버 최신 원고에 아직 없는 새 장면이 있어요.</p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  현재 로컬 초안은 보관하고 있습니다.
-                </p>
+          {kind === "scene-structure" &&
+            (isComparing ? (
+              <p role="status" className="grid min-h-48 place-items-center text-muted-foreground">
+                서버 최신 원고를 불러오는 중이에요.
+              </p>
+            ) : compareError ? (
+              <div className="grid min-h-48 place-items-center text-center">
+                <div>
+                  <p role="alert" className="text-destructive">
+                    서버 최신 원고를 불러오지 못했어요. 현재 로컬 초안은 그대로 보관하고 있어요.
+                  </p>
+                  <Button type="button" variant="outline" className="mt-4" onClick={onRetryCompare}>
+                    서버 최신 원고 다시 불러오기
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="grid min-h-48 place-items-center text-center">
+                <div>
+                  <p className="font-medium">서버 최신 원고에 아직 없는 새 장면이 있어요.</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    현재 로컬 초안은 보관하고 있습니다.
+                  </p>
+                </div>
+              </div>
+            ))}
           {kind === "scene-content" &&
             (isComparing && !comparison ? (
               <p role="status" className="grid min-h-48 place-items-center text-muted-foreground">
