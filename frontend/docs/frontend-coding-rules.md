@@ -281,7 +281,7 @@ conflict before editing.
   `src/pages/writing-workspace/writing-workspace-page.tsx`. Its accepted
   baseline is two infrastructure imports
   (`@/app/infrastructure/api/api-client` and
-  `@/app/infrastructure/api/contracts`), four `useState` calls, four `useRef`
+  `@/app/infrastructure/api/contracts`), three `useState` calls, four `useRef`
   calls, and one non-`const` type assertion. Remove the exception when the full
   writing-workspace page has been extracted into the appropriate feature and
   presentation owners.
