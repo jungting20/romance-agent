@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>집필 에디터 자동 저장 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    code { overflow-wrap:anywhere; } li + li { margin-top:.45rem; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr)); gap:1rem; margin-top:1rem; }
+    figure { margin:0; } figcaption { margin-top:.5rem; color:#5c5049; }
+    .evidence { width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <p>브라우저 버그 탐색 보고서</p>
+    <h1>집필 에디터 자동 저장과 새로고침 복원</h1>
+    <p>생성 시각: <time datetime="2026-07-21T16:06:07+09:00">2026년 7월 21일 16:06 (KST)</time></p>
+  </header>
+
+  <section class="panel">
+    <h2>탐색 범위</h2>
+    <p><code>silver-garden</code>의 활성 장면 <code>silver-garden-scene-1</code>에서 원고 본문을 키보드로 편집하고 선택 범위를 교체한 뒤, 800ms 유휴 자동 저장의 상태와 PUT 요청, 실패·회복, reload 복원, 반응형 및 스크롤 경계를 실제 브라우저로 확인했다.</p>
+    <h3>제외 범위</h3>
+    <p>세계관 수정·추가, AI 제안 생성·적용, 프로젝트 생성, 인증, 백엔드 직접 API, 앱 전체 감사와 제품 코드 수정은 수행하지 않았다. 보조 패널은 원고 흐름의 포커스와 반응형 동작 확인에만 열고 닫았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>실행 환경</h2>
+    <dl>
+      <dt>대상 라우트</dt><dd><code>http://127.0.0.1:5174/projects/silver-garden/write</code> (5173 사용 중으로 Vite가 5174를 선택)</dd>
+      <dt>시작 상태</dt><dd>인증 없음, 개발 모드 MSW seed, 원고 <code>silver-garden-manuscript</code>, 활성 장면 <code>silver-garden-scene-1</code>, revision 1</dd>
+      <dt>뷰포트</dt><dd>1440x900, 1024x600, 390x844</dd>
+      <dt>실행 기준</dt><dd><code>4aa49494a168029fbfdbdb7af632845efb1abfad</code> (<code>main</code>)</dd>
+      <dt>브라우저 도구</dt><dd><code>agent-browser 0.27.0</code>, Chrome/CDP. 전용 Playwright MCP의 <code>planner_setup_page</code>는 이 세션에 노출되지 않아 CLI로 대체했다.</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>결과 요약</h2>
+    <div class="grid">
+      <div class="metric">확정<strong>1</strong></div>
+      <div class="metric">등록<strong>1</strong></div>
+      <div class="metric">중복<strong>1</strong></div>
+      <div class="metric">제외<strong>0</strong></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>등록한 버그</h2>
+    <article class="bug-card" id="bug-001">
+      <p><span class="severity severity-high">심각도 High</span></p>
+      <h3>자동 저장 성공 뒤 새로고침하면 원고가 seed 본문으로 되돌아간다</h3>
+      <dl>
+        <dt>티켓</dt><dd><code>#2</code> · <code>ready</code></dd>
+        <dt>재현 절차</dt>
+        <dd><ol>
+          <li>새 browser context 또는 seed 상태에서 대상 route를 연다.</li>
+          <li><code>원고 본문</code> 끝에 고유 표식 <code>BUGHUNT-RESTORE-B-20260721</code>을 키보드로 입력한다.</li>
+          <li><code>편집 중</code>을 확인하고 800ms 이상 기다려 PUT 200과 <code>자동 저장됨</code>을 확인한다.</li>
+          <li>같은 탭에서 전체 페이지를 reload한다.</li>
+          <li>원고 본문에서 표식을 찾고 workspace GET 응답의 revision을 확인한다.</li>
+        </ol></dd>
+        <dt>기대 결과</dt><dd>저장 성공한 표식과 revision 2가 reload 뒤 workspace 조회로 복원되어야 한다.</dd>
+        <dt>실제 결과</dt><dd>표식이 사라지고 최초 한국어 seed 본문과 revision 1이 다시 표시된다. 화면은 데이터 손실을 알리지 않은 채 <code>자동 저장됨</code>을 표시한다.</dd>
+        <dt>2회 clean-state 증거</dt><dd>1차는 <code>BUGHUNT-NORMAL-A-20260721</code>, 2차는 <code>BUGHUNT-RESTORE-B-20260721</code>을 각각 새 seed 상태에서 입력했다. 두 실행 모두 PUT 200과 저장 완료를 확인한 뒤 reload에서 표식이 사라졌다.</dd>
+        <dt>사용자 영향</dt><dd>성공 상태를 신뢰한 집필자가 새로고침하면 편집 내용을 경고 없이 잃는다. 핵심 원고 저장 신뢰성을 깨므로 High로 분류했다.</dd>
+        <dt>관련 위치</dt><dd><code>frontend/src/mocks/data/project-workspaces.ts</code>의 module-memory <code>projectWorkspaces</code> 초기화. reload 시 module이 seed를 다시 복제하는 것이 확인된 원인이다.</dd>
+        <dt>문서</dt><dd><a href="../superpowers/specs/2026-07-21-writing-editor-reload-restoration-design.md">설계</a> · <a href="../superpowers/plans/2026-07-21-writing-editor-reload-restoration.md">구현 계획</a></dd>
+      </dl>
+      <div class="evidence-grid">
+        <figure>
+          <img class="evidence" src="evidence/2026-07-21-writing-editor-restore-before-reload.png" alt="고유 표식 입력 후 자동 저장됨 상태인 원고 화면">
+          <figcaption>2차 실행에서 고유 표식 입력 후 PUT 200과 자동 저장 완료를 확인한 화면.</figcaption>
+        </figure>
+        <figure>
+          <img class="evidence" src="evidence/2026-07-21-writing-editor-restore-after-reload.png" alt="새로고침 후 고유 표식이 사라지고 seed 본문이 표시된 원고 화면">
+          <figcaption>같은 탭을 새로고침하자 저장 표식 없이 revision 1의 seed 본문으로 돌아온 화면.</figcaption>
+        </figure>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel">
+    <h2>중복된 관찰</h2>
+    <p><strong>ticket-worker #1 집필 에디터 스크롤 경계 수정과 중복:</strong> 1024x600 clean reload 2회 모두 기본 본문에서 <code>document.documentElement.scrollHeight=652</code>, viewport 높이 600을 기록했다. 문서를 아래로 52px 스크롤하면 header top이 -52px로 이동했다. 80개 문단의 긴 고유 원고에서는 document scroll height가 6,046px까지 늘었다. 이는 #1 설계의 “문서 전체가 아니라 중앙 에디터만 스크롤” 요구와 같은 결함이므로 새 티켓을 만들지 않았다.</p>
+    <figure>
+      <img class="evidence" src="evidence/2026-07-21-writing-editor-duplicate-scroll.png" alt="1024x600에서 문서 전체 스크롤로 헤더가 위로 밀린 집필 화면">
+      <figcaption>1024x600 두 번째 clean reload에서 문서 전체를 52px 스크롤한 중복 증거.</figcaption>
+    </figure>
+  </section>
+
+  <section class="panel">
+    <h2>제외한 관찰</h2>
+    <p>확정 기준에 미달한 결함 후보는 없었다. 인위적으로 manuscript PUT을 실패시킨 경우에는 <code>저장 실패</code> alert와 이름 있는 <code>원고 저장 다시 시도</code> 버튼이 나타났고, 네트워크 회복 뒤 재시도는 최신 원고를 보존하며 성공했다. 선택 범위 교체, 빈 입력 저장, 저장 중 추가 편집 직렬화, 모바일 sheet의 Escape 닫기 역시 요구 범위에서 정상 동작하여 버그로 등록하지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>수행한 검사</h2>
+    <ul>
+      <li>정상 편집: 즉시 <code>편집 중</code>, 800ms 전 PUT 없음, 이후 PUT 200과 <code>자동 저장됨</code>.</li>
+      <li>지연 저장: <code>저장 중</code>을 확인했고, 진행 중 추가 편집은 첫 요청 body와 분리되어 두 번째 revision 저장으로 직렬화됨.</li>
+      <li>실패·회복: fetch 실패에서 원고 유지, alert 및 labelled retry 노출, 회복 후 저장 성공.</li>
+      <li>선택 범위: 본문 0..2의 <code>비가</code>를 <code>선택</code>으로 키보드 교체한 뒤 자동 저장 성공.</li>
+      <li>반응형: 390x844에서 가로/문서 세로 overflow 없음, context sheet가 열리고 Escape로 닫힘. 1440x900에서 문서 높이 900 유지.</li>
+      <li>스크롤: 1024x600에서 기존 #1과 같은 문서 overflow를 clean reload 2회 확인하고, 80개 문단의 긴 원고에서 document 높이 6,046px를 기록.</li>
+      <li>콘솔: Vite/MSW 정보 로그와 요청 로그 외 제품 오류 없음.</li>
+      <li><code>zellij-agent ticket-worker list --json</code>: 기존 ready 티켓 #1과 중복 비교.</li>
+      <li><code>.codex/agents/tests/validate-bug-hunter.sh</code> 통과.</li>
+      <li>Vitest 전체 28개 파일, 235개 테스트 통과. jsdom의 기존 <code>Window.scrollTo()</code> 미구현 진단만 출력됨.</li>
+      <li><code>mise exec -- pnpm check</code> 통과: format, lint, typecheck, test 모두 성공.</li>
+      <li><code>mise exec -- pnpm build</code> 통과: 2,087 modules transformed.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>제약 및 미확인 항목</h2>
+    <p>개발 모드 MSW만 사용했으며 실제 backend persistence와 충돌 modal은 이번 흐름에서 검증하지 않았다. 5173의 기존 프로세스는 건드리지 않고 별도 5174 서버를 사용했다. 실제 OS 보조기술의 음성 출력은 확인하지 않았고 DOM role·accessible name·focus 이동으로 점검했다. 제품 코드와 기존 문서는 수정하지 않았다.</p>
+  </section>
+</main>
+</body>
+</html>
