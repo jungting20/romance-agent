@@ -91,9 +91,10 @@ export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
 
       try {
         if (kind === "scene-structure") {
-          const latest = await queryClient.fetchQuery(
-            projectWorkspaceQueryOptions(local.projectId),
-          );
+          const latest = await queryClient.fetchQuery({
+            ...projectWorkspaceQueryOptions(local.projectId),
+            staleTime: 0,
+          });
           if (
             comparisonRequestRef.current !== requestId ||
             host.getManuscriptGeneration() !== manuscriptGeneration

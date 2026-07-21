@@ -648,11 +648,22 @@ describe("useManuscriptAutosave", () => {
     let workspaceRequestCount = 0;
     server.use(
       http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
-        saveRequests.push((await request.json()) as SaveManuscriptRequest);
-        return HttpResponse.json(
-          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
-          { status: 409 },
-        );
+        const body = (await request.json()) as SaveManuscriptRequest;
+        saveRequests.push(body);
+        if (saveRequests.length < 3) {
+          return HttpResponse.json(
+            { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+            { status: 409 },
+          );
+        }
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 9,
+          projectActivity: {
+            projectId: workspace.project.id,
+            updatedAt: "2026-07-14T04:00:00Z",
+          },
+        } satisfies SaveManuscriptResponse);
       }),
       http.get("/api/projects/:projectId/workspace", () => {
         workspaceRequestCount += 1;
@@ -663,13 +674,20 @@ describe("useManuscriptAutosave", () => {
         });
       }),
     );
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: 30_000 },
+        mutations: { retry: false },
+      },
+    });
+    queryClient.setQueryData(projectKeys.workspace(workspace.project.id), workspace);
     const { result } = renderHook(
       () =>
         useManuscriptAutosave({
           manuscript: workspace.manuscript,
           manuscriptRevision: workspace.manuscriptRevision,
         }),
-      { wrapper: createWrapper(createTestQueryClient()) },
+      { wrapper: createWrapper(queryClient) },
     );
 
     act(() => result.current.updateDraft(localDraft));
@@ -677,14 +695,21 @@ describe("useManuscriptAutosave", () => {
     await flushPromises();
     await act(async () => result.current.keepLocal());
     await flushPromises();
+    await act(async () => result.current.keepLocal());
+    await flushPromises();
 
-    expect(saveRequests).toHaveLength(2);
+    expect(saveRequests).toHaveLength(3);
     expect(saveRequests[1]?.expectedRevision).toBe(7);
+    expect(saveRequests[2]?.expectedRevision).toBe(8);
     expect(workspaceRequestCount).toBe(2);
-    expect(result.current.conflictKind).toBe("scene-structure");
-    expect(result.current.status).toBe("conflict");
+    expect(result.current.conflictKind).toBeNull();
+    expect(result.current.status).toBe("saved");
     expect(result.current.isComparingConflict).toBe(false);
-    expect(result.current.draft).toEqual(localDraft);
+    expect(result.current.draft.scenes.map(({ id }) => id)).toEqual([
+      "silver-garden-scene-1",
+      "server-only-scene",
+      "local-new-scene",
+    ]);
   });
 
   test("preserves the structural draft when the latest workspace cannot be loaded", async () => {
