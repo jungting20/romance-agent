@@ -170,15 +170,15 @@ git commit -m "fix(frontend): persist mock manuscript revisions"
 
 **Files:**
 - Modify: `frontend/src/mocks/enable-mocking.ts:1-9`
-- Create: `frontend/src/mocks/enable-mocking.test.ts`
+- Modify: `frontend/src/mocks/enable-mocking.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1의 load/save adapter와 Task 2의 hydrate/persistor API
 - Produces: development/MSW 활성 시에만 reload-surviving mock manuscript session
 
-- [ ] **Step 1: bootstrap 경계 테스트를 작성한다**
+- [ ] **Step 1: 기존 bootstrap 경계 테스트를 확장한다**
 
-MSW 활성 개발 분기에서 worker 시작 전에 storage snapshot을 hydrate하고 persistor를 연결하는 순서를 검증한다. `VITE_ENABLE_MSW=false` 또는 production 분기는 `sessionStorage`를 읽거나 쓰지 않아야 한다.
+기존 development worker 시작과 명시적 비활성화 테스트를 보존하면서, MSW 활성 개발 분기에서 worker 시작 전에 storage snapshot을 hydrate하고 persistor를 연결하는 순서를 검증한다. `VITE_ENABLE_MSW=false` 또는 production 분기는 `sessionStorage`를 읽거나 쓰지 않아야 한다.
 
 - [ ] **Step 2: 현재 bootstrap에서 실패하는지 확인한다**
 
