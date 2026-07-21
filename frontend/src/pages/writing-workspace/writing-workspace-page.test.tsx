@@ -852,7 +852,8 @@ describe("WritingWorkspacePage", () => {
     );
     expect(screen.getByRole("heading", { name: "제목 없는 장면" })).toBeInTheDocument();
     expect(screen.getByText("2장 · 제목 없는 장면")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "원고 본문" })).toHaveFocus();
+    const editor = screen.getByRole("textbox", { name: "원고 본문" });
+    await waitFor(() => expect(editor).toHaveFocus());
     expect(screen.getByText("2장 장면을 추가했어요")).toBeInTheDocument();
     await waitFor(() => expect(saveRequests[0]?.manuscript.scenes).toHaveLength(2));
 
