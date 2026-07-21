@@ -89,37 +89,42 @@ describe("useManuscriptSceneNavigation", () => {
     expect(closeContext).not.toHaveBeenCalled();
   });
 
-  test("업데이터가 지연되거나 재시도되어도 장면 ID는 한 번만 생성한다", () => {
+  test("업데이터가 더 최신 원고에 적용되면 실제 추가된 장 번호를 안내한다", () => {
     const initialManuscript = addScene(createInitialManuscript("project-1"), "scene-2");
+    const newerManuscript = addScene(initialManuscript, "intervening-scene");
     const createSceneId = vi.fn(() => "scene-3");
     let capturedUpdater: ((current: Manuscript) => Manuscript) | undefined;
     const updateDraft = vi.fn((update: DraftUpdate) => {
       if (typeof update === "function") capturedUpdater = update;
     });
 
-    const { result } = renderHook(() =>
-      useManuscriptSceneNavigation({
-        manuscript: initialManuscript,
-        updateDraft,
-        contextIsInline: true,
-        onCloseContext: vi.fn(),
-        createSceneId,
-      }),
+    const { result, rerender } = renderHook(
+      ({ manuscript }) =>
+        useManuscriptSceneNavigation({
+          manuscript,
+          updateDraft,
+          contextIsInline: true,
+          onCloseContext: vi.fn(),
+          createSceneId,
+        }),
+      { initialProps: { manuscript: initialManuscript } },
     );
 
     act(() => result.current.addNewScene());
 
     expect(createSceneId).toHaveBeenCalledOnce();
-    expect(result.current.announcement).toBe("3장 장면을 추가했어요");
     expect(capturedUpdater).toBeTypeOf("function");
     if (!capturedUpdater) throw new Error("기대한 원고 업데이터가 없습니다.");
 
-    const firstResult = capturedUpdater(initialManuscript);
-    const retriedResult = capturedUpdater(initialManuscript);
+    const firstResult = capturedUpdater(newerManuscript);
+    const retriedResult = capturedUpdater(newerManuscript);
+
+    rerender({ manuscript: firstResult });
 
     expect(createSceneId).toHaveBeenCalledOnce();
     expect(firstResult).toEqual(retriedResult);
-    expect(firstResult.scenes).toHaveLength(3);
+    expect(firstResult.scenes).toHaveLength(4);
     expect(firstResult.activeSceneId).toBe("scene-3");
+    expect(result.current.announcement).toBe("4장 장면을 추가했어요");
   });
 });

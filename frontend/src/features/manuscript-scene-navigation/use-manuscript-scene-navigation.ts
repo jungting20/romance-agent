@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { addScene, selectScene, type Manuscript, type TextRange } from "@/modules/manuscript";
 
@@ -22,7 +22,19 @@ export function useManuscriptSceneNavigation({
   const [selection, setSelection] = useState<TextRange | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const pendingSceneIdRef = useRef<string | null>(null);
   const activeScene = manuscript.scenes.find(({ id }) => id === manuscript.activeSceneId);
+
+  useEffect(() => {
+    const pendingSceneId = pendingSceneIdRef.current;
+    if (!pendingSceneId) return;
+
+    const addedScene = manuscript.scenes.find(({ id }) => id === pendingSceneId);
+    if (!addedScene) return;
+
+    pendingSceneIdRef.current = null;
+    setAnnouncement(`${addedScene.chapterNumber}장 장면을 추가했어요`);
+  }, [manuscript]);
 
   const finishNavigation = () => {
     setSelection(null);
@@ -32,9 +44,8 @@ export function useManuscriptSceneNavigation({
 
   const addNewScene = () => {
     const sceneId = createSceneId(manuscript);
-    const chapterNumber = Math.max(...manuscript.scenes.map((scene) => scene.chapterNumber)) + 1;
+    pendingSceneIdRef.current = sceneId;
     updateDraft((current) => addScene(current, sceneId));
-    setAnnouncement(`${chapterNumber}장 장면을 추가했어요`);
     finishNavigation();
   };
 
