@@ -5,9 +5,12 @@ description = "FastAPI backend for Romance Agent"
 requires-python = ">=3.13,<3.14"
 dependencies = [
   "fastapi>=0.116,<1",
-  "pydantic-ai>=2.9.1,<3",
+  "narrative-analysis-agent",
   "uvicorn[standard]>=0.35,<1",
 ]
+
+[tool.uv.sources]
+narrative-analysis-agent = { path = "../llm-agent" }
 
 [dependency-groups]
 dev = [

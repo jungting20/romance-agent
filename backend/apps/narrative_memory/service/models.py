@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-CHUNK_ANALYSIS_SCHEMA_VERSION = "chunk-analysis-v1"
 SCENE_SNAPSHOT_SCHEMA_VERSION = "scene-relationship-snapshot-v1"
 PROJECT_SNAPSHOT_SCHEMA_VERSION = "project-relationship-snapshot-v1"
 
@@ -81,23 +80,6 @@ class LocationEventCandidate:
     scene_sequence: int
     confidence: float
     evidence: tuple[Evidence, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class ChunkAnalysis:
-    schema_version: str
-    chunk_id: str
-    chunk_ordinal: int
-    chunk_start: int
-    chunk_end: int
-    source_text: str
-    scene_id: str
-    scene_revision: int
-    summary: str
-    entities: tuple[EntityCandidate, ...]
-    places: tuple[PlaceCandidate, ...]
-    relationship_events: tuple[RelationshipEventCandidate, ...]
-    location_events: tuple[LocationEventCandidate, ...]
 
 
 @dataclass(frozen=True, slots=True)
