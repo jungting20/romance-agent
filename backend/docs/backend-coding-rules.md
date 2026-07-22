@@ -116,17 +116,17 @@ verification, and handoff workflows. If the documents conflict, follow
 - Compose and invoke Narrative Memory analysis only through the public
   `NarrativeAnalysisAgent.analyze_scene()` facade and its public contracts.
   Backend code must not import provider SDKs, Pydantic AI, or the package's
-  extraction, prompt, or audit internals.
+  model-call or prompt internals.
 - Keep the explicit backend application use case dependent on a narrow protocol
   containing only the public request/result method. Construct the public request
-  there, translate its snapshot exactly once at the existing result boundary,
-  and convert `NarrativeAnalysisError` into a sanitized application error while
-  preserving only its public `run_id` context and suppressing its cause.
-- Backend owns translation of the returned scene snapshot, scene-to-project
-  merge policy, and project-snapshot persistence. It must not take ownership of
-  model-provider selection, prompt storage, or agent-audit storage.
-- The provider, prompt, audit, structured-extraction, and deterministic
-  network-free test rules are owned by
+  there, return the chunk-by-chunk `SceneAnalysis` unchanged, and convert
+  `NarrativeAnalysisError` into a sanitized application error with its cause
+  suppressed.
+- Backend independently owns scene-to-project merge policy and project-snapshot
+  persistence. A simple agent result must not be translated, merged, or stored
+  automatically.
+- The provider, prompt, structured-extraction, and deterministic network-free
+  test rules are owned by
   [`llm-agent/docs/llm-agent-coding-rules.md`](../../llm-agent/docs/llm-agent-coding-rules.md).
 
 ## Testing Rules
