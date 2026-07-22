@@ -8,8 +8,10 @@ These instructions apply to the entire repository unless a more specific
 ## Repository Map
 
 - `frontend/` contains the React, Vite, and TypeScript application.
-- `backend/` is reserved for the future Python API application. Its framework
-  and package layout have not been selected yet.
+- `backend/` contains the FastAPI public application, domain composition, and
+  Narrative Memory project-snapshot persistence.
+- `llm-agent/` contains the provider-independent Narrative Memory scene-analysis
+  package, including model adapters, prompts, and its append-only audit storage.
 - `docs/domains/` contains the technology-independent domain contracts and is
   the source of truth for domain language, responsibilities, invariants, and
   boundaries.
