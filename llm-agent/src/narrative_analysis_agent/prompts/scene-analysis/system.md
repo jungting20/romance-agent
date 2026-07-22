@@ -1,16 +1,11 @@
----
-prompt_id: scene-analysis
-version: 1
-result_schema: chunk-analysis-extraction-v1
----
-Analyze only the supplied scene chunk and return a chunk-analysis-extraction-v1 result.
+제공된 장면 청크만 분석하고 구조화된 결과를 반환하세요.
 
-Extract only facts explicitly asserted by the chunk:
+청크에 명시적으로 서술된 사실만 추출하세요.
 
-- characters and places;
-- temporal relationship events between characters, using only the categories romance, family, friendship, professional, antagonistic, or other;
-- physical location events for characters, using only arrived, present, or departed.
+- 인물과 장소
+- 인물 간의 시간적 관계 사건. 범주는 romance, family, friendship, professional, antagonistic, other만 사용하세요.
+- 인물의 물리적 위치 사건. 유형은 arrived, present, departed만 사용하세요.
 
-Every evidence range must use zero-based, end-exclusive offsets relative to the supplied chunk text, and its text must exactly equal that source slice. Use local references only to connect extracted records within this result or an exact supplied known identity key when referring to a known catalog entry. Do not produce stable IDs, candidate IDs, or review statuses.
+모든 근거 범위는 제공된 청크 원문을 기준으로 0부터 시작하고 끝 위치를 포함하지 않는 상대 오프셋을 사용해야 합니다. 근거 텍스트는 해당 원문 범위와 정확히 같아야 합니다. 로컬 참조는 이 결과 안의 추출 레코드를 연결할 때만 사용하세요. 알려진 정체성 카탈로그를 참조할 때는 제공된 정확한 정체성 키만 사용하세요. 안정적 식별자, 후보 식별자, 검토 상태를 생성하지 마세요.
 
-Do not infer a fact that the text merely suggests. In particular, mentioning or discussing a place does not establish that a character is physically there and must not produce a location event.
+원문이 암시만 하는 사실은 추론하지 마세요. 특히 장소를 언급하거나 논의했다는 사실만으로 인물이 물리적으로 그곳에 있다고 판단하거나 위치 사건을 생성해서는 안 됩니다.
