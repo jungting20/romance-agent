@@ -1,7 +1,9 @@
 import asyncio
 import json
+import sqlite3
 import traceback
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +31,7 @@ from narrative_analysis_agent.audit.ports import (
     RunStarted,
     RunSucceeded,
 )
+from narrative_analysis_agent.audit.sqlite import SQLiteAgentAudit
 from narrative_analysis_agent.extraction.agent import (
     AgentUsage,
     ChunkAnalysisCall,
@@ -554,6 +557,25 @@ class AttemptSuccessTerminalAudit(RecordingAudit):
         super().append_attempt_event(event)
 
 
+class PersistThenRaiseAudit:
+    def __init__(self, delegate: SQLiteAgentAudit) -> None:
+        self.delegate = delegate
+        self.terminal_append_calls: list[type[AttemptEvent]] = []
+
+    def register_prompt(self, prompt: PromptDefinition) -> None:
+        self.delegate.register_prompt(prompt)
+
+    def append_run_event(self, event: RunEvent) -> None:
+        self.delegate.append_run_event(event)
+
+    def append_attempt_event(self, event: AttemptEvent) -> None:
+        if isinstance(event, (AttemptSucceeded, AttemptFailed)):
+            self.terminal_append_calls.append(type(event))
+        self.delegate.append_attempt_event(event)
+        if isinstance(event, AttemptSucceeded):
+            raise RuntimeError("SECRET_SYSTEM_PROMPT SECRET_RESPONSE_BODY")
+
+
 @pytest.mark.parametrize("fail_fallback", [False, True])
 def test_attempt_success_audit_failure_uses_one_best_effort_failure_fallback(
     fail_fallback: bool,
@@ -569,6 +591,58 @@ def test_attempt_success_audit_failure_uses_one_best_effort_failure_fallback(
     assert audit.terminal_append_calls == [AttemptSucceeded, AttemptFailed]
     assert isinstance(audit.events[-1], RunFailed)
     formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert "SECRET_SYSTEM_PROMPT" not in formatted
+    assert "SECRET_RESPONSE_BODY" not in formatted
+
+
+def test_persisted_attempt_success_rejects_fallback_terminal_event(tmp_path: Path) -> None:
+    path = tmp_path / "agent-audit.sqlite3"
+    stored_audit = SQLiteAgentAudit(path)
+    stored_audit.initialize()
+    audit = PersistThenRaiseAudit(stored_audit)
+    analyzer = ScriptedAnalyzer(
+        [_result(SceneChunkExtraction("result"), b'[{"content":"SECRET_RESPONSE_BODY"}]')]
+    )
+    registry = StubPromptRegistry()
+    ticks = iter((1.0, 1.125))
+    orchestrator = SceneAnalysisOrchestrator(
+        analyzer=analyzer,
+        prompt_registry=registry,
+        audit=audit,
+        run_id_factory=lambda: "run-persisted-terminal",
+        clock=lambda: NOW,
+        monotonic=lambda: next(ticks),
+    )
+
+    with pytest.raises(AnalysisAuditError) as captured:
+        asyncio.run(
+            orchestrator.analyze_scene(SceneAnalysisRequest("project", "scene", 0, 0, "text"))
+        )
+
+    assert audit.terminal_append_calls == [AttemptSucceeded, AttemptFailed]
+    with sqlite3.connect(path) as connection:
+        attempt_types = connection.execute(
+            "SELECT event_type FROM attempt_events ORDER BY event_sequence"
+        ).fetchall()
+        run_types = connection.execute(
+            "SELECT event_type FROM run_events ORDER BY event_sequence"
+        ).fetchall()
+        terminal_count = connection.execute(
+            """
+            SELECT COUNT(*) FROM attempt_events
+            WHERE run_id = 'run-persisted-terminal'
+              AND chunk_id = 'scene:r0:0000'
+              AND attempt_number = 1
+              AND event_type IN ('attempt_succeeded', 'attempt_failed')
+            """
+        ).fetchone()
+    assert attempt_types == [("attempt_started",), ("attempt_succeeded",)]
+    assert terminal_count == (1,)
+    assert run_types == [("run_started",), ("run_failed",)]
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert captured.value.__cause__ is None
+    assert captured.value.args == ("unable to record scene analysis attempt failure",)
+    assert captured.value.run_id == "run-persisted-terminal"
     assert "SECRET_SYSTEM_PROMPT" not in formatted
     assert "SECRET_RESPONSE_BODY" not in formatted
 
