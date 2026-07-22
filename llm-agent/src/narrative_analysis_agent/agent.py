@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from typing import Protocol, cast
 
+from pydantic import ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import AgentRunError
 from pydantic_ai.models import Model
@@ -10,10 +11,12 @@ from pydantic_ai.models import Model
 from narrative_analysis_agent.chunking import SceneChunk, chunk_scene
 from narrative_analysis_agent.models import (
     AnalyzedChunk,
-    ChunkExtraction,
+    KnowledgeGraphOutput,
+    ProjectKnowledgeGraphSnapshot,
     SceneAnalysis,
     SceneAnalysisRequest,
 )
+from narrative_analysis_agent.project_graph_reader import ProjectGraphReader, ProjectGraphReadError
 
 
 class NarrativeAnalysisError(RuntimeError):
@@ -21,11 +24,15 @@ class NarrativeAnalysisError(RuntimeError):
 
 
 class AgentResult(Protocol):
-    output: ChunkExtraction
+    output: KnowledgeGraphOutput
 
 
 class AgentRunner(Protocol):
     async def run(self, user_prompt: str, *, instructions: str) -> AgentResult: ...
+
+
+class GraphReader(Protocol):
+    def read(self, project_id: str) -> ProjectKnowledgeGraphSnapshot: ...
 
 
 def packaged_prompt_path() -> Path:
@@ -36,16 +43,21 @@ class NarrativeAnalysisAgent:
     def __init__(
         self,
         model: Model | str,
+        project_graph_path: Path | None = None,
         *,
         prompt_path: Path | None = None,
+        graph_reader: GraphReader | None = None,
         runner: AgentRunner | None = None,
     ) -> None:
+        if graph_reader is None and project_graph_path is None:
+            raise TypeError("project_graph_path is required when graph_reader is not provided")
         self.prompt_path = prompt_path or packaged_prompt_path()
+        self._graph_reader = graph_reader or ProjectGraphReader(cast(Path, project_graph_path))
         self._runner = runner or cast(
             AgentRunner,
             Agent(
                 model,
-                output_type=ChunkExtraction,
+                output_type=KnowledgeGraphOutput,
                 retries=0,
                 defer_model_check=True,
             ),
@@ -57,16 +69,22 @@ class NarrativeAnalysisAgent:
         except OSError:
             raise NarrativeAnalysisError("unable to load scene analysis prompt") from None
 
+        try:
+            existing = self._graph_reader.read(request.project_id)
+        except ProjectGraphReadError:
+            raise NarrativeAnalysisError("scene analysis failed") from None
+
         analyzed: list[AnalyzedChunk] = []
         for chunk in chunk_scene(request.scene_id, request.scene_revision, request.text):
             try:
                 result = await self._runner.run(
-                    _render_user_prompt(request, chunk),
+                    _render_user_prompt(existing, chunk),
                     instructions=instructions,
                 )
+                _validate_output(result.output, request, chunk, existing)
             except asyncio.CancelledError:
                 raise
-            except AgentRunError:
+            except (AgentRunError, ValidationError, ValueError):
                 raise NarrativeAnalysisError("scene analysis failed") from None
             analyzed.append(
                 AnalyzedChunk(
@@ -84,18 +102,14 @@ class NarrativeAnalysisAgent:
             scene_id=request.scene_id,
             scene_revision=request.scene_revision,
             scene_sequence=request.scene_sequence,
+            source_snapshot_version=existing.snapshot_version,
             chunks=tuple(analyzed),
         )
 
 
-def _render_user_prompt(request: SceneAnalysisRequest, chunk: SceneChunk) -> str:
+def _render_user_prompt(existing: ProjectKnowledgeGraphSnapshot, chunk: SceneChunk) -> str:
     envelope = {
-        "project_id": request.project_id,
-        "scene_id": request.scene_id,
-        "scene_revision": request.scene_revision,
-        "scene_sequence": request.scene_sequence,
-        "known_entities": [identity.model_dump(mode="json") for identity in request.known_entities],
-        "known_places": [identity.model_dump(mode="json") for identity in request.known_places],
+        "existing_graph": existing.model_dump(mode="json"),
         "chunk": {
             "chunk_id": chunk.chunk_id,
             "ordinal": chunk.ordinal,
@@ -105,3 +119,46 @@ def _render_user_prompt(request: SceneAnalysisRequest, chunk: SceneChunk) -> str
         },
     }
     return json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+
+
+def _validate_output(
+    output: KnowledgeGraphOutput,
+    request: SceneAnalysisRequest,
+    chunk: SceneChunk,
+    existing: ProjectKnowledgeGraphSnapshot,
+) -> None:
+    if output.document.chapter_id != request.scene_id:
+        raise ValueError("chapter ID does not match the scene")
+
+    local_characters = {item.id for item in output.entities.characters}
+    local_locations = {item.id for item in output.entities.locations}
+    local_events = {item.id for item in output.entities.events}
+    known_characters = {item.id for item in existing.entities.characters}
+    known_locations = {item.id for item in existing.entities.locations}
+    known_events = {item.id for item in existing.entities.events}
+    characters = local_characters | known_characters
+    locations = local_locations | known_locations
+    events = local_events | known_events
+
+    for event in output.entities.events:
+        if not set(event.participant_ids) <= characters:
+            raise ValueError("event references an unknown character")
+        if not set(event.location_ids) <= locations:
+            raise ValueError("event references an unknown location")
+    for relation in output.relations:
+        if relation.source_id not in characters | locations | events:
+            raise ValueError("relation source is unknown")
+        if relation.target_id not in characters | locations | events:
+            raise ValueError("relation target is unknown")
+
+    evidence_values = [
+        *(item.first_mention for item in output.entities.characters),
+        *(item.first_mention for item in output.entities.locations),
+        *(item.evidence for item in output.entities.events),
+        *(item.evidence for item in output.relations),
+        *(item.evidence for item in output.movements),
+        *(item.evidence for item in output.coreferences),
+        *(item.evidence for item in output.contradictions),
+    ]
+    if any(value and value not in chunk.text for value in evidence_values):
+        raise ValueError("evidence is not present in the chunk")
