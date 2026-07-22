@@ -96,3 +96,24 @@ The full backend Ruff format check remains red only for the four pre-existing
 Story Bible files named in the verification output. They are outside this
 remediation's ownership and were not changed. No other concern remains within
 the assigned scope.
+
+## FBR-I2-context follow-up
+
+- Root cause: raising the sanitized application error with `from None` inside
+  the active `except NarrativeAnalysisError` handler suppressed traceback
+  rendering but retained the public error in `__context__`; that error could
+  retain a provider exception as its cause.
+- Fix: capture only public `run_id` inside the handler, return the unchanged
+  success result from `else`, and raise the new application error after leaving
+  the active exception handler. The sanitized error now has both `__cause__`
+  and `__context__` set to `None`.
+- RED: the focused use-case test failed with
+  `NarrativeAnalysisError('SECRET_PROVIDER_MESSAGE')` in `__context__`.
+- GREEN: `mise exec -- uv run pytest tests/narrative_memory/test_scene_analysis_use_case.py -v`
+  -- 3 passed.
+- `backend: mise exec -- uv run pytest` -- 173 passed.
+- `backend: mise exec -- uv run ruff check .` -- passed.
+- Affected format check for the use-case implementation and test -- 2 files
+  formatted.
+- The llm-agent suite was not rerun because this follow-up changed no llm-agent
+  code, package metadata, prompts, or tests.

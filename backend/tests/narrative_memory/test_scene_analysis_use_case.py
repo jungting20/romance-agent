@@ -113,7 +113,7 @@ def test_use_case_sanitizes_public_agent_errors_and_preserves_run_id() -> None:
     assert captured.value.args == ("scene analysis failed",)
     assert captured.value.run_id == "run-failed"
     assert captured.value.__cause__ is None
-    assert captured.value.__suppress_context__ is True
+    assert captured.value.__context__ is None
     formatted = "".join(traceback.format_exception(captured.value))
     assert "SECRET_PROVIDER_MESSAGE" not in formatted
     assert "SECRET_PROVIDER_CAUSE" not in formatted

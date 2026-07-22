@@ -56,8 +56,10 @@ class AnalyzeSceneUseCase:
         try:
             result = await self._agent.analyze_scene(request)
         except NarrativeAnalysisError as error:
-            raise SceneAnalysisApplicationError(run_id=error.run_id) from None
-        return AnalyzedScene(
-            run_id=result.run_id,
-            snapshot=to_domain_scene_snapshot(result.snapshot),
-        )
+            failed_run_id = error.run_id
+        else:
+            return AnalyzedScene(
+                run_id=result.run_id,
+                snapshot=to_domain_scene_snapshot(result.snapshot),
+            )
+        raise SceneAnalysisApplicationError(run_id=failed_run_id)
