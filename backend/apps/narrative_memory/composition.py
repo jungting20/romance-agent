@@ -1,15 +1,7 @@
 from pathlib import Path
 
-from narrative_analysis_agent import NarrativeAnalysisAgent, NarrativeAnalysisConfig
+from narrative_analysis_agent import NarrativeAnalysisAgent
 
 
-def build_narrative_analysis_agent(
-    *, model_name: str, prompt_root: Path, audit_path: Path
-) -> NarrativeAnalysisAgent:
-    return NarrativeAnalysisAgent(
-        NarrativeAnalysisConfig(
-            model_name=model_name,
-            prompt_root=prompt_root,
-            audit_path=audit_path,
-        )
-    )
+def build_narrative_analysis_agent(*, model_name: str, prompt_path: Path) -> NarrativeAnalysisAgent:
+    return NarrativeAnalysisAgent(model_name, prompt_path=prompt_path)

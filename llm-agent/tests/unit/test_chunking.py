@@ -24,3 +24,13 @@ def test_chunk_scene_counts_unicode_characters_not_utf8_bytes() -> None:
 
 def test_chunk_scene_returns_no_chunks_for_empty_text() -> None:
     assert chunk_scene("scene-01", 1, "") == ()
+
+
+def test_chunk_scene_keeps_a_short_final_chunk_after_overlap() -> None:
+    chunks = chunk_scene("scene", 1, "가" * 551)
+
+    assert [(chunk.start_offset, chunk.end_offset) for chunk in chunks] == [
+        (0, 300),
+        (250, 550),
+        (500, 551),
+    ]
