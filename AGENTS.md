@@ -276,9 +276,9 @@ its replacement. Review agents must never edit or approve the API spec.
 ## Working Tree and Verification
 
 - Preserve existing user changes and avoid unrelated refactoring.
-- When creating a worktree for feature development, name its branch using
-  `feature/<한글-기능-이름>`. Keep the Korean feature name short and clear, and
-  separate words with hyphens, for example `feature/원고-목차-추가`.
+- When starting feature development, use the branch name registered on the
+  claimed ticket. When creating a worktree, use that exact branch name rather
+  than deriving or choosing a new one.
 - Do not use destructive Git commands to discard work.
 - Verify the smallest relevant checks during implementation, then run the full
   affected-application checks before completion.
