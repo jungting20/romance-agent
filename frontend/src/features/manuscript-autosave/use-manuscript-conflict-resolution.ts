@@ -13,7 +13,7 @@ import {
   useSaveManuscriptMutation,
 } from "@/features/project-persistence";
 import type { Manuscript } from "@/modules/manuscript";
-import { updateSceneContent } from "@/modules/manuscript";
+import { updateSceneContent, updateSceneTitle } from "@/modules/manuscript";
 
 import { findLocalSceneAdditions, mergeLocalSceneAdditions } from "./manuscript-structure-conflict";
 
@@ -26,7 +26,11 @@ export interface ManuscriptStructureConflict {
 }
 
 type ConflictPayload =
-  | { kind: "scene-content"; comparison: CompareManuscriptSceneResponse }
+  | {
+      kind: "scene-content";
+      comparison: CompareManuscriptSceneResponse;
+      localTitle: string;
+    }
   | { kind: "scene-structure"; comparison: ManuscriptStructureConflict };
 
 type ConflictState =
@@ -52,7 +56,7 @@ function getConflictPayload(state: ConflictState): ConflictPayload | null {
   }
 
   return state.kind === "scene-content"
-    ? { kind: state.kind, comparison: state.comparison }
+    ? { kind: state.kind, comparison: state.comparison, localTitle: state.localTitle }
     : { kind: state.kind, comparison: state.comparison };
 }
 
@@ -127,7 +131,7 @@ export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
         ) {
           return;
         }
-        setConflictState({ phase: "ready", kind, comparison });
+        setConflictState({ phase: "ready", kind, comparison, localTitle: scene.title });
       } catch {
         if (
           comparisonRequestRef.current === requestId &&
@@ -195,10 +199,14 @@ export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
     try {
       const resolvedManuscript =
         payload.kind === "scene-content"
-          ? updateSceneContent(
-              payload.comparison.serverManuscript,
+          ? updateSceneTitle(
+              updateSceneContent(
+                payload.comparison.serverManuscript,
+                payload.comparison.sceneId,
+                payload.comparison.localContent,
+              ),
               payload.comparison.sceneId,
-              payload.comparison.localContent,
+              payload.localTitle,
             )
           : mergeLocalSceneAdditions(
               host.getAcknowledgedManuscript(),

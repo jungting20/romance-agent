@@ -1007,6 +1007,60 @@ describe("WritingWorkspacePage", () => {
     expect(screen.getByRole("button", { name: "장면 제목 수정" })).toBeEnabled();
   });
 
+  test("keeps the local title on every surface when resolving a conflict with my draft", async () => {
+    setViewportWidth(1024);
+    const workspace = getWorkspace();
+    const activeScene = workspace.manuscript.scenes[0]!;
+    const requests: SaveManuscriptRequest[] = [];
+    const serverManuscript = {
+      ...workspace.manuscript,
+      scenes: [{ ...activeScene, title: "서버 최신 제목", content: "서버 최신 본문" }],
+    };
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        requests.push(body);
+        if (requests.length === 1) {
+          return HttpResponse.json(
+            { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+            { status: 409 },
+          );
+        }
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 8,
+          projectActivity: {
+            projectId: workspace.project.id,
+            updatedAt: "2026-07-22T01:00:00.000Z",
+          },
+        } satisfies SaveManuscriptResponse);
+      }),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        const body = (await request.json()) as { sceneId: string; localContent: string };
+        return HttpResponse.json({
+          sceneId: body.sceneId,
+          serverRevision: 7,
+          localContent: body.localContent,
+          serverContent: "서버 최신 본문",
+          serverManuscript,
+          rows: [],
+        } satisfies CompareManuscriptSceneResponse);
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+
+    await user.click(await screen.findByRole("button", { name: "장면 제목 수정" }));
+    const title = screen.getByRole("textbox", { name: "장면 제목" });
+    await user.clear(title);
+    await user.type(title, "내가 유지할 제목{Enter}");
+    await user.click(await screen.findByRole("button", { name: "내 편집본 유지" }));
+
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[1]!.manuscript.scenes[0]!.title).toBe("내가 유지할 제목");
+    expectTitleSurfaces("내가 유지할 제목");
+  });
+
   test("discards an uncommitted title when selecting another scene", async () => {
     setViewportWidth(1024);
     const workspace = getWorkspace();

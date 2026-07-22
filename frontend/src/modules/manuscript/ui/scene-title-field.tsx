@@ -16,7 +16,11 @@ export function SceneTitleField({ title, disabled, onCommit }: SceneTitleFieldPr
   const [error, setError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
   const blurCommitRef = useRef<number | null>(null);
+  const restoreButtonFocusRef = useRef(false);
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
 
   useEffect(
     () => () => {
@@ -31,22 +35,28 @@ export function SceneTitleField({ title, disabled, onCommit }: SceneTitleFieldPr
     if (editing && !disabled) {
       inputRef.current?.focus();
       inputRef.current?.select();
+      return;
+    }
+    if (!editing && restoreButtonFocusRef.current) {
+      restoreButtonFocusRef.current = false;
+      editButtonRef.current?.focus();
     }
   }, [disabled, editing]);
 
-  const cancel = () => {
+  const cancel = (restoreFocus = false) => {
     if (blurCommitRef.current !== null) {
       window.clearTimeout(blurCommitRef.current);
       blurCommitRef.current = null;
     }
     setDraft(title);
     setError(null);
+    restoreButtonFocusRef.current = restoreFocus;
     setEditing(false);
     setAnnouncement("장면 제목 수정을 취소했어요.");
   };
 
-  const commit = () => {
-    if (disabled) return;
+  const commit = (restoreFocus = false) => {
+    if (disabledRef.current) return;
     const normalized = draft.trim();
     if (!normalized) {
       setError("장면 제목을 입력해 주세요.");
@@ -55,6 +65,7 @@ export function SceneTitleField({ title, disabled, onCommit }: SceneTitleFieldPr
     onCommit(draft);
     setDraft(normalized);
     setError(null);
+    restoreButtonFocusRef.current = restoreFocus;
     setEditing(false);
     setAnnouncement("장면 제목을 저장할 준비가 되었어요.");
   };
@@ -64,6 +75,7 @@ export function SceneTitleField({ title, disabled, onCommit }: SceneTitleFieldPr
       <div className="mt-3 flex items-start gap-2">
         <h2 className="min-w-0 flex-1 font-heading text-3xl font-semibold">{title}</h2>
         <Button
+          ref={editButtonRef}
           type="button"
           variant="ghost"
           size="icon-sm"
@@ -108,11 +120,11 @@ export function SceneTitleField({ title, disabled, onCommit }: SceneTitleFieldPr
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
-            commit();
+            commit(true);
           }
           if (event.key === "Escape") {
             event.preventDefault();
-            cancel();
+            cancel(true);
           }
         }}
         className="h-auto px-0 py-0 font-heading text-3xl font-semibold"
