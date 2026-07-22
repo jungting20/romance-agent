@@ -43,7 +43,7 @@ import {
 import { useManuscriptSceneNavigation } from "@/features/manuscript-scene-navigation";
 import { useProjectWorkspaceQuery } from "@/features/project-persistence";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { updateSceneContent } from "@/modules/manuscript";
+import { updateSceneContent, updateSceneTitle } from "@/modules/manuscript";
 import { ManuscriptEditor } from "@/modules/manuscript/ui/manuscript-editor";
 import { SceneTree } from "@/modules/manuscript/ui/scene-tree";
 import { StoryContextPanel } from "@/modules/story-bible/ui/story-context-panel";
@@ -318,6 +318,10 @@ function LoadedWritingWorkspace({
       <ManuscriptEditor
         ref={sceneNavigation.editorRef}
         scene={scene}
+        titleEditingDisabled={status === "conflict"}
+        onTitleCommit={(title) => {
+          updateDraft((current) => updateSceneTitle(current, scene.id, title));
+        }}
         onChange={(content) => updateDraft(updateSceneContent(draft, scene.id, content))}
         onSelectionChange={sceneNavigation.setSelection}
       />
