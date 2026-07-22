@@ -34,15 +34,20 @@ adapters, prompts, and the append-only analysis audit.
 
 Narrative Memory scene analysis is invoked explicitly; it is not attached to
 manuscript saves or a background process, and this slice exposes no HTTP or API
-operation. `NARRATIVE_LLM_MODEL` selects the model only when a caller composes
-the analyzer. Set it to `mock` for the local, network-free adapter, for example:
+operation. The caller explicitly passes `model_name`, `prompt_root`, and
+`audit_path` to `build_narrative_analysis_agent()`. The exact
+`model_name="mock"` selects the local, network-free adapter, for example:
 
-```sh
-NARRATIVE_LLM_MODEL=mock
+```python
+agent = build_narrative_analysis_agent(
+    model_name="mock",
+    prompt_root=prompt_root,
+    audit_path=audit_path,
+)
 ```
 
-A missing or blank value fails the requested analysis without preventing the
-unrelated backend process from starting. The analysis audit is separate from
+A missing or blank explicit `model_name` fails the requested analysis without
+preventing the unrelated backend process from starting. The analysis audit is separate from
 project snapshots and does not automatically persist a returned scene or
 project snapshot.
 
@@ -67,7 +72,8 @@ The process health endpoint is available at `GET /health`.
 
 ```sh
 mise exec -- uv run pytest \
-  tests/narrative_memory/test_scene_analysis_service.py::test_analyze_scene_with_mock_and_sqlite_audit_end_to_end -v
+  tests/narrative_memory/test_agent_composition.py \
+  tests/narrative_memory/test_scene_analysis_result.py -v
 mise exec -- uv run pytest
 mise exec -- uv run ruff check .
 mise exec -- uv run ruff format --check .
