@@ -12,7 +12,7 @@ backend/
 │   └── <domain>/
 │       ├── domain/         # Entities, aggregates, value objects, domain errors
 │       ├── router/         # HTTP request and response boundary
-│       ├── service/        # Application workflows and domain coordination
+│       ├── service/        # Application workflows, agent use case, domain coordination
 │       ├── repository/     # Persistence ports and implementations
 │       └── schemas/        # Transport schemas
 ├── tests/                  # API, service, repository, and domain tests
@@ -32,6 +32,11 @@ scene-to-project merging and persists immutable, versioned canonical project
 JSON snapshots in SQLite. The separate `llm-agent/` package owns provider
 adapters, prompts, and the append-only analysis audit.
 
+`AnalyzeSceneUseCase` is the backend application boundary for an explicit scene
+analysis request. It constructs the public request, invokes an injected
+facade-compatible dependency, translates the public result once, and sanitizes
+public analysis errors without inspecting package-private causes.
+
 Narrative Memory scene analysis is invoked explicitly; it is not attached to
 manuscript saves or a background process, and this slice exposes no HTTP or API
 operation. The caller explicitly passes `model_name`, `prompt_root`, and
@@ -50,6 +55,19 @@ A missing or blank explicit `model_name` fails the requested analysis without
 preventing the unrelated backend process from starting. The analysis audit is separate from
 project snapshots and does not automatically persist a returned scene or
 project snapshot.
+
+For package-owned installed prompts, callers can explicitly select the public
+helper result as the configured root:
+
+```python
+from narrative_analysis_agent import packaged_prompt_root
+
+agent = build_narrative_analysis_agent(
+    model_name="mock",
+    prompt_root=packaged_prompt_root(),
+    audit_path=audit_path,
+)
+```
 
 ## Setup
 
@@ -73,7 +91,8 @@ The process health endpoint is available at `GET /health`.
 ```sh
 mise exec -- uv run pytest \
   tests/narrative_memory/test_agent_composition.py \
-  tests/narrative_memory/test_scene_analysis_result.py -v
+  tests/narrative_memory/test_scene_analysis_result.py \
+  tests/narrative_memory/test_scene_analysis_use_case.py -v
 mise exec -- uv run pytest
 mise exec -- uv run ruff check .
 mise exec -- uv run ruff format --check .

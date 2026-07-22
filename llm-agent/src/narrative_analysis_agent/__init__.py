@@ -1,4 +1,4 @@
-from narrative_analysis_agent.config import NarrativeAnalysisConfig
+from narrative_analysis_agent.config import NarrativeAnalysisConfig, packaged_prompt_root
 from narrative_analysis_agent.contracts import (
     CandidateStatus,
     EntityCandidate,
@@ -35,6 +35,7 @@ __all__ = [
     "NarrativeAnalysisConfig",
     "NarrativeAnalysisAgent",
     "NarrativeAnalysisError",
+    "packaged_prompt_root",
     "PlaceCandidate",
     "PromptLoadError",
     "ProviderUnavailableError",

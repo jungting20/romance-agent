@@ -117,6 +117,11 @@ verification, and handoff workflows. If the documents conflict, follow
   `NarrativeAnalysisAgent.analyze_scene()` facade and its public contracts.
   Backend code must not import provider SDKs, Pydantic AI, or the package's
   extraction, prompt, or audit internals.
+- Keep the explicit backend application use case dependent on a narrow protocol
+  containing only the public request/result method. Construct the public request
+  there, translate its snapshot exactly once at the existing result boundary,
+  and convert `NarrativeAnalysisError` into a sanitized application error while
+  preserving only its public `run_id` context and suppressing its cause.
 - Backend owns translation of the returned scene snapshot, scene-to-project
   merge policy, and project-snapshot persistence. It must not take ownership of
   model-provider selection, prompt storage, or agent-audit storage.

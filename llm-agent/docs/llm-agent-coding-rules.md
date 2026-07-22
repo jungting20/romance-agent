@@ -26,6 +26,10 @@
 - Store editable, versioned prompt files in this package. Load the prompt for
   each explicitly requested run so edits are hot-loaded, and require a version
   increment whenever registered prompt bytes change.
+- Include package-owned `prompts/**/*.md` files in install artifacts and expose
+  their installed root through the stdlib-only public `packaged_prompt_root()`
+  helper. Callers still pass that path explicitly through
+  `NarrativeAnalysisConfig`; the helper does not introduce hidden configuration.
 - Persist the prompt definition, run start, and attempt start before making a
   provider call. Treat an audit-start failure as call-blocking, and never write
   prompts, manuscript text, model responses, or validated extraction content to
