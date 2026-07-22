@@ -49,6 +49,28 @@ review, and working-tree policy in this root `AGENTS.md`. Keep domain meaning
 and boundaries in `docs/domains/*.md` under the existing synchronization rules;
 project engineering documentation does not replace domain contracts.
 
+## Mandatory Feature Ticket Registration
+
+Every request to implement a feature must be registered in the project-local
+ticket queue before any implementation work begins. This rule applies regardless
+of the feature's size, urgency, or whether the user asks for immediate
+implementation.
+
+- Do not edit application code, tests, API contracts, or domain documents in
+  response to the feature implementation request.
+- Check the existing queue with `zellij-agent ticket-worker list` to avoid
+  registering a duplicate ticket.
+- Use `zellij-agent ticket-worker add` when an approved specification and
+  implementation plan exist.
+- Use `zellij-agent ticket-worker fast-add` when the feature is small and clear
+  enough to register without specification and plan artifacts.
+- After registration, report the ticket ID and registration result to the user,
+  then stop. Implementation starts only when the ticket is claimed through the
+  ticket workflow.
+
+Ticket registration is mandatory and must not be skipped by directly
+implementing the requested feature.
+
 ## Main Agent Responsibilities
 
 The main agent owns the end-to-end result. It must:
