@@ -111,33 +111,23 @@ verification, and handoff workflows. If the documents conflict, follow
 - Resolve file paths beneath the configured data root and reject identifiers
   containing traversal or absolute-path components before any file access.
 
-## LLM Agent Audit
+## Narrative Analysis Agent Consumer Boundary
 
-- Keep provider clients behind narrow typed application ports. Select the model
-  only at an explicit composition boundary; domain services must not read model
-  settings, provider SDKs, or process globals.
-- Store editable, versioned prompt files under `backend/prompts/`. Load the
-  prompt for each explicitly requested run so edits are hot-loaded, and require
-  a version increment whenever registered prompt bytes change.
-- Persist the prompt definition, run start, and attempt start before making a
-  provider call. Treat an audit-start failure as call-blocking, and never write
-  prompts, manuscript text, model responses, or validated extraction content to
-  ordinary console logs.
-- Enforce at most one terminal attempt event (`attempt_succeeded` or
-  `attempt_failed`) for each run, chunk, and attempt number in both the audit
-  port contract and durable storage. A best-effort failure fallback after an
-  ambiguous success append may run, but storage must reject it when success was
-  already committed; never repair terminal conflicts with update or delete.
-  Compare the identity tuple with exact, case-sensitive (`BINARY`) semantics,
-  and validate an existing reserved index from SQLite index metadata, including
-  key order, collation, sort direction, uniqueness, and partial predicate,
-  before accepting it as the durable constraint.
-- Validate structured provider output before translating it into domain types.
-  Provider adapters must not assign durable domain IDs, candidate states, or
-  other domain-owned meaning.
-- Supply scripted, network-free adapters for service and integration tests so
-  call order, retry behavior, audit rows, and translation can be verified
-  deterministically.
+- Compose and invoke Narrative Memory analysis only through the public
+  `NarrativeAnalysisAgent.analyze_scene()` facade and its public contracts.
+  Backend code must not import provider SDKs, Pydantic AI, or the package's
+  extraction, prompt, or audit internals.
+- Keep the explicit backend application use case dependent on a narrow protocol
+  containing only the public request/result method. Construct the public request
+  there, translate its snapshot exactly once at the existing result boundary,
+  and convert `NarrativeAnalysisError` into a sanitized application error while
+  preserving only its public `run_id` context and suppressing its cause.
+- Backend owns translation of the returned scene snapshot, scene-to-project
+  merge policy, and project-snapshot persistence. It must not take ownership of
+  model-provider selection, prompt storage, or agent-audit storage.
+- The provider, prompt, audit, structured-extraction, and deterministic
+  network-free test rules are owned by
+  [`llm-agent/docs/llm-agent-coding-rules.md`](../../llm-agent/docs/llm-agent-coding-rules.md).
 
 ## Testing Rules
 

@@ -1,9 +1,6 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-SCENE_SNAPSHOT_SCHEMA_VERSION = "scene-relationship-snapshot-v1"
-PROJECT_SNAPSHOT_SCHEMA_VERSION = "project-relationship-snapshot-v1"
-
 
 class CandidateStatus(StrEnum):
     PENDING = "pending"
@@ -16,6 +13,25 @@ class LocationEventType(StrEnum):
     ARRIVED = "arrived"
     PRESENT = "present"
     DEPARTED = "departed"
+
+
+@dataclass(frozen=True, slots=True)
+class KnownIdentity:
+    identity_key: str
+    normalized_name: str
+    display_name: str
+    aliases: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SceneAnalysisRequest:
+    project_id: str
+    scene_id: str
+    scene_revision: int
+    scene_sequence: int
+    text: str
+    known_entities: tuple[KnownIdentity, ...] = ()
+    known_places: tuple[KnownIdentity, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,27 +110,22 @@ class SceneRelationshipSnapshot:
     relationship_events: tuple[RelationshipEventCandidate, ...]
     location_events: tuple[LocationEventCandidate, ...]
 
-
-@dataclass(frozen=True, slots=True)
-class ProjectRelationshipSnapshot:
-    project_id: str
-    snapshot_version: int
-    schema_version: str
-    active_scene_revisions: tuple[tuple[str, int], ...]
-    entities: tuple[EntityCandidate, ...]
-    places: tuple[PlaceCandidate, ...]
-    relationship_events: tuple[RelationshipEventCandidate, ...]
-    location_events: tuple[LocationEventCandidate, ...]
-
     @classmethod
-    def empty(cls, project_id: str) -> "ProjectRelationshipSnapshot":
+    def empty(cls, scene_id: str, revision: int, sequence: int) -> "SceneRelationshipSnapshot":
         return cls(
-            project_id=project_id,
-            snapshot_version=0,
-            schema_version=PROJECT_SNAPSHOT_SCHEMA_VERSION,
-            active_scene_revisions=(),
+            scene_id=scene_id,
+            scene_revision=revision,
+            scene_sequence=sequence,
+            schema_version="scene-relationship-snapshot-v1",
+            summary="",
             entities=(),
             places=(),
             relationship_events=(),
             location_events=(),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SceneAnalysisResult:
+    run_id: str
+    snapshot: SceneRelationshipSnapshot

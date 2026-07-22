@@ -4,10 +4,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import replace
 
 from apps.narrative_memory.service.models import (
-    CHUNK_ANALYSIS_SCHEMA_VERSION,
     SCENE_SNAPSHOT_SCHEMA_VERSION,
     CandidateStatus,
-    ChunkAnalysis,
     EntityCandidate,
     Evidence,
     LocationEventCandidate,
@@ -55,14 +53,6 @@ def relationship_key(
     )
 
 
-def entity_key(candidate: EntityCandidate) -> tuple[str, str]:
-    return (candidate.scene_id, candidate.normalized_name)
-
-
-def place_key(candidate: PlaceCandidate) -> tuple[str, str]:
-    return (candidate.scene_id, candidate.normalized_name)
-
-
 def location_key(
     event: LocationEventCandidate,
 ) -> tuple[str, str, str, str, str]:
@@ -78,44 +68,6 @@ def location_key(
 def _merge_evidence(values: Iterable[Evidence]) -> tuple[Evidence, ...]:
     by_key = {evidence_key(value): value for value in values}
     return tuple(by_key[key] for key in sorted(by_key))
-
-
-def merge_chunk_analyses(
-    scene_id: str,
-    scene_revision: int,
-    scene_sequence: int,
-    analyses: Iterable[ChunkAnalysis],
-) -> SceneRelationshipSnapshot:
-    ordered_analyses = tuple(sorted(analyses, key=lambda analysis: analysis.chunk_ordinal))
-    if len({analysis.chunk_ordinal for analysis in ordered_analyses}) != len(ordered_analyses):
-        raise MergeInvariantError("chunk ordinals must be unique")
-    if len({analysis.chunk_id for analysis in ordered_analyses}) != len(ordered_analyses):
-        raise MergeInvariantError("chunk IDs must be unique")
-    _validate_chunk_set(ordered_analyses)
-    for analysis in ordered_analyses:
-        _validate_analysis(analysis, scene_id, scene_revision, scene_sequence)
-
-    snapshot = SceneRelationshipSnapshot(
-        scene_id=scene_id,
-        scene_revision=scene_revision,
-        scene_sequence=scene_sequence,
-        schema_version=SCENE_SNAPSHOT_SCHEMA_VERSION,
-        summary=_merge_summaries(ordered_analyses),
-        entities=_merge_entities(
-            candidate for analysis in ordered_analyses for candidate in analysis.entities
-        ),
-        places=_merge_places(
-            candidate for analysis in ordered_analyses for candidate in analysis.places
-        ),
-        relationship_events=_merge_relationship_events(
-            event for analysis in ordered_analyses for event in analysis.relationship_events
-        ),
-        location_events=_merge_location_events(
-            event for analysis in ordered_analyses for event in analysis.location_events
-        ),
-    )
-    _validate_scene_snapshot(snapshot)
-    return snapshot
 
 
 def merge_scene_into_project(
@@ -215,34 +167,6 @@ def _force_pending_scene_candidates(
         location_events=tuple(
             replace(event, status=CandidateStatus.PENDING) for event in scene.location_events
         ),
-    )
-
-
-def _replace_scene_relationships(
-    previous: Iterable[RelationshipEventCandidate],
-    scene: SceneRelationshipSnapshot,
-) -> tuple[RelationshipEventCandidate, ...]:
-    return _replace_scene_candidates(
-        previous,
-        scene.relationship_events,
-        scene.scene_id,
-        scene.scene_revision,
-        _relationship_replacement_key,
-        _relationship_output_key,
-    )
-
-
-def _replace_scene_locations(
-    previous: Iterable[LocationEventCandidate],
-    scene: SceneRelationshipSnapshot,
-) -> tuple[LocationEventCandidate, ...]:
-    return _replace_scene_candidates(
-        previous,
-        scene.location_events,
-        scene.scene_id,
-        scene.scene_revision,
-        _location_replacement_key,
-        _location_output_key,
     )
 
 
@@ -613,83 +537,6 @@ def _rewrite_location_references(
     )
 
 
-def _validate_chunk_set(analyses: tuple[ChunkAnalysis, ...]) -> None:
-    ordinals = tuple(analysis.chunk_ordinal for analysis in analyses)
-    if ordinals != tuple(range(len(analyses))):
-        raise MergeInvariantError("chunk ordinals must be contiguous and start at zero")
-    for analysis in analyses[:-1]:
-        if analysis.chunk_end - analysis.chunk_start != 300:
-            raise MergeInvariantError("nonfinal chunk width must be 300")
-    if len(analyses) > 1 and analyses[-1].chunk_end - analyses[-1].chunk_start <= 50:
-        raise MergeInvariantError("final chunk must contain text beyond the overlap")
-    for previous, current in zip(analyses, analyses[1:], strict=False):
-        if previous.source_text[-50:] != current.source_text[:50]:
-            raise MergeInvariantError("adjacent chunk overlap text must match")
-
-
-def _validate_analysis(
-    analysis: ChunkAnalysis,
-    scene_id: str,
-    scene_revision: int,
-    scene_sequence: int,
-) -> None:
-    if analysis.schema_version != CHUNK_ANALYSIS_SCHEMA_VERSION:
-        raise MergeInvariantError("unsupported chunk analysis schema")
-    if analysis.chunk_ordinal < 0:
-        raise MergeInvariantError("chunk ordinal must be non-negative")
-    expected_chunk_id = f"{scene_id}:r{scene_revision}:{analysis.chunk_ordinal:04d}"
-    if analysis.chunk_id != expected_chunk_id:
-        raise MergeInvariantError("chunk ID does not match scene, revision, and ordinal")
-    expected_start = analysis.chunk_ordinal * 250
-    if analysis.chunk_start != expected_start:
-        raise MergeInvariantError("chunk start does not match numeric ordinal stride")
-    chunk_width = analysis.chunk_end - analysis.chunk_start
-    if not 1 <= chunk_width <= 300:
-        raise MergeInvariantError("chunk width must be between 1 and 300")
-    if len(analysis.source_text) != analysis.chunk_end - analysis.chunk_start:
-        raise MergeInvariantError("source chunk text does not match chunk bounds")
-    if analysis.scene_id != scene_id:
-        raise MergeInvariantError("analysis scene does not match requested scene")
-    if analysis.scene_revision != scene_revision:
-        raise MergeInvariantError("analysis revision does not match requested revision")
-
-    candidates = (
-        *analysis.entities,
-        *analysis.places,
-        *analysis.relationship_events,
-        *analysis.location_events,
-    )
-    for candidate in candidates:
-        if candidate.status is not CandidateStatus.PENDING:
-            raise MergeInvariantError("extraction candidates must be pending")
-        if candidate.scene_id != scene_id:
-            raise MergeInvariantError("candidate scene does not match requested scene")
-        if candidate.scene_revision != scene_revision:
-            raise MergeInvariantError("candidate revision does not match requested revision")
-        if isinstance(candidate, (RelationshipEventCandidate, LocationEventCandidate)):
-            if candidate.scene_sequence != scene_sequence:
-                raise MergeInvariantError("event sequence does not match containing scene")
-            _validate_confidence(candidate.confidence)
-        for evidence in candidate.evidence:
-            if evidence.chunk_id != analysis.chunk_id:
-                raise MergeInvariantError("evidence chunk does not match analysis source chunk")
-            if evidence.scene_id != scene_id or evidence.scene_revision != scene_revision:
-                raise MergeInvariantError("evidence provenance does not match analysis scene")
-            if not 0 <= evidence.start_offset < evidence.end_offset:
-                raise MergeInvariantError("evidence range must satisfy 0 <= start < end")
-            if not (
-                analysis.chunk_start
-                <= evidence.start_offset
-                < evidence.end_offset
-                <= analysis.chunk_end
-            ):
-                raise MergeInvariantError("evidence range is outside source chunk bounds")
-            relative_start = evidence.start_offset - analysis.chunk_start
-            relative_end = evidence.end_offset - analysis.chunk_start
-            if analysis.source_text[relative_start:relative_end] != evidence.text:
-                raise MergeInvariantError("evidence text does not match source chunk text")
-
-
 def _validate_scene_snapshot(scene: SceneRelationshipSnapshot) -> None:
     if scene.schema_version != SCENE_SNAPSHOT_SCHEMA_VERSION:
         raise MergeInvariantError("unsupported scene snapshot schema")
@@ -741,18 +588,6 @@ def _validate_confidence(confidence: float) -> None:
         raise MergeInvariantError("confidence must be finite and between 0.0 and 1.0")
 
 
-def _merge_summaries(analyses: Iterable[ChunkAnalysis]) -> str:
-    summaries: list[str] = []
-    seen: set[str] = set()
-    for analysis in analyses:
-        summary = re.sub(r"\s+", " ", analysis.summary.strip())
-        key = normalize_text(summary)
-        if summary and key not in seen:
-            seen.add(key)
-            summaries.append(summary)
-    return "\n".join(summaries)
-
-
 def _merge_aliases(values: Iterable[str]) -> tuple[str, ...]:
     by_key: dict[str, str] = {}
     for value in values:
@@ -760,46 +595,6 @@ def _merge_aliases(values: Iterable[str]) -> tuple[str, ...]:
         if alias:
             by_key.setdefault(normalize_text(alias), alias)
     return tuple(by_key[key] for key in sorted(by_key))
-
-
-def _merge_entities(values: Iterable[EntityCandidate]) -> tuple[EntityCandidate, ...]:
-    merged: dict[tuple[str, str], EntityCandidate] = {}
-    for candidate in values:
-        key = entity_key(candidate)
-        existing = merged.get(key)
-        if existing is None:
-            merged[key] = replace(
-                candidate,
-                aliases=_merge_aliases(candidate.aliases),
-                evidence=_merge_evidence(candidate.evidence),
-            )
-        else:
-            merged[key] = replace(
-                existing,
-                aliases=_merge_aliases((*existing.aliases, *candidate.aliases)),
-                evidence=_merge_evidence((*existing.evidence, *candidate.evidence)),
-            )
-    return tuple(merged[key] for key in sorted(merged))
-
-
-def _merge_places(values: Iterable[PlaceCandidate]) -> tuple[PlaceCandidate, ...]:
-    merged: dict[tuple[str, str], PlaceCandidate] = {}
-    for candidate in values:
-        key = place_key(candidate)
-        existing = merged.get(key)
-        if existing is None:
-            merged[key] = replace(
-                candidate,
-                aliases=_merge_aliases(candidate.aliases),
-                evidence=_merge_evidence(candidate.evidence),
-            )
-        else:
-            merged[key] = replace(
-                existing,
-                aliases=_merge_aliases((*existing.aliases, *candidate.aliases)),
-                evidence=_merge_evidence((*existing.evidence, *candidate.evidence)),
-            )
-    return tuple(merged[key] for key in sorted(merged))
 
 
 def _merge_relationship_events(

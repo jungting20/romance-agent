@@ -8,17 +8,13 @@ FastAPI application code is organized by domain under `apps/`.
 backend/
 ├── main.py                 # FastAPI application entry point
 ├── apps/                   # Domain-owned backend packages
-│   ├── narrative_memory/   # Versioned narrative analysis snapshots
+│   ├── narrative_memory/   # Public agent composition and project snapshots
 │   └── <domain>/
 │       ├── domain/         # Entities, aggregates, value objects, domain errors
 │       ├── router/         # HTTP request and response boundary
-│       ├── service/        # Application workflows and domain coordination
+│       ├── service/        # Application workflows, agent use case, domain coordination
 │       ├── repository/     # Persistence ports and implementations
 │       └── schemas/        # Transport schemas
-├── infrastructure/         # Cross-cutting provider and persistence adapters
-│   ├── llm/                # Prompt registry and typed model/mock adapters
-│   └── audit/              # Owner-only append-only LLM audit storage
-├── prompts/                # Versioned, hot-loaded editable system prompts
 ├── tests/                  # API, service, repository, and domain tests
 ├── docs/
 │   └── backend-coding-rules.md
@@ -30,22 +26,48 @@ Keep domain-specific code inside its owning `apps/<domain>/` package. Update
 this map when a structural change alters the responsibilities or major packages
 shown here; individual files do not need to be listed.
 
-The Narrative Memory repository persists immutable, versioned canonical JSON
-snapshots in SQLite.
+The backend composes the public `NarrativeAnalysisAgent` facade and translates
+its immutable scene result into Narrative Memory's domain snapshot. It owns
+scene-to-project merging and persists immutable, versioned canonical project
+JSON snapshots in SQLite. The separate `llm-agent/` package owns provider
+adapters, prompts, and the append-only analysis audit.
+
+`AnalyzeSceneUseCase` is the backend application boundary for an explicit scene
+analysis request. It constructs the public request, invokes an injected
+facade-compatible dependency, translates the public result once, and sanitizes
+public analysis errors without inspecting package-private causes.
 
 Narrative Memory scene analysis is invoked explicitly; it is not attached to
 manuscript saves or a background process, and this slice exposes no HTTP or API
-operation. `NARRATIVE_LLM_MODEL` selects the model only when a caller composes
-the analyzer. Set it to `mock` for the local, network-free adapter, for example:
+operation. The caller explicitly passes `model_name`, `prompt_root`, and
+`audit_path` to `build_narrative_analysis_agent()`. The exact
+`model_name="mock"` selects the local, network-free adapter, for example:
 
-```sh
-NARRATIVE_LLM_MODEL=mock
+```python
+agent = build_narrative_analysis_agent(
+    model_name="mock",
+    prompt_root=prompt_root,
+    audit_path=audit_path,
+)
 ```
 
-A missing or blank value fails the requested analysis without preventing the
-unrelated backend process from starting. The audit database is separate from
+A missing or blank explicit `model_name` fails the requested analysis without
+preventing the unrelated backend process from starting. The analysis audit is separate from
 project snapshots and does not automatically persist a returned scene or
 project snapshot.
+
+For package-owned installed prompts, callers can explicitly select the public
+helper result as the configured root:
+
+```python
+from narrative_analysis_agent import packaged_prompt_root
+
+agent = build_narrative_analysis_agent(
+    model_name="mock",
+    prompt_root=packaged_prompt_root(),
+    audit_path=audit_path,
+)
+```
 
 ## Setup
 
@@ -68,7 +90,9 @@ The process health endpoint is available at `GET /health`.
 
 ```sh
 mise exec -- uv run pytest \
-  tests/narrative_memory/test_scene_analysis_service.py::test_analyze_scene_with_mock_and_sqlite_audit_end_to_end -v
+  tests/narrative_memory/test_agent_composition.py \
+  tests/narrative_memory/test_scene_analysis_result.py \
+  tests/narrative_memory/test_scene_analysis_use_case.py -v
 mise exec -- uv run pytest
 mise exec -- uv run ruff check .
 mise exec -- uv run ruff format --check .
