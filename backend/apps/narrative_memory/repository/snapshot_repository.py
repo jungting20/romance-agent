@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from apps.narrative_memory.service.models import ProjectRelationshipSnapshot
+from narrative_analysis_agent import ProjectKnowledgeGraphSnapshot
+
+from apps.narrative_memory.service.models import SceneGraphRecord
 
 
 class SnapshotVersionConflict(RuntimeError):
@@ -14,7 +16,7 @@ class SnapshotCorruptionError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class StoredProjectSnapshot:
-    snapshot: ProjectRelationshipSnapshot
+    snapshot: ProjectKnowledgeGraphSnapshot
     payload: bytes
     content_hash: str
 
@@ -26,12 +28,13 @@ class SnapshotRepository(Protocol):
     def get_current(self, project_id: str) -> StoredProjectSnapshot | None:
         raise NotImplementedError
 
-    def get_version(self, project_id: str, version: int) -> StoredProjectSnapshot | None:
+    def get_scene_graphs(self, project_id: str) -> tuple[SceneGraphRecord, ...]:
         raise NotImplementedError
 
-    def commit(
+    def commit_scene(
         self,
         expected_version: int | None,
-        snapshot: ProjectRelationshipSnapshot,
+        scene: SceneGraphRecord,
+        snapshot: ProjectKnowledgeGraphSnapshot,
     ) -> StoredProjectSnapshot:
         raise NotImplementedError

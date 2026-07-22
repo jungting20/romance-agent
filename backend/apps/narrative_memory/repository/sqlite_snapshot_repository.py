@@ -1,15 +1,20 @@
 import hashlib
+import json
 import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
+
+from narrative_analysis_agent import ProjectKnowledgeGraphSnapshot
+from narrative_analysis_agent.models import KnowledgeGraphOutput
+from pydantic import ValidationError
 
 from apps.narrative_memory.repository.snapshot_repository import (
     SnapshotCorruptionError,
     SnapshotVersionConflict,
     StoredProjectSnapshot,
 )
-from apps.narrative_memory.service.models import ProjectRelationshipSnapshot
+from apps.narrative_memory.service.models import SceneGraphRecord
 from apps.narrative_memory.service.snapshot_codec import (
     SnapshotDecodeError,
     decode_project_snapshot,
@@ -28,6 +33,20 @@ class SQLiteSnapshotRepository:
         self._path.chmod(0o600)
 
         with sqlite3.connect(self._path) as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scene_knowledge_graphs (
+                    project_id TEXT NOT NULL,
+                    scene_id TEXT NOT NULL,
+                    scene_revision INTEGER NOT NULL,
+                    scene_sequence INTEGER NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    payload BLOB NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (project_id, scene_id)
+                )
+                """
+            )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS project_snapshots (
@@ -62,52 +81,64 @@ class SQLiteSnapshotRepository:
             ).fetchone()
         if row is None:
             return None
-        snapshot = self.get_version(project_id, row[0])
+        snapshot = self._get_version(project_id, row[0])
         if snapshot is None:
             raise SnapshotCorruptionError("current snapshot pointer references a missing snapshot")
         return snapshot
 
-    def get_version(self, project_id: str, version: int) -> StoredProjectSnapshot | None:
+    def get_scene_graphs(self, project_id: str) -> tuple[SceneGraphRecord, ...]:
         with sqlite3.connect(self._path) as connection:
-            row = connection.execute(
+            rows = connection.execute(
                 """
-                SELECT schema_version, content_hash, payload
-                FROM project_snapshots
-                WHERE project_id = ? AND snapshot_version = ?
+                SELECT scene_id, scene_revision, scene_sequence, content_hash, payload
+                FROM scene_knowledge_graphs
+                WHERE project_id = ?
+                ORDER BY scene_sequence, scene_id
                 """,
-                (project_id, version),
-            ).fetchone()
-        if row is None:
-            return None
+                (project_id,),
+            ).fetchall()
 
-        schema_version, content_hash, raw_payload = row
-        payload = bytes(raw_payload)
-        calculated_hash = _content_hash(payload)
-        if content_hash != calculated_hash:
-            raise SnapshotCorruptionError("stored snapshot content hash does not match payload")
-        try:
-            snapshot = decode_project_snapshot(payload)
-        except SnapshotDecodeError as error:
-            raise SnapshotCorruptionError("stored snapshot payload cannot be decoded") from error
-        if (
-            snapshot.project_id != project_id
-            or snapshot.snapshot_version != version
-            or snapshot.schema_version != schema_version
-        ):
-            raise SnapshotCorruptionError("stored snapshot metadata does not match payload")
-        return StoredProjectSnapshot(
-            snapshot=snapshot,
-            payload=payload,
-            content_hash=content_hash,
-        )
+        records = []
+        for scene_id, scene_revision, scene_sequence, content_hash, raw_payload in rows:
+            payload = _stored_payload(raw_payload, "scene")
+            if content_hash != _content_hash(payload):
+                raise SnapshotCorruptionError("stored scene content hash does not match payload")
+            graph = _decode_scene_graph(payload)
+            if (
+                not isinstance(scene_id, str)
+                or not scene_id
+                or type(scene_revision) is not int
+                or scene_revision < 0
+                or type(scene_sequence) is not int
+                or scene_sequence < 0
+                or graph.document.chapter_id != scene_id
+            ):
+                raise SnapshotCorruptionError("stored scene metadata does not match payload")
+            records.append(
+                SceneGraphRecord(
+                    project_id=project_id,
+                    scene_id=scene_id,
+                    scene_revision=scene_revision,
+                    scene_sequence=scene_sequence,
+                    graph=graph,
+                )
+            )
+        return tuple(records)
 
-    def commit(
+    def commit_scene(
         self,
         expected_version: int | None,
-        snapshot: ProjectRelationshipSnapshot,
+        scene: SceneGraphRecord,
+        snapshot: ProjectKnowledgeGraphSnapshot,
     ) -> StoredProjectSnapshot:
-        payload = encode_project_snapshot(snapshot)
-        content_hash = _content_hash(payload)
+        _validate_scene(scene)
+        if scene.project_id != snapshot.project_id:
+            raise ValueError("scene and snapshot project IDs must match")
+
+        scene_payload = _encode_scene_graph(scene.graph)
+        scene_content_hash = _content_hash(scene_payload)
+        snapshot_payload = encode_project_snapshot(snapshot)
+        snapshot_content_hash = _content_hash(snapshot_payload)
         connection = sqlite3.connect(self._path)
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -131,6 +162,53 @@ class SQLiteSnapshotRepository:
                     f"snapshot version must be {next_version}, got {snapshot.snapshot_version}"
                 )
 
+            row = connection.execute(
+                """
+                SELECT scene_revision
+                FROM scene_knowledge_graphs
+                WHERE project_id = ? AND scene_id = ?
+                """,
+                (scene.project_id, scene.scene_id),
+            ).fetchone()
+            current_scene_revision = None if row is None else row[0]
+            if (
+                current_scene_revision is not None
+                and scene.scene_revision <= current_scene_revision
+            ):
+                raise SnapshotVersionConflict(
+                    "scene revision must be greater than "
+                    f"{current_scene_revision}, got {scene.scene_revision}"
+                )
+
+            now = datetime.now(UTC).isoformat()
+            connection.execute(
+                """
+                INSERT INTO scene_knowledge_graphs (
+                    project_id,
+                    scene_id,
+                    scene_revision,
+                    scene_sequence,
+                    content_hash,
+                    payload,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(project_id, scene_id) DO UPDATE SET
+                    scene_revision = excluded.scene_revision,
+                    scene_sequence = excluded.scene_sequence,
+                    content_hash = excluded.content_hash,
+                    payload = excluded.payload,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    scene.project_id,
+                    scene.scene_id,
+                    scene.scene_revision,
+                    scene.scene_sequence,
+                    scene_content_hash,
+                    scene_payload,
+                    now,
+                ),
+            )
             connection.execute(
                 """
                 INSERT INTO project_snapshots (
@@ -146,9 +224,9 @@ class SQLiteSnapshotRepository:
                     snapshot.project_id,
                     snapshot.snapshot_version,
                     snapshot.schema_version,
-                    content_hash,
-                    payload,
-                    datetime.now(UTC).isoformat(),
+                    snapshot_content_hash,
+                    snapshot_payload,
+                    now,
                 ),
             )
             connection.execute(
@@ -169,9 +247,85 @@ class SQLiteSnapshotRepository:
 
         return StoredProjectSnapshot(
             snapshot=snapshot,
+            payload=snapshot_payload,
+            content_hash=snapshot_content_hash,
+        )
+
+    def _get_version(
+        self,
+        project_id: str,
+        version: int,
+    ) -> StoredProjectSnapshot | None:
+        with sqlite3.connect(self._path) as connection:
+            row = connection.execute(
+                """
+                SELECT schema_version, content_hash, payload
+                FROM project_snapshots
+                WHERE project_id = ? AND snapshot_version = ?
+                """,
+                (project_id, version),
+            ).fetchone()
+        if row is None:
+            return None
+
+        schema_version, content_hash, raw_payload = row
+        payload = _stored_payload(raw_payload, "snapshot")
+        if content_hash != _content_hash(payload):
+            raise SnapshotCorruptionError("stored snapshot content hash does not match payload")
+        try:
+            snapshot = decode_project_snapshot(payload)
+        except SnapshotDecodeError as error:
+            raise SnapshotCorruptionError("stored snapshot payload cannot be decoded") from error
+        if (
+            snapshot.project_id != project_id
+            or snapshot.snapshot_version != version
+            or snapshot.schema_version != schema_version
+        ):
+            raise SnapshotCorruptionError("stored snapshot metadata does not match payload")
+        return StoredProjectSnapshot(
+            snapshot=snapshot,
             payload=payload,
             content_hash=content_hash,
         )
+
+
+def _validate_scene(scene: SceneGraphRecord) -> None:
+    if not scene.project_id or not scene.scene_id:
+        raise ValueError("scene project and scene IDs must be non-empty")
+    if type(scene.scene_revision) is not int or scene.scene_revision < 0:
+        raise ValueError("scene revision must be a non-negative integer")
+    if type(scene.scene_sequence) is not int or scene.scene_sequence < 0:
+        raise ValueError("scene sequence must be a non-negative integer")
+    if scene.graph.document.chapter_id != scene.scene_id:
+        raise ValueError("scene ID must match the graph document chapter ID")
+
+
+def _encode_scene_graph(graph: KnowledgeGraphOutput) -> bytes:
+    return (
+        json.dumps(
+            graph.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+            separators=(",", ": "),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _decode_scene_graph(payload: bytes) -> KnowledgeGraphOutput:
+    try:
+        return KnowledgeGraphOutput.model_validate_json(payload, strict=True)
+    except (UnicodeDecodeError, ValidationError, ValueError) as error:
+        raise SnapshotCorruptionError("stored scene payload cannot be decoded") from error
+
+
+def _stored_payload(raw_payload: object, label: str) -> bytes:
+    try:
+        return bytes(raw_payload)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as error:
+        raise SnapshotCorruptionError(f"stored {label} payload is not binary") from error
 
 
 def _content_hash(payload: bytes) -> str:
