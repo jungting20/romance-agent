@@ -31,7 +31,7 @@ class Character(StrictModel):
     occupation: str | None
     affiliation: str | None
     status: Literal["alive", "dead", "missing", "unknown"]
-    first_mention: str
+    first_mention: str = Field(min_length=1)
     confidence: HighConfidence
 
 
@@ -56,7 +56,7 @@ class Location(StrictModel):
     ]
     parent_location_id: str | None
     description: str
-    first_mention: str
+    first_mention: str = Field(min_length=1)
     confidence: HighConfidence
 
 
@@ -70,7 +70,7 @@ class Event(StrictModel):
     time_expression: str | None
     narrative_time: Literal["present", "flashback", "flashforward", "unknown"]
     sequence: int = Field(ge=0)
-    evidence: str
+    evidence: str = Field(min_length=1)
     confidence: HighConfidence
 
 
@@ -91,7 +91,7 @@ class Relation(StrictModel):
     end_event_id: str | None
     time_expression: str | None
     scene_sequence: int = Field(ge=0)
-    evidence: str
+    evidence: str = Field(min_length=1)
     inference: bool
     confidence: HighConfidence
 
@@ -104,14 +104,14 @@ class Movement(StrictModel):
     event_id: str | None
     time_expression: str | None
     sequence: int = Field(ge=0)
-    evidence: str
+    evidence: str = Field(min_length=1)
     confidence: HighConfidence
 
 
 class Coreference(StrictModel):
     expression: str
     resolved_entity_id: str
-    evidence: str
+    evidence: str = Field(min_length=1)
     confidence: HighConfidence
 
 
@@ -126,7 +126,7 @@ class Contradiction(StrictModel):
     field_or_relation: str
     existing_value: str
     new_value: str
-    evidence: str
+    evidence: str = Field(min_length=1)
     possible_explanation: str
 
 

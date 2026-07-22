@@ -25,6 +25,8 @@ class ProjectGraphReader:
                 ).fetchone()
                 if pointer is None:
                     return ProjectKnowledgeGraphSnapshot.empty(project_id)
+                if type(pointer[0]) is not int or pointer[0] < 1:
+                    raise ValueError("stored snapshot version is invalid")
                 row = connection.execute(
                     """
                     SELECT schema_version, content_hash, payload
@@ -36,7 +38,9 @@ class ProjectGraphReader:
             if row is None:
                 raise ValueError("current snapshot is missing")
             schema_version, content_hash, raw_payload = row
-            payload = bytes(raw_payload)
+            if not isinstance(raw_payload, bytes):
+                raise ValueError("snapshot payload is not binary")
+            payload = raw_payload
             calculated = f"sha256:{sha256(payload).hexdigest()}"
             if content_hash != calculated:
                 raise ValueError("snapshot hash mismatch")

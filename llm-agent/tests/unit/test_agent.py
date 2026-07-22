@@ -303,6 +303,16 @@ def test_analyze_scene_rejects_evidence_absent_from_chunk_without_retry() -> Non
     assert len(runner.calls) == 1
 
 
+def test_analyze_scene_rejects_model_copy_with_empty_evidence_without_retry() -> None:
+    invalid_character = _character().model_copy(update={"first_mention": ""})
+    runner = GraphRunner((_output(characters=(invalid_character,)),))
+
+    with pytest.raises(NarrativeAnalysisError, match="scene analysis failed"):
+        asyncio.run(_agent(runner).analyze_scene(_request("서윤이 들어왔다.")))
+
+    assert len(runner.calls) == 1
+
+
 def test_analyze_scene_rejects_unknown_event_character_reference_without_retry() -> None:
     event = Event(
         id="event_001",
@@ -616,6 +626,15 @@ def test_analyze_scene_loads_a_custom_prompt_for_each_request(tmp_path: Path) ->
 
 def test_analyze_scene_sanitizes_prompt_read_errors(tmp_path: Path) -> None:
     agent = _agent(GraphRunner(), prompt_path=tmp_path / "missing.md")
+
+    with pytest.raises(NarrativeAnalysisError, match="unable to load scene analysis prompt"):
+        asyncio.run(agent.analyze_scene(_request("")))
+
+
+def test_analyze_scene_sanitizes_invalid_utf8_prompt(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "system.md"
+    prompt_path.write_bytes(b"\xff")
+    agent = _agent(GraphRunner(), prompt_path=prompt_path)
 
     with pytest.raises(NarrativeAnalysisError, match="unable to load scene analysis prompt"):
         asyncio.run(agent.analyze_scene(_request("")))

@@ -14,6 +14,10 @@ class SnapshotCorruptionError(RuntimeError):
     pass
 
 
+class SnapshotRepositoryError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class StoredProjectSnapshot:
     snapshot: ProjectKnowledgeGraphSnapshot

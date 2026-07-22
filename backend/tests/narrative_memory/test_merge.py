@@ -1,5 +1,6 @@
 from dataclasses import replace
 
+import pytest
 from narrative_analysis_agent.models import (
     PROJECT_GRAPH_SCHEMA_VERSION,
     AnalyzedChunk,
@@ -19,10 +20,12 @@ from narrative_analysis_agent.models import (
 )
 
 from apps.narrative_memory.service.merge import (
+    MergeInvariantError,
     assemble_scene_graph,
     rebuild_project_graph,
 )
 from apps.narrative_memory.service.models import SceneGraphRecord
+from apps.narrative_memory.service.validation import ProjectInvariantError
 
 
 def test_scene_merge_combines_clear_character_identity_across_chunks() -> None:
@@ -237,6 +240,32 @@ def test_scene_merge_does_not_reuse_ambiguous_existing_name() -> None:
     graph = assemble_scene_graph(analysis, existing).graph
 
     assert [item.id for item in graph.entities.characters] == ["character_010"]
+
+
+def test_scene_merge_does_not_reuse_existing_character_for_same_canonical_name_alone() -> None:
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=4,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(
+            characters=(_character("character_007", "서윤", first_mention="이전 서윤"),)
+        ),
+    )
+    analysis = _analysis(
+        chunks=(
+            _chunk(
+                ordinal=0,
+                text="다른 서윤이 들어왔다.",
+                characters=(_character("character_001", "서윤", first_mention="다른 서윤"),),
+            ),
+        )
+    )
+
+    graph = assemble_scene_graph(analysis, existing).graph
+
+    assert [(item.id, item.canonical_name) for item in graph.entities.characters] == [
+        ("character_008", "서윤")
+    ]
 
 
 def test_scene_merge_treats_colliding_character_id_as_local_declaration() -> None:
@@ -677,6 +706,27 @@ def test_scene_merge_is_deterministic_for_chunk_and_collection_order() -> None:
     assert reversed_input == forward
 
 
+def test_scene_merge_allocates_durable_ids_by_absolute_source_position_in_overlap() -> None:
+    later_in_source = _chunk(
+        ordinal=0,
+        text="가" * 290 + "후자",
+        characters=(_character("character_001", "후자", first_mention="후자"),),
+    )
+    earlier_in_source = _chunk(
+        ordinal=1,
+        text="나" * 10 + "선자",
+        characters=(_character("character_001", "선자", first_mention="선자"),),
+    )
+
+    graph = assemble_scene_graph(
+        _analysis(chunks=(later_in_source, earlier_in_source)),
+        _empty_project(),
+    ).graph
+
+    ids_by_name = {item.canonical_name: item.id for item in graph.entities.characters}
+    assert ids_by_name == {"선자": "character_001", "후자": "character_002"}
+
+
 def test_scene_merge_canonicalizes_nested_reference_collection_order() -> None:
     chunk = _chunk(
         ordinal=0,
@@ -829,6 +879,24 @@ def test_rebuild_project_graph_preserves_active_and_ended_relation_records() -> 
     )
 
     assert [relation.state for relation in snapshot.relations] == ["active", "ended"]
+
+
+def test_rebuild_project_graph_translates_project_validation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_validation(snapshot: ProjectKnowledgeGraphSnapshot) -> None:
+        del snapshot
+        raise ProjectInvariantError("SECRET_PROJECT_INVARIANT")
+
+    monkeypatch.setattr(
+        "apps.narrative_memory.service.merge.validate_project_snapshot",
+        fail_validation,
+    )
+
+    with pytest.raises(MergeInvariantError) as captured:
+        rebuild_project_graph("project-01", 1, ())
+
+    assert isinstance(captured.value.__cause__, ProjectInvariantError)
 
 
 def _analysis(*, chunks: tuple[AnalyzedChunk, ...]) -> SceneAnalysis:

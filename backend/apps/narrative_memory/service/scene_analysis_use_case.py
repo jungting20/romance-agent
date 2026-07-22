@@ -12,6 +12,7 @@ from narrative_analysis_agent import (
 from apps.narrative_memory.repository.snapshot_repository import (
     SnapshotCorruptionError,
     SnapshotRepository,
+    SnapshotRepositoryError,
     SnapshotVersionConflict,
 )
 from apps.narrative_memory.service.merge import (
@@ -71,7 +72,7 @@ class AnalyzeSceneUseCase:
                 for item in self._repository.get_scene_graphs(input_value.project_id)
                 if item.scene_id != scene.scene_id
             ) + (scene,)
-            next_version = 0 if current_version is None else current_version + 1
+            next_version = 1 if current_version is None else current_version + 1
             project = rebuild_project_graph(input_value.project_id, next_version, scenes)
             self._repository.commit_scene(current_version, scene, project)
             return analysis
@@ -81,6 +82,7 @@ class AnalyzeSceneUseCase:
             NarrativeAnalysisError,
             MergeInvariantError,
             SnapshotCorruptionError,
+            SnapshotRepositoryError,
             SnapshotVersionConflict,
         ):
             raise SceneAnalysisApplicationError("scene analysis failed") from None

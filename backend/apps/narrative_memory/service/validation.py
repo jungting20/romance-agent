@@ -90,6 +90,18 @@ def _validate_graph(graph: KnowledgeGraphOutput | ProjectKnowledgeGraphSnapshot)
     ):
         raise ProjectInvariantError("confidence must be finite and between 0.8 and 1.0")
 
+    evidence_values = (
+        *(item.first_mention for item in graph.entities.characters),
+        *(item.first_mention for item in graph.entities.locations),
+        *(item.evidence for item in graph.entities.events),
+        *(item.evidence for item in graph.relations),
+        *(item.evidence for item in graph.movements),
+        *(item.evidence for item in graph.coreferences),
+        *(item.evidence for item in graph.contradictions),
+    )
+    if any(not isinstance(value, str) or not value for value in evidence_values):
+        raise ProjectInvariantError("evidence and first mention must be non-empty strings")
+
 
 def _require_unique(values: Iterable[str], label: str) -> None:
     sequence = tuple(values)

@@ -13,6 +13,7 @@ from narrative_analysis_agent.models import Document, Entities, KnowledgeGraphOu
 
 from apps.narrative_memory.repository.snapshot_repository import (
     SnapshotCorruptionError,
+    SnapshotRepositoryError,
     SnapshotVersionConflict,
     StoredProjectSnapshot,
 )
@@ -22,6 +23,7 @@ from apps.narrative_memory.service.scene_analysis_use_case import (
     AnalyzeSceneUseCase,
     SceneAnalysisApplicationError,
 )
+from apps.narrative_memory.service.validation import ProjectInvariantError
 
 
 class RecordingAgent:
@@ -56,12 +58,16 @@ class RecordingSnapshotRepository:
         current: StoredProjectSnapshot | None,
         scenes: tuple[SceneGraphRecord, ...],
         current_error: Exception | None = None,
+        scenes_error: Exception | None = None,
         commit_error: Exception | None = None,
+        update_on_commit: bool = False,
     ) -> None:
         self.current = current
         self.scenes = scenes
         self.current_error = current_error
+        self.scenes_error = scenes_error
         self.commit_error = commit_error
+        self.update_on_commit = update_on_commit
         self.current_requests: list[str] = []
         self.scene_requests: list[str] = []
         self.commit_attempts = 0
@@ -78,6 +84,8 @@ class RecordingSnapshotRepository:
 
     def get_scene_graphs(self, project_id: str) -> tuple[SceneGraphRecord, ...]:
         self.scene_requests.append(project_id)
+        if self.scenes_error is not None:
+            raise self.scenes_error
         return self.scenes
 
     def commit_scene(
@@ -90,6 +98,11 @@ class RecordingSnapshotRepository:
         if self.commit_error is not None:
             raise self.commit_error
         self.commits.append((expected_version, scene, snapshot))
+        if self.update_on_commit:
+            self.current = _stored(snapshot)
+            self.scenes = tuple(item for item in self.scenes if item.scene_id != scene.scene_id) + (
+                scene,
+            )
         return _stored(snapshot)
 
 
@@ -130,7 +143,7 @@ def test_use_case_persists_scene_and_project_after_successful_analysis() -> None
     assert scene.scene_id == "scene-01"
     assert scene.scene_revision == 3
     assert project.project_id == "project-01"
-    assert project.snapshot_version == 0
+    assert project.snapshot_version == 1
     assert tuple(document.chapter_id for document in project.documents) == ("scene-01",)
 
 
@@ -224,6 +237,63 @@ def test_use_case_sanitizes_repository_read_failure() -> None:
 
     _assert_sanitized(captured.value, "SECRET_CORRUPT_SNAPSHOT")
     assert repository.commit_attempts == 0
+
+
+@pytest.mark.parametrize("stage", ["current", "scenes", "commit"])
+def test_use_case_sanitizes_repository_operational_failures(stage: str) -> None:
+    operational_error = SnapshotRepositoryError(f"SECRET_{stage.upper()}_OPERATION")
+    repository = RecordingSnapshotRepository(
+        current=None,
+        scenes=(),
+        current_error=operational_error if stage == "current" else None,
+        scenes_error=operational_error if stage == "scenes" else None,
+        commit_error=operational_error if stage == "commit" else None,
+    )
+
+    with pytest.raises(SceneAnalysisApplicationError) as captured:
+        asyncio.run(AnalyzeSceneUseCase(RecordingAgent(_analysis()), repository).execute(_input()))
+
+    _assert_sanitized(captured.value, operational_error.args[0])
+
+
+def test_use_case_sanitizes_project_validation_failure_without_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_validation(snapshot: ProjectKnowledgeGraphSnapshot) -> None:
+        del snapshot
+        raise ProjectInvariantError("SECRET_PROJECT_VALIDATION")
+
+    monkeypatch.setattr(
+        "apps.narrative_memory.service.merge.validate_project_snapshot",
+        fail_validation,
+    )
+    repository = RecordingSnapshotRepository(current=None, scenes=())
+
+    with pytest.raises(SceneAnalysisApplicationError) as captured:
+        asyncio.run(AnalyzeSceneUseCase(RecordingAgent(_analysis()), repository).execute(_input()))
+
+    _assert_sanitized(captured.value, "SECRET_PROJECT_VALIDATION")
+    assert repository.commit_attempts == 0
+
+
+def test_two_first_analyses_from_conceptual_version_zero_cannot_both_commit() -> None:
+    repository = RecordingSnapshotRepository(
+        current=None,
+        scenes=(),
+        update_on_commit=True,
+    )
+    use_case = AnalyzeSceneUseCase(
+        RecordingAgent(_analysis(source_snapshot_version=0)),
+        repository,
+    )
+
+    asyncio.run(use_case.execute(_input()))
+    with pytest.raises(SceneAnalysisApplicationError):
+        asyncio.run(use_case.execute(_input()))
+
+    assert [snapshot.snapshot_version for _, _, snapshot in repository.commits] == [1]
+    assert repository.current is not None
+    assert repository.current.snapshot.snapshot_version == 1
 
 
 def test_use_case_sanitizes_public_agent_errors_before_repository_access() -> None:

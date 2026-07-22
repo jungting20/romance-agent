@@ -138,6 +138,43 @@ def test_snapshot_codec_rejects_non_finite_confidence(
         encode_project_snapshot(snapshot)
 
 
+@pytest.mark.parametrize(
+    ("path", "invalid_value"),
+    [
+        pytest.param("character.status", "departed", id="invalid-enum"),
+        pytest.param("character.id", "person_001", id="invalid-id"),
+        pytest.param("event.sequence", -1, id="negative-sequence"),
+    ],
+)
+def test_encoder_revalidates_model_copy_against_exact_public_model(
+    path: str,
+    invalid_value: object,
+) -> None:
+    snapshot = _snapshot_with_field(path, invalid_value)
+
+    with pytest.raises(ValueError):
+        encode_project_snapshot(snapshot)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "character.first_mention",
+        "location.first_mention",
+        "event.evidence",
+        "relation.evidence",
+        "movement.evidence",
+        "coreference.evidence",
+        "contradiction.evidence",
+    ],
+)
+def test_encoder_defensively_rejects_empty_evidence_from_model_copy(path: str) -> None:
+    snapshot = _snapshot_with_field(path, "")
+
+    with pytest.raises(ValueError):
+        encode_project_snapshot(snapshot)
+
+
 def _semantic_snapshot() -> ProjectKnowledgeGraphSnapshot:
     return ProjectKnowledgeGraphSnapshot.model_validate_json(
         json.dumps(
@@ -280,6 +317,19 @@ def _snapshot_with_reference(path: str, reference: object) -> ProjectKnowledgeGr
     }
     collection = collection_by_section[section]
     item = getattr(snapshot, collection)[0].model_copy(update={field: reference})
+    return snapshot.model_copy(update={collection: (item,)})
+
+
+def _snapshot_with_field(path: str, value: object) -> ProjectKnowledgeGraphSnapshot:
+    snapshot = _semantic_snapshot()
+    section, field = path.split(".")
+    if section in {"character", "location", "event"}:
+        collection = f"{section}s"
+        item = getattr(snapshot.entities, collection)[0].model_copy(update={field: value})
+        entities = snapshot.entities.model_copy(update={collection: (item,)})
+        return snapshot.model_copy(update={"entities": entities})
+    collection = f"{section}s"
+    item = getattr(snapshot, collection)[0].model_copy(update={field: value})
     return snapshot.model_copy(update={collection: (item,)})
 
 

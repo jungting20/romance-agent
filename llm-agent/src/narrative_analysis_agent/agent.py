@@ -66,7 +66,7 @@ class NarrativeAnalysisAgent:
     async def analyze_scene(self, request: SceneAnalysisRequest) -> SceneAnalysis:
         try:
             instructions = self.prompt_path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeError):
             raise NarrativeAnalysisError("unable to load scene analysis prompt") from None
 
         try:
@@ -202,7 +202,7 @@ def _validate_output(
         *(item.evidence for item in output.coreferences),
         *(item.evidence for item in output.contradictions),
     ]
-    if any(value and value not in chunk.text for value in evidence_values):
+    if any(not value or value not in chunk.text for value in evidence_values):
         raise ValueError("evidence is not present in the chunk")
 
 

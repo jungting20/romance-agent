@@ -24,6 +24,7 @@ from narrative_analysis_agent.models import (
 
 from apps.narrative_memory.repository.snapshot_repository import (
     SnapshotCorruptionError,
+    SnapshotRepositoryError,
     SnapshotVersionConflict,
 )
 from apps.narrative_memory.repository.sqlite_snapshot_repository import (
@@ -73,12 +74,55 @@ def test_repository_starts_without_scene_or_current_snapshot(tmp_path: Path) -> 
     assert repository.get_current("missing-project") is None
 
 
+@pytest.mark.parametrize("method_name", ["get_current", "get_scene_graphs"])
+def test_repository_translates_sqlite_read_failure(
+    tmp_path: Path,
+    method_name: str,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / f"{method_name}.sqlite3")
+
+    with pytest.raises(
+        SnapshotRepositoryError,
+        match="snapshot repository operation failed",
+    ) as captured:
+        getattr(repository, method_name)("project-01")
+
+    assert captured.value.__cause__ is None
+
+
+def test_repository_translates_os_error_opening_commit_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    scene = scene_record("project-01", "scene-01", revision=1)
+    snapshot = project_snapshot("project-01", version=1, scenes=(scene,))
+
+    def fail_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
+        del args, kwargs
+        raise OSError("SECRET_DATABASE_PATH")
+
+    monkeypatch.setattr(
+        "apps.narrative_memory.repository.sqlite_snapshot_repository.sqlite3.connect",
+        fail_connect,
+    )
+
+    with pytest.raises(
+        SnapshotRepositoryError,
+        match="snapshot repository operation failed",
+    ) as captured:
+        repository.commit_scene(None, scene, snapshot)
+
+    assert captured.value.__cause__ is None
+
+
 def test_commit_scene_writes_scene_and_project_atomically(tmp_path: Path) -> None:
     path = tmp_path / "narrative-memory.sqlite3"
     repository = SQLiteSnapshotRepository(path)
     repository.initialize()
     scene = scene_record("project-01", "scene-01", revision=1)
-    snapshot = project_snapshot("project-01", version=0, scenes=(scene,))
+    snapshot = project_snapshot("project-01", version=1, scenes=(scene,))
     payload = encode_project_snapshot(snapshot)
 
     stored = repository.commit_scene(None, scene, snapshot)
@@ -103,7 +147,7 @@ def test_commit_scene_writes_scene_and_project_atomically(tmp_path: Path) -> Non
             FROM project_snapshots
             WHERE project_id = ? AND snapshot_version = ?
             """,
-            ("project-01", 0),
+            ("project-01", 1),
         ).fetchone()
     assert scene_row is not None
     assert scene_row[:2] == (1, 0)
@@ -120,11 +164,11 @@ def test_commit_scene_replaces_scene_and_preserves_project_history(tmp_path: Pat
     repository.initialize()
     original = scene_record("project-01", "scene-01", revision=1, summary="초고")
     revised = scene_record("project-01", "scene-01", revision=2, summary="개정고")
-    initial = project_snapshot("project-01", version=0, scenes=(original,))
-    current = project_snapshot("project-01", version=1, scenes=(revised,))
+    initial = project_snapshot("project-01", version=1, scenes=(original,))
+    current = project_snapshot("project-01", version=2, scenes=(revised,))
 
     repository.commit_scene(None, original, initial)
-    repository.commit_scene(0, revised, current)
+    repository.commit_scene(1, revised, current)
 
     assert repository.get_scene_graphs("project-01") == (revised,)
     assert repository.get_current("project-01").snapshot == current  # type: ignore[union-attr]
@@ -139,8 +183,8 @@ def test_commit_scene_replaces_scene_and_preserves_project_history(tmp_path: Pat
             ("project-01",),
         ).fetchall()
     assert versions == [
-        (0, encode_project_snapshot(initial)),
-        (1, encode_project_snapshot(current)),
+        (1, encode_project_snapshot(initial)),
+        (2, encode_project_snapshot(current)),
     ]
 
 
@@ -154,23 +198,23 @@ def test_get_scene_graphs_orders_by_scene_sequence_then_id(tmp_path: Path) -> No
     repository.commit_scene(
         None,
         later,
-        project_snapshot("project-01", version=0, scenes=(later,)),
-    )
-    repository.commit_scene(
-        0,
-        earlier_b,
-        project_snapshot("project-01", version=1, scenes=(earlier_b, later)),
+        project_snapshot("project-01", version=1, scenes=(later,)),
     )
     repository.commit_scene(
         1,
+        earlier_b,
+        project_snapshot("project-01", version=2, scenes=(earlier_b, later)),
+    )
+    repository.commit_scene(
+        2,
         earlier_a,
-        project_snapshot("project-01", version=2, scenes=(earlier_a, earlier_b, later)),
+        project_snapshot("project-01", version=3, scenes=(earlier_a, earlier_b, later)),
     )
 
     assert repository.get_scene_graphs("project-01") == (earlier_a, earlier_b, later)
 
 
-@pytest.mark.parametrize("expected_version", [None, 1])
+@pytest.mark.parametrize("expected_version", [None, 0])
 def test_commit_scene_rejects_any_expected_version_mismatch(
     tmp_path: Path,
     expected_version: int | None,
@@ -181,7 +225,7 @@ def test_commit_scene_rejects_any_expected_version_mismatch(
     repository.commit_scene(
         None,
         original,
-        project_snapshot("project-01", version=0, scenes=(original,)),
+        project_snapshot("project-01", version=1, scenes=(original,)),
     )
     added = scene_record("project-01", "scene-02", revision=1, sequence=1)
 
@@ -189,11 +233,11 @@ def test_commit_scene_rejects_any_expected_version_mismatch(
         repository.commit_scene(
             expected_version,
             added,
-            project_snapshot("project-01", version=1, scenes=(original, added)),
+            project_snapshot("project-01", version=2, scenes=(original, added)),
         )
 
     assert repository.get_scene_graphs("project-01") == (original,)
-    assert repository.get_current("project-01").snapshot.snapshot_version == 0  # type: ignore[union-attr]
+    assert repository.get_current("project-01").snapshot.snapshot_version == 1  # type: ignore[union-attr]
 
 
 @pytest.mark.parametrize("revision", [0, 1])
@@ -205,15 +249,15 @@ def test_commit_scene_rejects_non_increasing_scene_revision_and_rolls_back(
     repository = SQLiteSnapshotRepository(path)
     repository.initialize()
     original = scene_record("project-01", "scene-01", revision=1, summary="원본")
-    initial = project_snapshot("project-01", version=0, scenes=(original,))
+    initial = project_snapshot("project-01", version=1, scenes=(original,))
     repository.commit_scene(None, original, initial)
     stale = scene_record("project-01", "scene-01", revision=revision, summary="오래된 결과")
 
     with pytest.raises(SnapshotVersionConflict, match="scene revision"):
         repository.commit_scene(
-            0,
+            1,
             stale,
-            project_snapshot("project-01", version=1, scenes=(stale,)),
+            project_snapshot("project-01", version=2, scenes=(stale,)),
         )
 
     assert repository.get_scene_graphs("project-01") == (original,)
@@ -229,16 +273,72 @@ def test_commit_scene_rejects_invalid_next_snapshot_version_without_partial_writ
     repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
     repository.initialize()
     original = scene_record("project-01", "scene-01", revision=1)
-    initial = project_snapshot("project-01", version=0, scenes=(original,))
+    initial = project_snapshot("project-01", version=1, scenes=(original,))
     repository.commit_scene(None, original, initial)
     revised = scene_record("project-01", "scene-01", revision=2)
 
     with pytest.raises(ValueError, match="snapshot version"):
         repository.commit_scene(
-            0,
+            1,
             revised,
-            project_snapshot("project-01", version=2, scenes=(revised,)),
+            project_snapshot("project-01", version=3, scenes=(revised,)),
         )
+
+    assert repository.get_scene_graphs("project-01") == (original,)
+    assert repository.get_current("project-01").snapshot == initial  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    ("path", "invalid_value"),
+    [
+        pytest.param("character.status", "departed", id="invalid-enum"),
+        pytest.param("character.id", "person_001", id="invalid-id"),
+        pytest.param("event.sequence", -1, id="negative-sequence"),
+    ],
+)
+def test_commit_scene_revalidates_model_copy_before_write_and_preserves_current(
+    tmp_path: Path,
+    path: str,
+    invalid_value: object,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    original = semantic_scene_record()
+    initial = project_snapshot("project-01", version=1, scenes=(original,))
+    repository.commit_scene(None, original, initial)
+    revised = replace(original, scene_revision=2)
+    invalid = scene_with_field(revised, path, invalid_value)
+
+    with pytest.raises(ValueError):
+        repository.commit_scene(
+            1,
+            invalid,
+            project_snapshot("project-01", version=2, scenes=(invalid,)),
+        )
+
+    assert repository.get_scene_graphs("project-01") == (original,)
+    assert repository.get_current("project-01").snapshot == initial  # type: ignore[union-attr]
+
+
+def test_commit_scene_revalidates_project_model_copy_before_write_and_preserves_current(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    original = semantic_scene_record()
+    initial = project_snapshot("project-01", version=1, scenes=(original,))
+    repository.commit_scene(None, original, initial)
+    revised = replace(original, scene_revision=2)
+    character = revised.graph.entities.characters[0].model_copy(update={"status": "departed"})
+    invalid_entities = revised.graph.entities.model_copy(update={"characters": (character,)})
+    invalid_project = project_snapshot(
+        "project-01",
+        version=2,
+        scenes=(revised,),
+    ).model_copy(update={"entities": invalid_entities})
+
+    with pytest.raises(ValueError):
+        repository.commit_scene(1, revised, invalid_project)
 
     assert repository.get_scene_graphs("project-01") == (original,)
     assert repository.get_current("project-01").snapshot == initial  # type: ignore[union-attr]
@@ -253,7 +353,7 @@ def test_commit_scene_rejects_cross_project_input_without_partial_write(tmp_path
         repository.commit_scene(
             None,
             scene,
-            project_snapshot("project-02", version=0, scenes=()),
+            project_snapshot("project-02", version=1, scenes=()),
         )
 
     assert repository.get_scene_graphs("project-01") == ()
@@ -273,7 +373,7 @@ def test_get_scene_graphs_rejects_scene_content_hash_corruption(
     repository.commit_scene(
         None,
         scene,
-        project_snapshot("project-01", version=0, scenes=(scene,)),
+        project_snapshot("project-01", version=1, scenes=(scene,)),
     )
     with sqlite3.connect(path) as connection:
         value: bytes | str = b"{}\n" if column == "payload" else "sha256:" + "0" * 64
@@ -294,7 +394,7 @@ def test_get_scene_graphs_rejects_scene_payload_that_matches_its_hash(tmp_path: 
     repository.commit_scene(
         None,
         scene,
-        project_snapshot("project-01", version=0, scenes=(scene,)),
+        project_snapshot("project-01", version=1, scenes=(scene,)),
     )
     invalid_payload = b"{}\n"
     with sqlite3.connect(path) as connection:
@@ -321,7 +421,7 @@ def test_commit_scene_rejects_duplicate_scene_graph_ids(
         repository.commit_scene(
             None,
             invalid,
-            project_snapshot("project-01", version=0, scenes=(invalid,)),
+            project_snapshot("project-01", version=1, scenes=(invalid,)),
         )
 
     assert repository.get_scene_graphs("project-01") == ()
@@ -360,7 +460,7 @@ def test_commit_scene_rejects_dangling_or_wrong_kind_scene_reference(
         repository.commit_scene(
             None,
             scene,
-            project_snapshot("project-01", version=0, scenes=(scene,)),
+            project_snapshot("project-01", version=1, scenes=(scene,)),
         )
 
     assert repository.get_scene_graphs("project-01") == ()
@@ -386,7 +486,7 @@ def test_get_scene_graphs_rejects_hash_valid_semantic_corruption(
     repository.commit_scene(
         None,
         scene,
-        project_snapshot("project-01", version=0, scenes=(scene,)),
+        project_snapshot("project-01", version=1, scenes=(scene,)),
     )
     if corruption == "duplicate":
         invalid = scene_with_duplicate(scene, "characters")
@@ -417,7 +517,7 @@ def test_get_current_rejects_project_content_hash_corruption(
     repository.commit_scene(
         None,
         scene,
-        project_snapshot("project-01", version=0, scenes=(scene,)),
+        project_snapshot("project-01", version=1, scenes=(scene,)),
     )
     with sqlite3.connect(path) as connection:
         value: bytes | str = b"{}\n" if column == "payload" else "sha256:" + "0" * 64
@@ -456,19 +556,46 @@ def test_get_current_rejects_v1_payload_even_when_hash_matches(tmp_path: Path) -
         repository.get_current("project-01")
 
 
+def test_get_current_rejects_stored_current_snapshot_version_zero(tmp_path: Path) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    repository = SQLiteSnapshotRepository(path)
+    repository.initialize()
+    snapshot = ProjectKnowledgeGraphSnapshot.empty("project-01")
+    payload = encode_project_snapshot(snapshot)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO project_snapshots VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "project-01",
+                0,
+                snapshot.schema_version,
+                content_hash(payload),
+                payload,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO current_project_snapshots VALUES (?, ?)",
+            ("project-01", 0),
+        )
+
+    with pytest.raises(SnapshotCorruptionError, match="stored snapshot version"):
+        repository.get_current("project-01")
+
+
 def test_commit_scene_rolls_back_scene_upsert_when_project_insert_fails(tmp_path: Path) -> None:
     path = tmp_path / "narrative-memory.sqlite3"
     repository = SQLiteSnapshotRepository(path)
     repository.initialize()
     original = scene_record("project-01", "scene-01", revision=1, summary="원본")
-    initial = project_snapshot("project-01", version=0, scenes=(original,))
+    initial = project_snapshot("project-01", version=1, scenes=(original,))
     repository.commit_scene(None, original, initial)
     with sqlite3.connect(path) as connection:
         connection.execute(
             """
             CREATE TRIGGER reject_project_snapshot_insert
             BEFORE INSERT ON project_snapshots
-            WHEN NEW.snapshot_version = 1
+            WHEN NEW.snapshot_version = 2
             BEGIN
                 SELECT RAISE(ABORT, 'project insert rejected');
             END
@@ -476,11 +603,11 @@ def test_commit_scene_rolls_back_scene_upsert_when_project_insert_fails(tmp_path
         )
     revised = scene_record("project-01", "scene-01", revision=2, summary="개정고")
 
-    with pytest.raises(sqlite3.IntegrityError, match="project insert rejected"):
+    with pytest.raises(SnapshotRepositoryError, match="snapshot repository operation failed"):
         repository.commit_scene(
-            0,
+            1,
             revised,
-            project_snapshot("project-01", version=1, scenes=(revised,)),
+            project_snapshot("project-01", version=2, scenes=(revised,)),
         )
 
     assert repository.get_scene_graphs("project-01") == (original,)
@@ -489,7 +616,7 @@ def test_commit_scene_rolls_back_scene_upsert_when_project_insert_fails(tmp_path
         versions = connection.execute(
             "SELECT snapshot_version FROM project_snapshots ORDER BY snapshot_version"
         ).fetchall()
-    assert versions == [(0,)]
+    assert versions == [(1,)]
 
 
 def test_commit_scene_rolls_back_scene_and_project_when_pointer_write_fails(
@@ -499,7 +626,7 @@ def test_commit_scene_rolls_back_scene_and_project_when_pointer_write_fails(
     repository = SQLiteSnapshotRepository(path)
     repository.initialize()
     original = scene_record("project-01", "scene-01", revision=1, summary="원본")
-    initial = project_snapshot("project-01", version=0, scenes=(original,))
+    initial = project_snapshot("project-01", version=1, scenes=(original,))
     repository.commit_scene(None, original, initial)
     with sqlite3.connect(path) as connection:
         connection.execute(
@@ -513,11 +640,11 @@ def test_commit_scene_rolls_back_scene_and_project_when_pointer_write_fails(
         )
     revised = scene_record("project-01", "scene-01", revision=2, summary="개정고")
 
-    with pytest.raises(sqlite3.IntegrityError, match="pointer write rejected"):
+    with pytest.raises(SnapshotRepositoryError, match="snapshot repository operation failed"):
         repository.commit_scene(
-            0,
+            1,
             revised,
-            project_snapshot("project-01", version=1, scenes=(revised,)),
+            project_snapshot("project-01", version=2, scenes=(revised,)),
         )
 
     assert repository.get_scene_graphs("project-01") == (original,)
@@ -526,7 +653,7 @@ def test_commit_scene_rolls_back_scene_and_project_when_pointer_write_fails(
         versions = connection.execute(
             "SELECT snapshot_version FROM project_snapshots ORDER BY snapshot_version"
         ).fetchall()
-    assert versions == [(0,)]
+    assert versions == [(1,)]
 
 
 def test_repository_rejects_dangling_current_pointer(tmp_path: Path) -> None:
@@ -733,6 +860,25 @@ def scene_with_reference(
     }
     collection = collection_by_section[section]
     item = getattr(scene.graph, collection)[0].model_copy(update={field: reference})
+    return replace(
+        scene,
+        graph=scene.graph.model_copy(update={collection: (item,)}),
+    )
+
+
+def scene_with_field(
+    scene: SceneGraphRecord,
+    path: str,
+    value: object,
+) -> SceneGraphRecord:
+    section, field = path.split(".")
+    if section in {"character", "location", "event"}:
+        collection = f"{section}s"
+        item = getattr(scene.graph.entities, collection)[0].model_copy(update={field: value})
+        entities = scene.graph.entities.model_copy(update={collection: (item,)})
+        return replace(scene, graph=scene.graph.model_copy(update={"entities": entities}))
+    collection = f"{section}s"
+    item = getattr(scene.graph, collection)[0].model_copy(update={field: value})
     return replace(
         scene,
         graph=scene.graph.model_copy(update={collection: (item,)}),

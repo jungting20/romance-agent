@@ -128,8 +128,11 @@ verification, and handoff workflows. If the documents conflict, follow
   the project graph from all current scene records. The agent must not share
   these responsibilities.
 - Keep v2 project snapshot encoding and semantic validation at the codec boundary.
-  The SQLite repository owns schema initialization, scene provenance records,
-  canonical payload hashes, and the atomic scene-and-project write transaction.
+  Before project encoding or scene encoding and writing, revalidate
+  `model_dump(mode="python")` into the exact strict public Pydantic model, then
+  apply semantic graph validation. The SQLite repository owns schema
+  initialization, scene provenance records, canonical payload hashes, and the
+  atomic scene-and-project write transaction.
 - Initialize the backend-owned v2 database before constructing the agent, and
   pass the exact same configured `project_graph_path` to the read-only agent and
   the writable repository. Do not add a v1 decoder, automatic migration, or
@@ -138,6 +141,14 @@ verification, and handoff workflows. If the documents conflict, follow
   current project snapshot version. The repository must repeat that comparison
   inside its write transaction and reject both project-version mismatch and a
   non-increasing replacement scene revision without publishing partial state.
+  Treat version `0` only as the conceptual empty reader result: the first
+  persisted scene/project snapshot is version `1`, and every later persisted
+  snapshot increments the current positive version.
+- Translate reachable SQLite and filesystem failures at the repository boundary
+  into its sanitized operational error after rollback where applicable. The
+  application use case sanitizes that error together with corruption, conflict,
+  analysis, and merge-invariant failures; it must not use a blanket exception
+  catch.
 - The provider, prompt, structured-extraction, and deterministic network-free
   test rules are owned by
   [`llm-agent/docs/llm-agent-coding-rules.md`](../../llm-agent/docs/llm-agent-coding-rules.md).

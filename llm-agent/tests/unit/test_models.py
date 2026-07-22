@@ -5,8 +5,15 @@ import pytest
 from pydantic import ValidationError
 
 from narrative_analysis_agent.models import (
+    Character,
+    Contradiction,
+    Coreference,
+    Event,
     KnowledgeGraphOutput,
+    Location,
+    Movement,
     ProjectKnowledgeGraphSnapshot,
+    Relation,
     SceneAnalysisRequest,
 )
 
@@ -173,6 +180,123 @@ def test_knowledge_graph_allows_nullable_fields() -> None:
 
     assert output.entities.characters[0].age is None
     assert output.entities.locations[0].parent_location_id is None
+
+
+@pytest.mark.parametrize(
+    ("model_type", "payload"),
+    [
+        pytest.param(
+            Character,
+            {
+                "id": "character_001",
+                "canonical_name": "서윤",
+                "aliases": (),
+                "description": "",
+                "gender": "unknown",
+                "age": None,
+                "occupation": None,
+                "affiliation": None,
+                "status": "unknown",
+                "first_mention": "",
+                "confidence": 0.8,
+            },
+            id="character-first-mention",
+        ),
+        pytest.param(
+            Location,
+            {
+                "id": "location_001",
+                "canonical_name": "온실",
+                "aliases": (),
+                "location_type": "building",
+                "parent_location_id": None,
+                "description": "",
+                "first_mention": "",
+                "confidence": 0.8,
+            },
+            id="location-first-mention",
+        ),
+        pytest.param(
+            Event,
+            {
+                "id": "event_001",
+                "event_type": "ARRIVAL",
+                "name": "도착",
+                "summary": "",
+                "participant_ids": (),
+                "location_ids": (),
+                "time_expression": None,
+                "narrative_time": "present",
+                "sequence": 0,
+                "evidence": "",
+                "confidence": 0.8,
+            },
+            id="event-evidence",
+        ),
+        pytest.param(
+            Relation,
+            {
+                "id": "relation_001",
+                "source_id": "character_001",
+                "relation_type": "KNOWS",
+                "target_id": "character_002",
+                "state": "active",
+                "directed": True,
+                "start_event_id": None,
+                "end_event_id": None,
+                "time_expression": None,
+                "scene_sequence": 0,
+                "evidence": "",
+                "inference": False,
+                "confidence": 0.8,
+            },
+            id="relation-evidence",
+        ),
+        pytest.param(
+            Movement,
+            {
+                "character_id": "character_001",
+                "from_location_id": None,
+                "to_location_id": "location_001",
+                "movement_type": "ARRIVAL",
+                "event_id": None,
+                "time_expression": None,
+                "sequence": 0,
+                "evidence": "",
+                "confidence": 0.8,
+            },
+            id="movement-evidence",
+        ),
+        pytest.param(
+            Coreference,
+            {
+                "expression": "그녀",
+                "resolved_entity_id": "character_001",
+                "evidence": "",
+                "confidence": 0.8,
+            },
+            id="coreference-evidence",
+        ),
+        pytest.param(
+            Contradiction,
+            {
+                "subject_id": "character_001",
+                "field_or_relation": "status",
+                "existing_value": "missing",
+                "new_value": "alive",
+                "evidence": "",
+                "possible_explanation": "",
+            },
+            id="contradiction-evidence",
+        ),
+    ],
+)
+def test_public_models_reject_empty_evidence_strings(
+    model_type: type[object],
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        model_type.model_validate(payload)  # type: ignore[attr-defined]
 
 
 def test_request_is_frozen_and_rejects_blank_identity() -> None:

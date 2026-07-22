@@ -104,6 +104,15 @@ def test_reader_returns_empty_v2_graph_when_project_has_no_current_record(tmp_pa
     assert result == ProjectKnowledgeGraphSnapshot.empty("project-01")
 
 
+def test_reader_rejects_stored_current_snapshot_version_zero(tmp_path: Path) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    initialize_v2_tables(path)
+    insert_current_snapshot(path, snapshot_version=0)
+
+    with pytest.raises(ProjectGraphReadError, match="unable to read project graph"):
+        ProjectGraphReader(path).read("project-01")
+
+
 def test_reader_does_not_create_a_missing_database(tmp_path: Path) -> None:
     path = tmp_path / "missing.sqlite3"
 
@@ -142,6 +151,20 @@ def test_reader_rejects_malformed_snapshot_json(tmp_path: Path) -> None:
     path = tmp_path / "narrative-memory.sqlite3"
     initialize_v2_tables(path)
     insert_current_snapshot(path, payload=b"not-json")
+
+    with pytest.raises(ProjectGraphReadError, match="unable to read project graph"):
+        ProjectGraphReader(path).read("project-01")
+
+
+def test_reader_rejects_text_payload_even_when_text_contains_valid_json(tmp_path: Path) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    initialize_v2_tables(path)
+    payload = canonical_payload().decode("utf-8")
+    insert_current_snapshot(
+        path,
+        payload=payload,  # type: ignore[arg-type]
+        content_hash=f"sha256:{sha256(payload.encode()).hexdigest()}",
+    )
 
     with pytest.raises(ProjectGraphReadError, match="unable to read project graph"):
         ProjectGraphReader(path).read("project-01")

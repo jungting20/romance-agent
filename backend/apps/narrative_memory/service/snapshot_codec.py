@@ -3,7 +3,10 @@ import json
 from narrative_analysis_agent import ProjectKnowledgeGraphSnapshot
 from pydantic import ValidationError
 
-from apps.narrative_memory.service.validation import validate_project_snapshot
+from apps.narrative_memory.service.validation import (
+    ProjectInvariantError,
+    validate_project_snapshot,
+)
 
 
 class SnapshotDecodeError(ValueError):
@@ -11,8 +14,17 @@ class SnapshotDecodeError(ValueError):
 
 
 def encode_project_snapshot(snapshot: ProjectKnowledgeGraphSnapshot) -> bytes:
-    validate_project_snapshot(snapshot)
-    data = snapshot.model_dump(mode="json")
+    try:
+        exact_snapshot = ProjectKnowledgeGraphSnapshot.model_validate(
+            snapshot.model_dump(mode="python"),
+            strict=True,
+        )
+    except ValidationError as error:
+        raise ProjectInvariantError(
+            "project snapshot field or confidence violates the public model contract"
+        ) from error
+    validate_project_snapshot(exact_snapshot)
+    data = exact_snapshot.model_dump(mode="json")
     return (
         json.dumps(
             data,

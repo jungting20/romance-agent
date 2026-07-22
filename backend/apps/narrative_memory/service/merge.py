@@ -19,9 +19,13 @@ from narrative_analysis_agent.models import (
     SceneAnalysis,
     UnresolvedReference,
 )
+from pydantic import ValidationError
 
 from apps.narrative_memory.service.models import SceneGraphRecord
-from apps.narrative_memory.service.validation import validate_project_snapshot
+from apps.narrative_memory.service.validation import (
+    ProjectInvariantError,
+    validate_project_snapshot,
+)
 
 type LocalId = tuple[int, str]
 type IdMap = dict[LocalId, str]
@@ -94,23 +98,30 @@ def rebuild_project_graph(
 ) -> ProjectKnowledgeGraphSnapshot:
     current_scenes = _current_scene_records(project_id, scenes)
     ordered = tuple(sorted(current_scenes, key=lambda item: (item.scene_sequence, item.scene_id)))
-    snapshot = ProjectKnowledgeGraphSnapshot(
-        project_id=project_id,
-        snapshot_version=snapshot_version,
-        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
-        documents=tuple(item.graph.document for item in ordered),
-        entities=_aggregate_entities(ordered),
-        relations=_aggregate(ordered, lambda graph: graph.relations),
-        movements=_aggregate(ordered, lambda graph: graph.movements),
-        coreferences=_aggregate(ordered, lambda graph: graph.coreferences),
-        unresolved_references=_aggregate(
-            ordered,
-            lambda graph: graph.unresolved_references,
-        ),
-        contradictions=_aggregate(ordered, lambda graph: graph.contradictions),
-    )
-    validate_project_snapshot(snapshot)
-    return snapshot
+    try:
+        snapshot = ProjectKnowledgeGraphSnapshot(
+            project_id=project_id,
+            snapshot_version=snapshot_version,
+            schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+            documents=tuple(item.graph.document for item in ordered),
+            entities=_aggregate_entities(ordered),
+            relations=_aggregate(ordered, lambda graph: graph.relations),
+            movements=_aggregate(ordered, lambda graph: graph.movements),
+            coreferences=_aggregate(ordered, lambda graph: graph.coreferences),
+            unresolved_references=_aggregate(
+                ordered,
+                lambda graph: graph.unresolved_references,
+            ),
+            contradictions=_aggregate(ordered, lambda graph: graph.contradictions),
+        )
+        snapshot = ProjectKnowledgeGraphSnapshot.model_validate(
+            snapshot.model_dump(mode="python"),
+            strict=True,
+        )
+        validate_project_snapshot(snapshot)
+        return snapshot
+    except (ProjectInvariantError, ValidationError) as error:
+        raise MergeInvariantError("project graph invariants are invalid") from error
 
 
 def normalize_text(value: str) -> str:
@@ -132,7 +143,7 @@ def _character_id_map(
     ]
     entries.sort(key=lambda entry: _identity_order(*entry))
     existing_items = {item.id: item for item in existing.entities.characters}
-    result = _map_existing_identities(entries, existing_items, _identity_tokens)
+    result = _map_existing_identities(entries, existing_items)
     remaining = [entry for entry in entries if _local_key(*entry) not in result]
     clusters = _clusters(
         remaining,
@@ -159,7 +170,7 @@ def _location_id_map(
     ]
     entries.sort(key=lambda entry: _identity_order(*entry))
     existing_items = {item.id: item for item in existing.entities.locations}
-    result = _map_existing_identities(entries, existing_items, _identity_tokens)
+    result = _map_existing_identities(entries, existing_items)
     remaining = [entry for entry in entries if _local_key(*entry) not in result]
     clusters = _clusters(
         remaining,
@@ -211,22 +222,31 @@ def _event_id_map(
 def _map_existing_identities[Item: Character | Location](
     entries: list[tuple[AnalyzedChunk, Item]],
     existing_items: dict[str, Item],
-    token_getter: Callable[[Item], set[str]],
 ) -> IdMap:
-    by_token: dict[str, set[str]] = {}
-    for item in existing_items.values():
-        for token in token_getter(item):
-            by_token.setdefault(token, set()).add(item.id)
-
     result: IdMap = {}
     for chunk, item in entries:
         key = (chunk.ordinal, item.id)
         matches = {
-            existing_id for token in token_getter(item) for existing_id in by_token.get(token, ())
+            existing_id
+            for existing_id, existing_item in existing_items.items()
+            if _has_explicit_alias_bridge(item, existing_item)
         }
         if len(matches) == 1:
             result[key] = matches.pop()
     return result
+
+
+def _has_explicit_alias_bridge(
+    left: Character | Location,
+    right: Character | Location,
+) -> bool:
+    left_name = normalize_text(left.canonical_name)
+    right_name = normalize_text(right.canonical_name)
+    left_aliases = {normalize_text(alias) for alias in left.aliases if normalize_text(alias)}
+    right_aliases = {normalize_text(alias) for alias in right.aliases if normalize_text(alias)}
+    return bool(left_aliases & ({right_name} | right_aliases)) or bool(
+        right_aliases & ({left_name} | left_aliases)
+    )
 
 
 def _clusters[Item](
@@ -369,19 +389,19 @@ def _identity_order(
     item: Character | Location,
 ) -> tuple[object, ...]:
     return (
-        chunk.ordinal,
-        chunk.text.find(item.first_mention),
+        _absolute_evidence_position(chunk, item.first_mention),
         normalize_text(item.canonical_name),
         item.id,
+        chunk.ordinal,
     )
 
 
 def _event_order(chunk: AnalyzedChunk, item: Event) -> tuple[object, ...]:
     return (
-        chunk.ordinal,
-        chunk.text.find(item.evidence),
+        _absolute_evidence_position(chunk, item.evidence),
         normalize_text(item.name),
         item.id,
+        chunk.ordinal,
     )
 
 
@@ -574,10 +594,10 @@ def _merge_relations(
 
 def _relation_order(chunk: AnalyzedChunk, relation: Relation) -> tuple[object, ...]:
     return (
-        chunk.ordinal,
-        chunk.text.find(relation.evidence),
+        _absolute_evidence_position(chunk, relation.evidence),
         *_relation_semantic_key(relation),
         relation.id,
+        chunk.ordinal,
     )
 
 
