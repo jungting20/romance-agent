@@ -77,6 +77,7 @@ def assemble_scene_graph(
         unresolved_references=_merge_unresolved(analysis.chunks, entity_map),
         contradictions=_merge_contradictions(analysis.chunks, entity_map),
     )
+    graph = _with_existing_dependency_closure(graph, existing)
     return SceneGraphRecord(
         project_id=analysis.project_id,
         scene_id=analysis.scene_id,
@@ -135,7 +136,7 @@ def _character_id_map(
     remaining = [entry for entry in entries if _local_key(*entry) not in result]
     clusters = _clusters(
         remaining,
-        lambda left, right: _characters_clearly_match(left, right),
+        lambda left, right: _identities_clearly_match(left, right),
     )
     _allocate_clusters(
         result,
@@ -162,7 +163,7 @@ def _location_id_map(
     remaining = [entry for entry in entries if _local_key(*entry) not in result]
     clusters = _clusters(
         remaining,
-        lambda left, right: bool(_identity_tokens(left[1]) & _identity_tokens(right[1])),
+        lambda left, right: _identities_clearly_match(left, right),
     )
     _allocate_clusters(
         result,
@@ -188,13 +189,8 @@ def _event_id_map(
     entries.sort(key=lambda entry: _event_order(*entry))
     existing_items = {item.id: item for item in existing.entities.events}
     result: IdMap = {}
-    for chunk, event in entries:
-        if event.id in existing_items:
-            result[(chunk.ordinal, event.id)] = event.id
-
-    remaining = [entry for entry in entries if _local_key(*entry) not in result]
     clusters = _clusters(
-        remaining,
+        entries,
         lambda left, right: _events_clearly_match(
             left,
             right,
@@ -225,9 +221,6 @@ def _map_existing_identities[Item: Character | Location](
     result: IdMap = {}
     for chunk, item in entries:
         key = (chunk.ordinal, item.id)
-        if item.id in existing_items:
-            result[key] = item.id
-            continue
         matches = {
             existing_id for token in token_getter(item) for existing_id in by_token.get(token, ())
         }
@@ -291,9 +284,9 @@ def _next_id_number(prefix: str, items: Iterable[str]) -> int:
     return max(numbers, default=0) + 1
 
 
-def _characters_clearly_match(
-    left: tuple[AnalyzedChunk, Character],
-    right: tuple[AnalyzedChunk, Character],
+def _identities_clearly_match[Item: Character | Location](
+    left: tuple[AnalyzedChunk, Item],
+    right: tuple[AnalyzedChunk, Item],
 ) -> bool:
     left_chunk, left_item = left
     right_chunk, right_item = right
@@ -423,7 +416,9 @@ def _merge_locations(
     existing_items = {item.id: item for item in existing.entities.locations}
     merged = _merge_identities(entries, existing_items, location_map)
     return tuple(
-        item.model_copy(
+        item
+        if item.id in existing_items
+        else item.model_copy(
             update={
                 "parent_location_id": _resolve_reference(
                     source_chunk.ordinal,
@@ -458,7 +453,10 @@ def _merge_identities[Item: Character | Location](
     merged: list[Item] = []
     for durable_id in sorted(by_id, key=_id_order):
         values = sorted(by_id[durable_id], key=lambda entry: _identity_order(*entry))
-        base = existing_items.get(durable_id, values[0][1])
+        if durable_id in existing_items:
+            merged.append(existing_items[durable_id])
+            continue
+        base = values[0][1]
         aliases = _merged_aliases(base, (item for _, item in values))
         merged.append(base.model_copy(update={"id": durable_id, "aliases": aliases}))
     return tuple(merged)
@@ -559,18 +557,15 @@ def _merge_relations(
     by_duplicate: dict[tuple[object, ...], str] = {}
     merged: list[Relation] = []
     for chunk, relation in rewritten:
-        if relation.id in existing_ids:
-            durable_id = relation.id
-        else:
-            duplicate_key = (
-                _absolute_evidence_position(chunk, relation.evidence),
-                *_relation_semantic_key(relation),
-            )
-            durable_id = by_duplicate.get(duplicate_key, "")
-            if not durable_id:
-                durable_id = f"relation_{next_number:03d}"
-                next_number += 1
-                by_duplicate[duplicate_key] = durable_id
+        duplicate_key = (
+            _absolute_evidence_position(chunk, relation.evidence),
+            *_relation_semantic_key(relation),
+        )
+        durable_id = by_duplicate.get(duplicate_key, "")
+        if not durable_id:
+            durable_id = f"relation_{next_number:03d}"
+            next_number += 1
+            by_duplicate[duplicate_key] = durable_id
         candidate = relation.model_copy(update={"id": durable_id})
         if candidate not in merged:
             merged.append(candidate)
@@ -756,6 +751,75 @@ def _resolve_reference(
     if reference is None:
         return None
     return id_map.get((ordinal, reference), reference)
+
+
+def _with_existing_dependency_closure(
+    graph: KnowledgeGraphOutput,
+    existing: ProjectKnowledgeGraphSnapshot,
+) -> KnowledgeGraphOutput:
+    characters = {item.id: item for item in graph.entities.characters}
+    locations = {item.id: item for item in graph.entities.locations}
+    events = {item.id: item for item in graph.entities.events}
+    existing_characters = {item.id: item for item in existing.entities.characters}
+    existing_locations = {item.id: item for item in existing.entities.locations}
+    existing_events = {item.id: item for item in existing.entities.events}
+
+    pending = _graph_reference_ids(graph)
+    processed: set[str] = set()
+    while pending:
+        reference = min(pending, key=_id_order)
+        pending.remove(reference)
+        if reference in processed:
+            continue
+        processed.add(reference)
+        if reference in characters or reference in locations or reference in events:
+            continue
+        if character := existing_characters.get(reference):
+            characters[reference] = character
+            continue
+        if location := existing_locations.get(reference):
+            locations[reference] = location
+            if location.parent_location_id is not None:
+                pending.add(location.parent_location_id)
+            continue
+        if event := existing_events.get(reference):
+            events[reference] = event
+            pending.update(event.participant_ids)
+            pending.update(event.location_ids)
+
+    return graph.model_copy(
+        update={
+            "entities": Entities(
+                characters=tuple(characters[key] for key in sorted(characters, key=_id_order)),
+                locations=tuple(locations[key] for key in sorted(locations, key=_id_order)),
+                events=tuple(events[key] for key in sorted(events, key=_id_order)),
+            )
+        }
+    )
+
+
+def _graph_reference_ids(graph: KnowledgeGraphOutput) -> set[str]:
+    references = {
+        *(item.parent_location_id for item in graph.entities.locations),
+        *(reference for item in graph.entities.events for reference in item.participant_ids),
+        *(reference for item in graph.entities.events for reference in item.location_ids),
+        *(item.source_id for item in graph.relations),
+        *(item.target_id for item in graph.relations),
+        *(item.start_event_id for item in graph.relations),
+        *(item.end_event_id for item in graph.relations),
+        *(item.character_id for item in graph.movements),
+        *(item.from_location_id for item in graph.movements),
+        *(item.to_location_id for item in graph.movements),
+        *(item.event_id for item in graph.movements),
+        *(item.resolved_entity_id for item in graph.coreferences),
+        *(
+            reference
+            for item in graph.unresolved_references
+            for reference in item.possible_entity_ids
+        ),
+        *(item.subject_id for item in graph.contradictions),
+    }
+    return {reference for reference in references if reference is not None}
 
 
 def _canonical_references(

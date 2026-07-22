@@ -177,11 +177,18 @@ def test_scene_merge_reuses_existing_ids_and_rewrites_every_reference() -> None:
         "character_007",
         "character_008",
     ]
-    assert graph.entities.events[0].participant_ids == ("character_007", "character_008")
-    assert [item.id for item in graph.entities.locations] == ["location_010", "location_011"]
-    assert graph.entities.locations[1].parent_location_id == "location_010"
-    assert graph.entities.events[0].id == "event_010"
-    assert graph.entities.events[0].location_ids == ("location_010",)
+    events = {item.id: item for item in graph.entities.events}
+    assert tuple(events) == ("event_009", "event_010")
+    assert events["event_009"] == existing.entities.events[0]
+    assert events["event_010"].participant_ids == ("character_007", "character_008")
+    assert [item.id for item in graph.entities.locations] == [
+        "location_009",
+        "location_010",
+        "location_011",
+    ]
+    assert graph.entities.locations[0] == existing.entities.locations[0]
+    assert graph.entities.locations[2].parent_location_id == "location_010"
+    assert events["event_010"].location_ids == ("location_010",)
     assert graph.relations[0].source_id == "character_007"
     assert graph.relations[0].target_id == "character_008"
     assert graph.relations[0].start_event_id == "event_010"
@@ -232,6 +239,271 @@ def test_scene_merge_does_not_reuse_ambiguous_existing_name() -> None:
     assert [item.id for item in graph.entities.characters] == ["character_010"]
 
 
+def test_scene_merge_treats_colliding_character_id_as_local_declaration() -> None:
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=1,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(
+            characters=(_character("character_001", "기존 인물", first_mention="기존 인물"),)
+        ),
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="새 인물이 등장했다.",
+        characters=(_character("character_001", "새 인물", first_mention="새 인물"),),
+        coreferences=(
+            Coreference(
+                expression="그",
+                resolved_entity_id="character_001",
+                evidence="새 인물",
+                confidence=0.9,
+            ),
+        ),
+    )
+
+    graph = assemble_scene_graph(_analysis(chunks=(chunk,)), existing).graph
+
+    assert [item.id for item in graph.entities.characters] == ["character_002"]
+    assert graph.coreferences[0].resolved_entity_id == "character_002"
+
+
+def test_scene_merge_treats_colliding_location_id_as_local_declaration() -> None:
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=1,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(
+            locations=(_location("location_001", "기존 장소", first_mention="기존 장소"),)
+        ),
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="새 장소가 드러났다.",
+        locations=(_location("location_001", "새 장소", first_mention="새 장소"),),
+    )
+
+    graph = assemble_scene_graph(_analysis(chunks=(chunk,)), existing).graph
+
+    assert [item.id for item in graph.entities.locations] == ["location_002"]
+
+
+def test_scene_merge_treats_colliding_event_id_as_local_declaration() -> None:
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=1,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(events=(_event("event_001"),)),
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="다시 도착했다.",
+        events=(_event("event_001"),),
+    )
+
+    graph = assemble_scene_graph(_analysis(chunks=(chunk,)), existing).graph
+
+    assert [item.id for item in graph.entities.events] == ["event_002"]
+
+
+def test_scene_merge_treats_colliding_relation_id_as_local_declaration() -> None:
+    first = _character("character_010", "서윤", first_mention="서윤")
+    second = _character("character_011", "민준", first_mention="민준")
+    existing_relation = _relation(
+        "relation_001",
+        source_id=first.id,
+        target_id=second.id,
+    )
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=1,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(characters=(first, second)),
+        relations=(existing_relation,),
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="두 사람의 관계가 드러났다.",
+        relations=(
+            _relation(
+                "relation_001",
+                source_id=first.id,
+                target_id=second.id,
+                evidence="관계",
+            ),
+        ),
+    )
+
+    graph = assemble_scene_graph(_analysis(chunks=(chunk,)), existing).graph
+
+    assert [item.id for item in graph.relations] == ["relation_002"]
+
+
+def test_reused_character_and_location_remain_exact_canonical_objects_across_scenes() -> None:
+    existing_character = _character(
+        "character_007",
+        "서윤",
+        aliases=("한서윤",),
+        first_mention="서윤",
+    )
+    existing_location = _location(
+        "location_010",
+        "홀",
+        aliases=("대홀",),
+        first_mention="홀",
+    )
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=4,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(
+            characters=(existing_character,),
+            locations=(existing_location,),
+        ),
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="한서윤은 대홀에서 임시 부모 장소를 언급했다.",
+        characters=(
+            _character(
+                "character_001",
+                "한서윤",
+                aliases=("새 별칭",),
+                first_mention="한서윤",
+            ),
+        ),
+        locations=(
+            _location(
+                "location_001",
+                "대홀",
+                aliases=("새 장소 별칭",),
+                first_mention="대홀",
+                parent_location_id="location_002",
+            ),
+            _location(
+                "location_002",
+                "임시 부모 장소",
+                first_mention="임시 부모 장소",
+            ),
+        ),
+    )
+    first_scene = assemble_scene_graph(_analysis(chunks=(chunk,)), existing)
+    second_analysis = _analysis(chunks=(chunk,)).model_copy(
+        update={"scene_id": "scene-02", "scene_sequence": 5}
+    )
+    second_scene = assemble_scene_graph(second_analysis, existing)
+
+    assert existing_character in first_scene.graph.entities.characters
+    assert existing_character in second_scene.graph.entities.characters
+    assert existing_location in first_scene.graph.entities.locations
+    assert existing_location in second_scene.graph.entities.locations
+
+    snapshot = rebuild_project_graph("project-01", 5, (second_scene, first_scene))
+
+    assert snapshot.entities.characters == (existing_character,)
+    assert snapshot.entities.locations.count(existing_location) == 1
+
+
+def test_scene_merge_includes_only_referenced_existing_dependency_closure() -> None:
+    character = _character("character_007", "서윤", first_mention="서윤")
+    old_character = _character("character_099", "이전 인물", first_mention="이전 인물")
+    parent = _location("location_006", "건물", first_mention="건물")
+    location = _location(
+        "location_007",
+        "방",
+        first_mention="방",
+        parent_location_id=parent.id,
+    )
+    event = _event(
+        "event_007",
+        participant_ids=(character.id,),
+        location_ids=(location.id,),
+    )
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=7,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(
+            characters=(character, old_character),
+            locations=(parent, location),
+            events=(event,),
+        ),
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="관계와 이동, 그 일에 대한 변화가 드러났다.",
+        relations=(
+            _relation(
+                "relation_001",
+                source_id=character.id,
+                target_id=location.id,
+                start_event_id=event.id,
+                end_event_id=event.id,
+                evidence="관계",
+            ),
+        ),
+        movements=(
+            Movement(
+                character_id=character.id,
+                from_location_id=location.id,
+                to_location_id=location.id,
+                movement_type="MOVE",
+                event_id=event.id,
+                time_expression=None,
+                sequence=0,
+                evidence="이동",
+                confidence=0.9,
+            ),
+        ),
+        coreferences=(
+            Coreference(
+                expression="그 일",
+                resolved_entity_id=event.id,
+                evidence="그 일",
+                confidence=0.9,
+            ),
+        ),
+        unresolved_references=(
+            UnresolvedReference(
+                expression="그들",
+                possible_entity_ids=(character.id, location.id, event.id),
+                reason="복수 가능성",
+            ),
+        ),
+        contradictions=(
+            Contradiction(
+                subject_id=location.id,
+                field_or_relation="description",
+                existing_value="이전",
+                new_value="변화",
+                evidence="변화",
+                possible_explanation="",
+            ),
+        ),
+    )
+
+    scene = assemble_scene_graph(_analysis(chunks=(chunk,)), existing)
+
+    assert scene.graph.entities.characters == (character,)
+    assert scene.graph.entities.locations == (parent, location)
+    assert scene.graph.entities.events == (event,)
+    assert old_character not in scene.graph.entities.characters
+    assert scene.graph.relations[0].start_event_id == event.id
+    assert scene.graph.relations[0].end_event_id == event.id
+    assert scene.graph.movements[0].event_id == event.id
+    assert scene.graph.coreferences[0].resolved_entity_id == event.id
+    assert scene.graph.unresolved_references[0].possible_entity_ids == (
+        character.id,
+        event.id,
+        location.id,
+    )
+    assert scene.graph.contradictions[0].subject_id == location.id
+
+    snapshot = rebuild_project_graph("project-01", 8, (scene,))
+
+    assert snapshot.entities == scene.graph.entities
+
+
 def test_scene_merge_separates_ambiguous_same_name_and_preserves_possible_same_as() -> None:
     chunk = _chunk(
         ordinal=0,
@@ -261,6 +533,34 @@ def test_scene_merge_separates_ambiguous_same_name_and_preserves_possible_same_a
     assert graph.relations[0].relation_type == "POSSIBLE_SAME_AS"
     assert graph.relations[0].source_id == "character_001"
     assert graph.relations[0].target_id == "character_002"
+
+
+def test_scene_merge_separates_ambiguous_same_name_locations() -> None:
+    chunk = _chunk(
+        ordinal=0,
+        text="첫 번째 중앙역을 지나 두 번째 중앙역에 도착했다.",
+        locations=(
+            _location("location_010", "중앙역", first_mention="첫 번째 중앙역"),
+            _location("location_020", "중앙역", first_mention="두 번째 중앙역"),
+        ),
+        relations=(
+            _relation(
+                "relation_001",
+                source_id="location_010",
+                target_id="location_020",
+                relation_type="POSSIBLE_SAME_AS",
+                state="uncertain",
+                evidence="중앙역",
+            ),
+        ),
+    )
+
+    graph = assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project()).graph
+
+    assert [item.id for item in graph.entities.locations] == ["location_001", "location_002"]
+    assert graph.relations[0].relation_type == "POSSIBLE_SAME_AS"
+    assert graph.relations[0].source_id == "location_001"
+    assert graph.relations[0].target_id == "location_002"
 
 
 def test_scene_merge_keys_local_ids_by_chunk_ordinal() -> None:
@@ -605,13 +905,14 @@ def _location(
     location_id: str,
     canonical_name: str,
     *,
+    aliases: tuple[str, ...] = (),
     first_mention: str,
     parent_location_id: str | None = None,
 ) -> Location:
     return Location(
         id=location_id,
         canonical_name=canonical_name,
-        aliases=(),
+        aliases=aliases,
         location_type="building",
         parent_location_id=parent_location_id,
         description="",
