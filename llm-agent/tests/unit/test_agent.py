@@ -105,3 +105,4 @@ def test_packaged_prompt_is_plain_korean_markdown() -> None:
 
     assert not content.startswith("---")
     assert "제공된 장면 청크" in content
+    assert "chunk-analysis-extraction-v1" in content
