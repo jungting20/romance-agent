@@ -130,26 +130,68 @@ def _validate_output(
     if output.document.chapter_id != request.scene_id:
         raise ValueError("chapter ID does not match the scene")
 
-    local_characters = {item.id for item in output.entities.characters}
-    local_locations = {item.id for item in output.entities.locations}
-    local_events = {item.id for item in output.entities.events}
+    local_character_ids = tuple(item.id for item in output.entities.characters)
+    local_location_ids = tuple(item.id for item in output.entities.locations)
+    local_event_ids = tuple(item.id for item in output.entities.events)
+    local_relation_ids = tuple(item.id for item in output.relations)
+    _validate_unique_ids(local_character_ids, "character")
+    _validate_unique_ids(local_location_ids, "location")
+    _validate_unique_ids(local_event_ids, "event")
+    _validate_unique_ids(local_relation_ids, "relation")
+
+    local_characters = set(local_character_ids)
+    local_locations = set(local_location_ids)
+    local_events = set(local_event_ids)
     known_characters = {item.id for item in existing.entities.characters}
     known_locations = {item.id for item in existing.entities.locations}
     known_events = {item.id for item in existing.entities.events}
     characters = local_characters | known_characters
     locations = local_locations | known_locations
     events = local_events | known_events
+    entities = characters | locations | events
 
+    for location in output.entities.locations:
+        _validate_reference(location.parent_location_id, locations, "location parent is unknown")
     for event in output.entities.events:
         if not set(event.participant_ids) <= characters:
             raise ValueError("event references an unknown character")
         if not set(event.location_ids) <= locations:
             raise ValueError("event references an unknown location")
     for relation in output.relations:
-        if relation.source_id not in characters | locations | events:
+        if relation.source_id not in entities:
             raise ValueError("relation source is unknown")
-        if relation.target_id not in characters | locations | events:
+        if relation.target_id not in entities:
             raise ValueError("relation target is unknown")
+        _validate_reference(relation.start_event_id, events, "relation start event is unknown")
+        _validate_reference(relation.end_event_id, events, "relation end event is unknown")
+    for movement in output.movements:
+        _validate_reference(movement.character_id, characters, "movement character is unknown")
+        _validate_reference(
+            movement.from_location_id,
+            locations,
+            "movement origin is unknown",
+        )
+        _validate_reference(
+            movement.to_location_id,
+            locations,
+            "movement destination is unknown",
+        )
+        _validate_reference(movement.event_id, events, "movement event is unknown")
+    for coreference in output.coreferences:
+        _validate_reference(
+            coreference.resolved_entity_id,
+            entities,
+            "coreference target is unknown",
+        )
+    for unresolved in output.unresolved_references:
+        if not set(unresolved.possible_entity_ids) <= entities:
+            raise ValueError("unresolved reference candidate is unknown")
+    for contradiction in output.contradictions:
+        _validate_reference(
+            contradiction.subject_id,
+            entities,
+            "contradiction subject is unknown",
+        )
 
     evidence_values = [
         *(item.first_mention for item in output.entities.characters),
@@ -162,3 +204,13 @@ def _validate_output(
     ]
     if any(value and value not in chunk.text for value in evidence_values):
         raise ValueError("evidence is not present in the chunk")
+
+
+def _validate_unique_ids(ids: tuple[str, ...], kind: str) -> None:
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"duplicate {kind} ID")
+
+
+def _validate_reference(reference: str | None, allowed: set[str], message: str) -> None:
+    if reference is not None and reference not in allowed:
+        raise ValueError(message)

@@ -15,7 +15,18 @@ from narrative_analysis_agent import (
     SceneAnalysisRequest,
     packaged_prompt_path,
 )
-from narrative_analysis_agent.models import Character, Document, Entities, Event, Relation
+from narrative_analysis_agent.models import (
+    Character,
+    Contradiction,
+    Coreference,
+    Document,
+    Entities,
+    Event,
+    Location,
+    Movement,
+    Relation,
+    UnresolvedReference,
+)
 from narrative_analysis_agent.project_graph_reader import ProjectGraphReadError
 
 
@@ -28,13 +39,90 @@ def _output(
     *,
     chapter_id: str = "scene-01",
     characters: tuple[Character, ...] = (),
+    locations: tuple[Location, ...] = (),
     events: tuple[Event, ...] = (),
     relations: tuple[Relation, ...] = (),
+    movements: tuple[Movement, ...] = (),
+    coreferences: tuple[Coreference, ...] = (),
+    unresolved_references: tuple[UnresolvedReference, ...] = (),
+    contradictions: tuple[Contradiction, ...] = (),
 ) -> KnowledgeGraphOutput:
     return KnowledgeGraphOutput(
         document=Document(chapter_id=chapter_id, summary="", narrative_time="present"),
-        entities=Entities(characters=characters, events=events),
+        entities=Entities(characters=characters, locations=locations, events=events),
         relations=relations,
+        movements=movements,
+        coreferences=coreferences,
+        unresolved_references=unresolved_references,
+        contradictions=contradictions,
+    )
+
+
+def _character(identifier: str = "character_001") -> Character:
+    return Character(
+        id=identifier,
+        canonical_name="서윤",
+        description="",
+        gender="unknown",
+        age=None,
+        occupation=None,
+        affiliation=None,
+        status="unknown",
+        first_mention="근거",
+        confidence=0.8,
+    )
+
+
+def _location(identifier: str = "location_001", *, parent_id: str | None = None) -> Location:
+    return Location(
+        id=identifier,
+        canonical_name="온실",
+        location_type="building",
+        parent_location_id=parent_id,
+        description="",
+        first_mention="근거",
+        confidence=0.8,
+    )
+
+
+def _event(identifier: str = "event_001") -> Event:
+    return Event(
+        id=identifier,
+        event_type="ARRIVAL",
+        name="도착",
+        summary="",
+        participant_ids=(),
+        location_ids=(),
+        time_expression=None,
+        narrative_time="present",
+        sequence=0,
+        evidence="근거",
+        confidence=0.8,
+    )
+
+
+def _relation(
+    identifier: str = "relation_001",
+    *,
+    source_id: str = "character_001",
+    target_id: str = "character_001",
+    start_event_id: str | None = None,
+    end_event_id: str | None = None,
+) -> Relation:
+    return Relation(
+        id=identifier,
+        source_id=source_id,
+        relation_type="KNOWS",
+        target_id=target_id,
+        state="active",
+        directed=True,
+        start_event_id=start_event_id,
+        end_event_id=end_event_id,
+        time_expression=None,
+        scene_sequence=2,
+        evidence="근거",
+        inference=False,
+        confidence=0.8,
     )
 
 
@@ -259,6 +347,260 @@ def test_analyze_scene_rejects_unknown_relation_endpoint_without_retry() -> None
         asyncio.run(_agent(runner).analyze_scene(_request("두 사람은 서로 알고 있다.")))
 
     assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                locations=(_location(parent_id="character_001"),),
+            ),
+            id="location-parent-wrong-type",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                relations=(_relation(start_event_id="event_999"),),
+            ),
+            id="relation-start-event-dangling",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                events=(_event(),),
+                relations=(_relation(end_event_id="character_001"),),
+            ),
+            id="relation-end-event-wrong-type",
+        ),
+        pytest.param(
+            _output(
+                locations=(_location(),),
+                movements=(
+                    Movement(
+                        character_id="location_001",
+                        from_location_id=None,
+                        to_location_id=None,
+                        movement_type="ARRIVAL",
+                        event_id=None,
+                        time_expression=None,
+                        sequence=0,
+                        evidence="근거",
+                        confidence=0.8,
+                    ),
+                ),
+            ),
+            id="movement-character-wrong-type",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                movements=(
+                    Movement(
+                        character_id="character_001",
+                        from_location_id="location_999",
+                        to_location_id=None,
+                        movement_type="ARRIVAL",
+                        event_id=None,
+                        time_expression=None,
+                        sequence=0,
+                        evidence="근거",
+                        confidence=0.8,
+                    ),
+                ),
+            ),
+            id="movement-from-location-dangling",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                events=(_event(),),
+                movements=(
+                    Movement(
+                        character_id="character_001",
+                        from_location_id=None,
+                        to_location_id="event_001",
+                        movement_type="ARRIVAL",
+                        event_id=None,
+                        time_expression=None,
+                        sequence=0,
+                        evidence="근거",
+                        confidence=0.8,
+                    ),
+                ),
+            ),
+            id="movement-to-location-wrong-type",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                locations=(_location(),),
+                movements=(
+                    Movement(
+                        character_id="character_001",
+                        from_location_id=None,
+                        to_location_id=None,
+                        movement_type="ARRIVAL",
+                        event_id="location_001",
+                        time_expression=None,
+                        sequence=0,
+                        evidence="근거",
+                        confidence=0.8,
+                    ),
+                ),
+            ),
+            id="movement-event-wrong-type",
+        ),
+        pytest.param(
+            _output(
+                relations=(_relation(source_id="event_001", target_id="event_001"),),
+                events=(_event(),),
+                coreferences=(
+                    Coreference(
+                        expression="그",
+                        resolved_entity_id="relation_001",
+                        evidence="근거",
+                        confidence=0.8,
+                    ),
+                ),
+            ),
+            id="coreference-wrong-type",
+        ),
+        pytest.param(
+            _output(
+                unresolved_references=(
+                    UnresolvedReference(
+                        expression="그",
+                        possible_entity_ids=("character_999",),
+                        reason="모호함",
+                    ),
+                ),
+            ),
+            id="unresolved-reference-dangling",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                relations=(_relation(),),
+                contradictions=(
+                    Contradiction(
+                        subject_id="relation_001",
+                        field_or_relation="status",
+                        existing_value="alive",
+                        new_value="dead",
+                        evidence="근거",
+                        possible_explanation="",
+                    ),
+                ),
+            ),
+            id="contradiction-wrong-type",
+        ),
+    ],
+)
+def test_analyze_scene_rejects_invalid_typed_references_without_retry(
+    output: KnowledgeGraphOutput,
+) -> None:
+    runner = GraphRunner((output,))
+
+    with pytest.raises(NarrativeAnalysisError, match="scene analysis failed") as captured:
+        asyncio.run(_agent(runner).analyze_scene(_request("근거")))
+
+    assert len(runner.calls) == 1
+    assert captured.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        pytest.param(_output(characters=(_character(), _character())), id="character"),
+        pytest.param(_output(locations=(_location(), _location())), id="location"),
+        pytest.param(_output(events=(_event(), _event())), id="event"),
+        pytest.param(
+            _output(characters=(_character(),), relations=(_relation(), _relation())),
+            id="relation",
+        ),
+    ],
+)
+def test_analyze_scene_rejects_duplicate_local_ids_without_retry(
+    output: KnowledgeGraphOutput,
+) -> None:
+    runner = GraphRunner((output,))
+
+    with pytest.raises(NarrativeAnalysisError, match="scene analysis failed") as captured:
+        asyncio.run(_agent(runner).analyze_scene(_request("근거")))
+
+    assert len(runner.calls) == 1
+    assert captured.value.__cause__ is None
+
+
+def test_analyze_scene_allows_typed_references_to_existing_project_ids() -> None:
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=4,
+        schema_version="project-knowledge-graph-snapshot-v2",
+        entities=Entities(
+            characters=(_character("character_010"),),
+            locations=(_location("location_010"),),
+            events=(_event("event_010"),),
+        ),
+    )
+    output = _output(
+        characters=(_character("character_010"),),
+        locations=(_location(parent_id="location_010"),),
+        relations=(
+            _relation(
+                source_id="character_010",
+                target_id="location_010",
+                start_event_id="event_010",
+            ),
+        ),
+        movements=(
+            Movement(
+                character_id="character_010",
+                from_location_id="location_010",
+                to_location_id="location_001",
+                movement_type="ARRIVAL",
+                event_id="event_010",
+                time_expression=None,
+                sequence=0,
+                evidence="근거",
+                confidence=0.8,
+            ),
+        ),
+        coreferences=(
+            Coreference(
+                expression="그",
+                resolved_entity_id="event_010",
+                evidence="근거",
+                confidence=0.8,
+            ),
+        ),
+        unresolved_references=(
+            UnresolvedReference(
+                expression="그곳",
+                possible_entity_ids=("character_010", "location_010", "event_010"),
+                reason="모호함",
+            ),
+        ),
+        contradictions=(
+            Contradiction(
+                subject_id="location_010",
+                field_or_relation="description",
+                existing_value="예전 묘사",
+                new_value="새 묘사",
+                evidence="근거",
+                possible_explanation="",
+            ),
+        ),
+    )
+    runner = GraphRunner((output,))
+    reader = RecordingGraphReader(existing)
+
+    analysis = asyncio.run(_agent(runner, graph_reader=reader).analyze_scene(_request("근거")))
+
+    assert len(runner.calls) == 1
+    assert analysis.source_snapshot_version == 4
 
 
 def test_analyze_scene_loads_a_custom_prompt_for_each_request(tmp_path: Path) -> None:
