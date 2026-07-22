@@ -1,16 +1,9 @@
-import {
-  expect,
-  test as base,
-  type BrowserContext,
-  type Page,
-  type Route,
-} from "@playwright/test";
+import { expect, test as base, type BrowserContext, type Page, type Route } from "@playwright/test";
 
 // spec: frontend/test-plans/manuscript-scene-title-edit-e2e.md
 // seed: independent two-scene workspace fixture below (frontend/seed.spec.ts is intentionally unused)
 
-const BASE_URL =
-  process.env.MANUSCRIPT_SCENE_TITLE_EDIT_BASE_URL || "http://127.0.0.1:5173";
+const BASE_URL = process.env.MANUSCRIPT_SCENE_TITLE_EDIT_BASE_URL || "http://127.0.0.1:5173";
 const WRITE_PATH = "/projects/silver-garden/write";
 const WORKSPACE_PATH = "/api/projects/silver-garden/workspace";
 const MANUSCRIPT_PATH = "/api/manuscripts/silver-garden-manuscript";
@@ -100,10 +93,7 @@ type Server = {
   pageErrors: string[];
   consoleErrors: string[];
   getCount: number;
-  respondToPut: (
-    request: RecordedPut,
-    index: number,
-  ) => PutResponse | Promise<PutResponse>;
+  respondToPut: (request: RecordedPut, index: number) => PutResponse | Promise<PutResponse>;
   respondToDiff: (request: RecordedDiff, index: number) => DiffResponse;
   waitForPut: (index: number) => Promise<RecordedPut>;
   waitForDiff: (index: number) => Promise<RecordedDiff>;
@@ -124,9 +114,7 @@ const test = base.extend<{ harness: Harness }>({
     page.on("console", (message) => {
       if (message.type() === "error") server.consoleErrors.push(message.text());
     });
-    await context.route(/\/api\/(?:projects|manuscripts)\//, (route) =>
-      handleRoute(route, server),
-    );
+    await context.route(/\/api\/(?:projects|manuscripts)\//, (route) => handleRoute(route, server));
 
     await use({ context, page, server });
 
@@ -135,9 +123,7 @@ const test = base.extend<{ harness: Harness }>({
     expect(
       server.consoleErrors.filter(
         (message) =>
-          !message.startsWith(
-            "Failed to load resource: the server responded with a status of",
-          ),
+          !message.startsWith("Failed to load resource: the server responded with a status of"),
       ),
     ).toEqual([]);
     await context.close();
@@ -231,8 +217,7 @@ function createServer(): Server {
       sceneId: request.sceneId,
       serverRevision: server.workspace.manuscriptRevision,
       localContent: request.localContent,
-      serverContent: scene(server.workspace.manuscript, request.sceneId)
-        .content,
+      serverContent: scene(server.workspace.manuscript, request.sceneId).content,
       serverManuscript: structuredClone(server.workspace.manuscript),
       rows: [],
     }),
@@ -274,10 +259,7 @@ async function handleRoute(route: Route, server: Server): Promise<void> {
     await route.fulfill({ json: structuredClone(server.workspace) });
     return;
   }
-  if (
-    request.method() === "GET" &&
-    pathname === "/api/projects/silver-garden/story-bible"
-  ) {
+  if (request.method() === "GET" && pathname === "/api/projects/silver-garden/story-bible") {
     await route.fulfill({
       json: {
         storyBible: structuredClone(server.workspace.storyBible),
@@ -295,13 +277,8 @@ async function handleRoute(route: Route, server: Server): Promise<void> {
       manuscript: structuredClone(body.manuscript),
     };
     const index = server.puts.push(recorded) - 1;
-    privateWaiters<(request: RecordedPut) => void>(server, "_putWaiters").get(
-      index,
-    )?.(recorded);
-    privateWaiters<(request: RecordedPut) => void>(
-      server,
-      "_putWaiters",
-    ).delete(index);
+    privateWaiters<(request: RecordedPut) => void>(server, "_putWaiters").get(index)?.(recorded);
+    privateWaiters<(request: RecordedPut) => void>(server, "_putWaiters").delete(index);
     const response = await server.respondToPut(recorded, index);
     if (response.kind === "error") {
       await route.fulfill({
@@ -338,13 +315,8 @@ async function handleRoute(route: Route, server: Server): Promise<void> {
       localContent: body.localContent,
     };
     const index = server.diffs.push(recorded) - 1;
-    privateWaiters<(request: RecordedDiff) => void>(server, "_diffWaiters").get(
-      index,
-    )?.(recorded);
-    privateWaiters<(request: RecordedDiff) => void>(
-      server,
-      "_diffWaiters",
-    ).delete(index);
+    privateWaiters<(request: RecordedDiff) => void>(server, "_diffWaiters").get(index)?.(recorded);
+    privateWaiters<(request: RecordedDiff) => void>(server, "_diffWaiters").delete(index);
     const response = server.respondToDiff(recorded, index);
     server.workspace.manuscript = structuredClone(response.serverManuscript);
     server.workspace.manuscriptRevision = response.serverRevision;
@@ -370,16 +342,13 @@ function scene(manuscript: Manuscript, id: string): Scene {
 
 async function openWorkspace(page: Page, inlineTree = true): Promise<void> {
   await page.goto(WRITE_PATH);
-  await expect(page.getByRole("textbox", { name: "원고 본문" })).toHaveValue(
-    OPENING_SCENE,
-  );
-  await expect(
-    page.getByRole("heading", { name: "비가 그친 뒤의 정원" }),
-  ).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "원고 본문" })).toHaveValue(OPENING_SCENE);
+  await expect(page.getByRole("heading", { name: "비가 그친 뒤의 정원" })).toBeVisible();
   if (inlineTree)
-    await expect(
-      page.getByRole("button", { name: "1장 비가 그친 뒤의 정원" }),
-    ).toHaveAttribute("aria-current", "true");
+    await expect(page.getByRole("button", { name: "1장 비가 그친 뒤의 정원" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
   await expect(page.getByRole("status", { name: "자동 저장됨" })).toBeVisible();
 }
 
@@ -395,13 +364,12 @@ async function expectSurfaces(
   inlineTree = true,
 ): Promise<void> {
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
-  await expect(
-    page.getByText(`${chapter}장 · ${title}`, { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText(`${chapter}장 · ${title}`, { exact: true })).toBeVisible();
   if (inlineTree)
-    await expect(
-      page.getByRole("button", { name: `${chapter}장 ${title}` }),
-    ).toHaveAttribute("aria-current", "true");
+    await expect(page.getByRole("button", { name: `${chapter}장 ${title}` })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
 }
 
 function serverLatest(
@@ -429,10 +397,7 @@ test.describe("핵심 인라인 편집과 접근성", () => {
     const input = page.getByRole("textbox", { name: "장면 제목" });
     await expect(input).toBeFocused();
     await expect(input).toHaveJSProperty("selectionStart", 0);
-    await expect(input).toHaveJSProperty(
-      "selectionEnd",
-      "비가 그친 뒤의 정원".length,
-    );
+    await expect(input).toHaveJSProperty("selectionEnd", "비가 그친 뒤의 정원".length);
 
     // 3. 공백이 있는 제목을 Enter로 확정하면 trim된 제목과 안내, focus가 동기화된다.
     await input.fill("  남겨진 편지  ");
@@ -443,15 +408,11 @@ test.describe("핵심 인라인 편집과 접근성", () => {
       }),
     ).toBeAttached();
     await expectSurfaces(page, "남겨진 편지");
-    await expect(
-      page.getByRole("button", { name: "장면 제목 수정" }),
-    ).toBeFocused();
+    await expect(page.getByRole("button", { name: "장면 제목 수정" })).toBeFocused();
 
     // 4. debounce PUT은 기존 전체 원고 계약으로 정확히 한 번 저장한다.
     const firstPut = await server.waitForPut(0);
-    await expect(
-      page.getByRole("status", { name: "자동 저장됨" }),
-    ).toBeVisible();
+    await expect(page.getByRole("status", { name: "자동 저장됨" })).toBeVisible();
     expect(server.puts).toHaveLength(1);
     expect(firstPut.expectedRevision).toBe(1);
     expect(firstPut.manuscript).toEqual({
@@ -471,9 +432,7 @@ test.describe("핵심 인라인 편집과 접근성", () => {
     reconnect.on("pageerror", (error) => server.pageErrors.push(error.message));
     await reconnect.goto(WRITE_PATH);
     await expectSurfaces(reconnect, "남겨진 편지");
-    await expect(
-      reconnect.getByRole("textbox", { name: "원고 본문" }),
-    ).toHaveValue(OPENING_SCENE);
+    await expect(reconnect.getByRole("textbox", { name: "원고 본문" })).toHaveValue(OPENING_SCENE);
     await reconnect.close();
   });
 
@@ -490,13 +449,9 @@ test.describe("핵심 인라인 편집과 접근성", () => {
         hasText: "장면 제목 수정을 취소했어요.",
       }),
     ).toBeAttached();
-    await expect(page.getByRole("textbox", { name: "장면 제목" })).toHaveCount(
-      0,
-    );
+    await expect(page.getByRole("textbox", { name: "장면 제목" })).toHaveCount(0);
     await expectSurfaces(page, "비가 그친 뒤의 정원");
-    await expect(
-      page.getByRole("button", { name: "장면 제목 수정" }),
-    ).toBeFocused();
+    await expect(page.getByRole("button", { name: "장면 제목 수정" })).toBeFocused();
     // 3. debounce 경과 뒤에도 취소 초안 PUT은 없다.
     await page.waitForTimeout(900);
     expect(server.puts).toEqual([]);
@@ -514,31 +469,25 @@ test.describe("핵심 인라인 편집과 접근성", () => {
     await expect(input).toHaveAttribute("aria-invalid", "true");
     const errorId = await input.getAttribute("aria-describedby");
     expect(errorId).toBeTruthy();
-    await expect(page.locator(`#${errorId!}`)).toHaveText(
-      "장면 제목을 입력해 주세요.",
-    );
-    await expect(page.getByRole("alert")).toHaveText(
-      "장면 제목을 입력해 주세요.",
-    );
+    await expect(page.locator(`#${errorId!}`)).toHaveText("장면 제목을 입력해 주세요.");
+    await expect(page.getByRole("alert")).toHaveText("장면 제목을 입력해 주세요.");
     // 2. debounce 경과 뒤에도 committed 표면과 요청은 바뀌지 않는다.
     await page.waitForTimeout(900);
     expect(server.puts).toEqual([]);
-    await expect(
-      page.getByText("1장 · 비가 그친 뒤의 정원", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "1장 비가 그친 뒤의 정원" }),
-    ).toHaveAttribute("aria-current", "true");
+    await expect(page.getByText("1장 · 비가 그친 뒤의 정원", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "1장 비가 그친 뒤의 정원" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
     // 3. 한 글자를 입력하면 오류는 해소되지만 명시 확정 전 표면은 그대로다.
     await input.fill("제");
     await expect(input).not.toHaveAttribute("aria-invalid", "true");
     await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(
-      page.getByText("1장 · 비가 그친 뒤의 정원", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "1장 비가 그친 뒤의 정원" }),
-    ).toHaveAttribute("aria-current", "true");
+    await expect(page.getByText("1장 · 비가 그친 뒤의 정원", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "1장 비가 그친 뒤의 정원" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
   });
 });
 
@@ -566,15 +515,11 @@ test.describe("저장 실패와 재시도", () => {
       ...first,
       manuscript: structuredClone(first.manuscript),
     });
-    await expect(
-      page.getByRole("status", { name: "자동 저장됨" }),
-    ).toBeVisible();
+    await expect(page.getByRole("status", { name: "자동 저장됨" })).toBeVisible();
     // 3. reload 뒤 revision 2의 로컬 제목이며 conflict dialog는 없다.
     await page.reload();
     await expectSurfaces(page, "실패해도 남는 제목");
-    await expect(
-      page.getByRole("dialog", { name: "원고 저장 충돌 해결" }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "원고 저장 충돌 해결" })).toHaveCount(0);
   });
 });
 
@@ -602,28 +547,20 @@ test.describe("409 충돌 해결", () => {
     await server.waitForDiff(0);
     const dialog = page.getByRole("dialog", { name: "원고 저장 충돌 해결" });
     await expect(dialog).toBeVisible();
-    await expect(
-      page.locator('button[aria-label="장면 제목 수정"]'),
-    ).toBeDisabled();
+    await expect(page.locator('button[aria-label="장면 제목 수정"]')).toBeDisabled();
     // 2. 내 편집본 유지는 revision 7 위에 로컬 title/content와 서버의 unrelated 장면을 병합한다.
     const resolutionPromise = server.waitForPut(1);
     await dialog.getByRole("button", { name: "내 편집본 유지" }).click();
     const resolution = await resolutionPromise;
     expect(resolution.expectedRevision).toBe(7);
-    expect(scene(resolution.manuscript, "silver-garden-scene-1").title).toBe(
-      "내가 유지할 제목",
-    );
-    expect(scene(resolution.manuscript, "silver-garden-scene-1").content).toBe(
-      OPENING_SCENE,
-    );
+    expect(scene(resolution.manuscript, "silver-garden-scene-1").title).toBe("내가 유지할 제목");
+    expect(scene(resolution.manuscript, "silver-garden-scene-1").content).toBe(OPENING_SCENE);
     expect(scene(resolution.manuscript, "silver-garden-scene-2")).toEqual(
       scene(authoritative, "silver-garden-scene-2"),
     );
     await expect(dialog).toBeHidden();
     await expectSurfaces(page, "내가 유지할 제목");
-    await expect(
-      page.getByRole("button", { name: "장면 제목 수정" }),
-    ).toBeEnabled();
+    await expect(page.getByRole("button", { name: "장면 제목 수정" })).toBeEnabled();
     // 3. reload 뒤 revision 8 결과를 복원한다.
     await page.reload();
     await expectSurfaces(page, "내가 유지할 제목");
@@ -656,12 +593,8 @@ test.describe("409 충돌 해결", () => {
     await dialog.getByRole("button", { name: "서버 최신본 적용" }).click();
     await expect(dialog).toBeHidden();
     await expectSurfaces(page, "서버 최신 제목");
-    await expect(page.getByRole("textbox", { name: "원고 본문" })).toHaveValue(
-      "서버 최신 본문",
-    );
-    await expect(
-      page.getByRole("button", { name: "장면 제목 수정" }),
-    ).toBeEnabled();
+    await expect(page.getByRole("textbox", { name: "원고 본문" })).toHaveValue("서버 최신 본문");
+    await expect(page.getByRole("button", { name: "장면 제목 수정" })).toBeEnabled();
     await page.waitForTimeout(900);
     expect(server.puts).toHaveLength(1);
     // 3. reload도 revision 7 서버 원고만 복원한다.
@@ -677,11 +610,7 @@ test.describe("409 충돌 해결", () => {
     const barrier = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const authoritative = serverLatest(
-      server.workspace,
-      "비가 그친 뒤의 정원",
-      "서버가 바꾼 본문",
-    );
+    const authoritative = serverLatest(server.workspace, "비가 그친 뒤의 정원", "서버가 바꾼 본문");
     server.respondToPut = async (_request, index) => {
       if (index === 0) {
         await barrier;
@@ -717,9 +646,7 @@ test.describe("409 충돌 해결", () => {
     await expect(title).toHaveValue("충돌 중 보존할 제목");
     await expect(title).toBeDisabled();
     expect(
-      pending.manuscript.scenes.every(
-        ({ title: saved }) => saved !== "충돌 중 보존할 제목",
-      ),
+      pending.manuscript.scenes.every(({ title: saved }) => saved !== "충돌 중 보존할 제목"),
     ).toBe(true);
     expect(server.diffs[0]).toEqual(
       expect.objectContaining({
@@ -732,23 +659,18 @@ test.describe("409 충돌 해결", () => {
     await resolutionPromise;
     await expect(title).toBeEnabled();
     await expect(title).toHaveValue("충돌 중 보존할 제목");
-    await expect(
-      page.getByText("1장 · 비가 그친 뒤의 정원", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "1장 비가 그친 뒤의 정원" }),
-    ).toHaveAttribute("aria-current", "true");
+    await expect(page.getByText("1장 · 비가 그친 뒤의 정원", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "1장 비가 그친 뒤의 정원" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
     // 5. 이제 Enter로 명시 확정한 다음 PUT만 보존 제목을 포함한다.
     const titlePutPromise = server.waitForPut(2);
     await title.press("Enter");
     const titlePut = await titlePutPromise;
-    expect(scene(titlePut.manuscript, "silver-garden-scene-1").title).toBe(
-      "충돌 중 보존할 제목",
-    );
+    expect(scene(titlePut.manuscript, "silver-garden-scene-1").title).toBe("충돌 중 보존할 제목");
     await expectSurfaces(page, "충돌 중 보존할 제목");
-    await expect(
-      page.getByRole("button", { name: "장면 제목 수정" }),
-    ).toBeFocused();
+    await expect(page.getByRole("button", { name: "장면 제목 수정" })).toBeFocused();
   });
 });
 
@@ -763,12 +685,8 @@ test.describe("장면 전환과 반응형 동등성", () => {
     const selectSecond = server.waitForPut(0);
     await page.getByRole("button", { name: "2장 두 번째 장면" }).click();
     await expectSurfaces(page, "두 번째 장면", 2);
-    await expect(page.getByRole("textbox", { name: "원고 본문" })).toHaveValue(
-      SECOND_SCENE,
-    );
-    await expect(page.getByRole("textbox", { name: "장면 제목" })).toHaveCount(
-      0,
-    );
+    await expect(page.getByRole("textbox", { name: "원고 본문" })).toHaveValue(SECOND_SCENE);
+    await expect(page.getByRole("textbox", { name: "장면 제목" })).toHaveCount(0);
     const selectionPut = await selectSecond;
     expect(scene(selectionPut.manuscript, "silver-garden-scene-1").title).toBe(
       "비가 그친 뒤의 정원",
@@ -777,9 +695,7 @@ test.describe("장면 전환과 반응형 동등성", () => {
     // 3. scene 1로 돌아가도 원래 제목이며 초안은 부활하지 않는다.
     await page.getByRole("button", { name: "1장 비가 그친 뒤의 정원" }).click();
     await expectSurfaces(page, "비가 그친 뒤의 정원");
-    await expect(page.getByRole("textbox", { name: "장면 제목" })).toHaveCount(
-      0,
-    );
+    await expect(page.getByRole("textbox", { name: "장면 제목" })).toHaveCount(0);
   });
 
   for (const viewport of [
@@ -799,10 +715,7 @@ test.describe("장면 전환과 반응형 동등성", () => {
         name: "비가 그친 뒤의 정원",
       });
       const edit = page.getByRole("button", { name: "장면 제목 수정" });
-      const [headingBox, editBox] = await Promise.all([
-        heading.boundingBox(),
-        edit.boundingBox(),
-      ]);
+      const [headingBox, editBox] = await Promise.all([heading.boundingBox(), edit.boundingBox()]);
       expect(headingBox).not.toBeNull();
       expect(editBox).not.toBeNull();
       expect(
@@ -815,10 +728,7 @@ test.describe("장면 전환과 반응형 동등성", () => {
       const input = page.getByRole("textbox", { name: "장면 제목" });
       await expect(input).toBeFocused();
       await expect(input).toHaveJSProperty("selectionStart", 0);
-      await expect(input).toHaveJSProperty(
-        "selectionEnd",
-        "비가 그친 뒤의 정원".length,
-      );
+      await expect(input).toHaveJSProperty("selectionEnd", "비가 그친 뒤의 정원".length);
       // 2. viewport별 제목을 Enter로 확정하고 한 PUT과 focus/세 표면을 확인한다.
       const responsiveTitle = `반응형 제목 ${viewport.width}`;
       await input.fill(responsiveTitle);
@@ -826,33 +736,27 @@ test.describe("장면 전환과 반응형 동등성", () => {
       await input.press("Enter");
       const put = await putPromise;
       expect(put.expectedRevision).toBe(1);
-      expect(scene(put.manuscript, "silver-garden-scene-1").title).toBe(
-        responsiveTitle,
-      );
-      await expect(
-        page.getByRole("status", { name: "자동 저장됨" }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "장면 제목 수정" }),
-      ).toBeFocused();
+      expect(scene(put.manuscript, "silver-garden-scene-1").title).toBe(responsiveTitle);
+      await expect(page.getByRole("status", { name: "자동 저장됨" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "장면 제목 수정" })).toBeFocused();
       await expectSurfaces(page, responsiveTitle, 1, viewport.width >= 1024);
       expect(server.puts).toHaveLength(1);
       // 3. desktop inline 또는 mobile 원고 보기 Sheet에서 같은 active SceneTree 제목을 확인한다.
       if (viewport.width < 1024) {
         await page.getByRole("tab", { name: "원고 보기" }).click();
         const sheet = page.getByRole("dialog", { name: "원고 보기" });
-        await expect(
-          sheet.getByRole("button", { name: `1장 ${responsiveTitle}` }),
-        ).toHaveAttribute("aria-current", "true");
+        await expect(sheet.getByRole("button", { name: `1장 ${responsiveTitle}` })).toHaveAttribute(
+          "aria-current",
+          "true",
+        );
         await page.keyboard.press("Escape");
         await expect(sheet).toBeHidden();
-        await expect(
-          page.getByRole("heading", { name: responsiveTitle }),
-        ).toBeVisible();
+        await expect(page.getByRole("heading", { name: responsiveTitle })).toBeVisible();
       } else {
-        await expect(
-          page.getByRole("button", { name: `1장 ${responsiveTitle}` }),
-        ).toHaveAttribute("aria-current", "true");
+        await expect(page.getByRole("button", { name: `1장 ${responsiveTitle}` })).toHaveAttribute(
+          "aria-current",
+          "true",
+        );
       }
     });
   }
