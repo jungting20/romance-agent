@@ -1,6 +1,6 @@
 import { expect, test as base, type BrowserContext, type Page, type Route } from "@playwright/test";
 
-const BASE_URL = "http://127.0.0.1:5174";
+const BASE_URL = process.env.MANUSCRIPT_SCENE_ADD_BASE_URL || "http://127.0.0.1:5173";
 const WORKSPACE_PATH = "/api/projects/silver-garden/workspace";
 const MANUSCRIPT_PATH = "/api/manuscripts/silver-garden-manuscript";
 const WRITE_PATH = "/projects/silver-garden/write";
