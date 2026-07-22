@@ -48,11 +48,13 @@ Manuscript ───────────────┘
 ### Narrative Memory 장면 재분석
 
 1. 명시적 애플리케이션 유스케이스가 Manuscript의 장면 리비전과 본문을 Narrative Memory에 전달한다.
-2. Narrative Memory가 해당 장면의 `pending` 후보를 대체하고 장면 요약, 근거, 관계 사건과 장소 사건
-   후보, 새 스냅샷을 반환한다.
-3. 기존 확인 사실의 근거가 사라진 경우, 애플리케이션 유스케이스가 Story Bible에 `needs_review`
-   전환을 요청한다.
-4. Narrative Memory는 Manuscript나 Story Bible을 직접 변경하지 않는다.
+2. Narrative Memory의 agent가 현재 v2 프로젝트 그래프를 읽기 전용으로 한 번 조회하고,
+   같은 snapshot을 모든 청크에 제공해 순서가 보존된 exact 청크 그래프를 반환한다.
+3. backend가 청크 로컬 ID를 프로젝트 ID로 재매핑하고 해당 장면 그래프를 교체한 뒤,
+   현재 장면 레코드 전체에서 버전이 있는 프로젝트 snapshot을 재구성해 원자적으로 저장한다.
+4. agent가 읽은 source snapshot version과 저장 직전의 current version이 다르면 장면과
+   프로젝트 snapshot을 덮어쓰지 않고 동시성 충돌로 거부한다.
+5. Narrative Memory는 Manuscript나 Story Bible을 직접 변경하지 않는다.
 
 ### 명시적 일관성 검사
 
@@ -61,7 +63,8 @@ Manuscript ───────────────┘
    Narrative Memory의 제한된 장면 요약을 Writing Assistant에 전달한다.
 3. Writing Assistant가 진단 제안을 반환하며, 확인된 사실을 근거로 삼은 진단은 Story Bible 확인 사실
    식별자를 인용한다.
-4. 미해결 또는 `needs_review` 후보는 확정 사실로 전달되지 않는다.
+4. Narrative Memory의 미해결 참조나 모순과 Story Bible의 `needs_review`
+   사실은 확정 사실로 전달되지 않는다.
 
 ## 의존 규칙
 
@@ -69,7 +72,8 @@ Manuscript ───────────────┘
 - 원고 텍스트는 Manuscript만 소유하고 변경해야 한다.
 - Writing Assistant는 요청받기 전에 원고 문맥을 읽거나 제안을 생성해서는 안 된다.
 - Narrative Memory는 Manuscript에서 파생된 재생성 가능한 기억을 소유하며 Manuscript를 직접 변경하지 않는다.
-- Narrative Memory 후보는 자동 승인되지 않으며 `needs_review` 후보는 Story Bible 사실이 아니다.
+- Narrative Memory 지식 그래프는 Story Bible 사실로 자동 전환되지 않으며,
+  미해결 참조와 모순은 확정 사실이 아니다.
 - Writing Assistant는 명시적 일관성 검사에서만 제한된 Narrative Memory 요약을 읽을 수 있다.
 - 여러 도메인을 조합하는 흐름은 애플리케이션 유스케이스가 담당해야 한다.
 - 이 문서들은 화면, 저장소, API, 프레임워크와 무관한 계약이어야 한다.

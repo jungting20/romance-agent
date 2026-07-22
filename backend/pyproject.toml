@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-narrative-analysis-agent = { path = "../llm-agent" }
+narrative-analysis-agent = { path = "../llm-agent", editable = true }
 
 [dependency-groups]
 dev = [

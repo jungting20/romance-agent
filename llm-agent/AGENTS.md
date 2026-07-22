@@ -3,9 +3,9 @@
 ## Scope and ownership
 
 This package owns scene-text chunking, the editable scene-analysis prompt,
-structured extraction, and sequential model calls. Work only on paths assigned
-by the main agent; do not edit backend, frontend, domain contracts, or OpenAPI
-without assignment.
+structured extraction, sequential model calls, and read-only project graph
+lookup for analysis context. Work only on paths assigned by the main agent; do
+not edit backend, frontend, domain contracts, or OpenAPI without assignment.
 
 ## Before editing
 
@@ -18,11 +18,14 @@ without assignment.
 ## Public boundary
 
 - Public Pydantic models are the single extraction and result representation.
+- Read the configured v2 project graph once per analysis through a SQLite
+  read-only connection and provide that same snapshot to every chunk.
 - Process 300-character chunks with 50-character overlap in numeric order.
 - Call each chunk exactly once. One failure returns no partial analysis.
 - Keep provider selection and prompt loading behind `NarrativeAnalysisAgent`.
-- Do not add audit storage, retries, durable IDs, candidate status, scene
-  snapshot assembly, or cross-chunk merging.
+- Do not add audit storage, retries, database writes or schema management,
+  durable IDs, candidate status, scene snapshot assembly, or cross-chunk
+  merging.
 
 ## Verification and handoff
 

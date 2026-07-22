@@ -1,17 +1,19 @@
 import asyncio
+import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 
 from narrative_analysis_agent import (
-    ChunkExtraction,
-    Entity,
+    KnowledgeGraphOutput,
     NarrativeAnalysisAgent,
     SceneAnalysisRequest,
 )
+from narrative_analysis_agent.models import Character, Document, Entities
 
 
 @dataclass
 class OfflineResult:
-    output: ChunkExtraction
+    output: KnowledgeGraphOutput
 
 
 class OfflineRunner:
@@ -21,22 +23,58 @@ class OfflineRunner:
     async def run(self, user_prompt: str, *, instructions: str) -> OfflineResult:
         self.calls += 1
         return OfflineResult(
-            ChunkExtraction(
-                summary=f"요약 {self.calls}",
-                entities=(
-                    Entity(
-                        local_ref=f"character-{self.calls}",
-                        normalized_name="한서윤",
-                        display_name="한서윤",
-                    ),
+            KnowledgeGraphOutput(
+                document=Document(
+                    chapter_id="scene-01",
+                    summary=f"요약 {self.calls}",
+                    narrative_time="present",
+                ),
+                entities=Entities(
+                    characters=(
+                        Character(
+                            id=f"character_{self.calls:03d}",
+                            canonical_name="한서윤",
+                            description="",
+                            gender="unknown",
+                            age=None,
+                            occupation=None,
+                            affiliation=None,
+                            status="unknown",
+                            first_mention="가",
+                            confidence=0.8,
+                        ),
+                    )
                 ),
             )
         )
 
 
-def test_public_offline_flow_preserves_chunk_order_and_structured_output() -> None:
+def _initialize_graph_database(path: Path) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE project_snapshots (
+                project_id TEXT NOT NULL,
+                snapshot_version INTEGER NOT NULL,
+                schema_version TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                payload BLOB NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, snapshot_version)
+            );
+            CREATE TABLE current_project_snapshots (
+                project_id TEXT PRIMARY KEY,
+                snapshot_version INTEGER NOT NULL
+            );
+            """
+        )
+
+
+def test_public_offline_flow_preserves_chunk_order_and_structured_output(tmp_path: Path) -> None:
+    graph_path = tmp_path / "narrative-memory.sqlite3"
+    _initialize_graph_database(graph_path)
     runner = OfflineRunner()
-    agent = NarrativeAnalysisAgent("offline", runner=runner)
+    agent = NarrativeAnalysisAgent("offline", project_graph_path=graph_path, runner=runner)
     request = SceneAnalysisRequest(
         project_id="project-01",
         scene_id="scene-01",
@@ -48,10 +86,13 @@ def test_public_offline_flow_preserves_chunk_order_and_structured_output() -> No
     analysis = asyncio.run(agent.analyze_scene(request))
 
     assert runner.calls == 3
+    assert analysis.source_snapshot_version == 0
     assert [chunk.ordinal for chunk in analysis.chunks] == [0, 1, 2]
-    assert [chunk.extraction.summary for chunk in analysis.chunks] == ["요약 1", "요약 2", "요약 3"]
-    assert [chunk.extraction.entities[0].local_ref for chunk in analysis.chunks] == [
-        "character-1",
-        "character-2",
-        "character-3",
+    assert [chunk.extraction.document.summary for chunk in analysis.chunks] == [
+        "요약 1",
+        "요약 2",
+        "요약 3",
     ]
+    assert [
+        chunk.extraction.entities.characters[0].canonical_name for chunk in analysis.chunks
+    ] == ["한서윤", "한서윤", "한서윤"]

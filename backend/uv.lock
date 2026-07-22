@@ -731,7 +731,7 @@ wheels = [
 [[package]]
 name = "narrative-analysis-agent"
 version = "0.1.0"
-source = { directory = "../llm-agent" }
+source = { editable = "../llm-agent" }
 dependencies = [
     { name = "pydantic-ai" },
 ]
@@ -1356,7 +1356,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.116,<1" },
-    { name = "narrative-analysis-agent", directory = "../llm-agent" },
+    { name = "narrative-analysis-agent", editable = "../llm-agent" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
 ]
 

@@ -119,12 +119,40 @@ verification, and handoff workflows. If the documents conflict, follow
   model-call or prompt internals.
 - Keep the explicit backend application use case dependent on a narrow protocol
   containing only the public request/result method. Construct the public request
-  there, return the chunk-by-chunk `SceneAnalysis` unchanged, and convert
-  `NarrativeAnalysisError` into a sanitized application error with its cause
-  suppressed.
-- Backend independently owns scene-to-project merge policy and project-snapshot
-  persistence. A simple agent result must not be translated, merged, or stored
-  automatically.
+  there and convert analysis, merge, corruption, and version-conflict failures
+  into a sanitized application error with its cause suppressed. Return the
+  chunk-by-chunk `SceneAnalysis` unchanged only after merge and persistence
+  succeed.
+- Backend owns all translation from chunk-local IDs to project IDs, deterministic
+  cross-chunk entity integration, exact scene replacement, and reconstruction of
+  the project graph from all current scene records. The agent must not share
+  these responsibilities.
+- Keep v2 project snapshot encoding and semantic validation at the codec boundary.
+  Before project encoding or scene encoding and writing, revalidate
+  `model_dump(mode="python")` into the exact strict public Pydantic model, then
+  apply semantic graph validation. The SQLite repository owns schema
+  initialization, scene provenance records, canonical payload hashes, and the
+  atomic scene-and-project write transaction.
+- Initialize the backend-owned v2 database before constructing the agent, and
+  pass the exact same configured `project_graph_path` to the read-only agent and
+  the writable repository. Do not add a v1 decoder, automatic migration, or
+  runtime database deletion.
+- Keep the repository-local `narrative-analysis-agent` uv path source editable
+  and refresh the backend lock/environment after its public contract changes,
+  so backend verification imports the current worktree source instead of a
+  stale built copy.
+- Before committing, compare the agent's `source_snapshot_version` with the
+  current project snapshot version. The repository must repeat that comparison
+  inside its write transaction and reject both project-version mismatch and a
+  non-increasing replacement scene revision without publishing partial state.
+  Treat version `0` only as the conceptual empty reader result: the first
+  persisted scene/project snapshot is version `1`, and every later persisted
+  snapshot increments the current positive version.
+- Translate reachable SQLite and filesystem failures at the repository boundary
+  into its sanitized operational error after rollback where applicable. The
+  application use case sanitizes that error together with corruption, conflict,
+  analysis, and merge-invariant failures; it must not use a blanket exception
+  catch.
 - The provider, prompt, structured-extraction, and deterministic network-free
   test rules are owned by
   [`llm-agent/docs/llm-agent-coding-rules.md`](../../llm-agent/docs/llm-agent-coding-rules.md).

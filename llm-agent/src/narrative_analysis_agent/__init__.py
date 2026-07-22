@@ -4,30 +4,25 @@ from narrative_analysis_agent.agent import (
     packaged_prompt_path,
 )
 from narrative_analysis_agent.models import (
+    PROJECT_GRAPH_SCHEMA_VERSION,
     AnalyzedChunk,
-    ChunkExtraction,
-    Entity,
-    Evidence,
-    KnownIdentity,
-    LocationEvent,
-    Place,
-    RelationshipEvent,
+    KnowledgeGraphOutput,
+    ProjectKnowledgeGraphSnapshot,
     SceneAnalysis,
     SceneAnalysisRequest,
 )
+from narrative_analysis_agent.project_graph_reader import ProjectGraphReader, ProjectGraphReadError
 
 __all__ = [
     "AnalyzedChunk",
-    "ChunkExtraction",
-    "Entity",
-    "Evidence",
-    "KnownIdentity",
-    "LocationEvent",
+    "KnowledgeGraphOutput",
     "NarrativeAnalysisAgent",
     "NarrativeAnalysisError",
-    "packaged_prompt_path",
-    "Place",
-    "RelationshipEvent",
+    "PROJECT_GRAPH_SCHEMA_VERSION",
+    "ProjectKnowledgeGraphSnapshot",
+    "ProjectGraphReadError",
+    "ProjectGraphReader",
     "SceneAnalysis",
     "SceneAnalysisRequest",
+    "packaged_prompt_path",
 ]
