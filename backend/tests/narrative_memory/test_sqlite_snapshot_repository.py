@@ -1,15 +1,25 @@
 import hashlib
+import json
 import sqlite3
 import stat
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from narrative_analysis_agent import ProjectKnowledgeGraphSnapshot
 from narrative_analysis_agent.models import (
+    Character,
+    Contradiction,
+    Coreference,
     Document,
     Entities,
+    Event,
     KnowledgeGraphOutput,
+    Location,
+    Movement,
+    Relation,
+    UnresolvedReference,
 )
 
 from apps.narrative_memory.repository.snapshot_repository import (
@@ -297,6 +307,104 @@ def test_get_scene_graphs_rejects_scene_payload_that_matches_its_hash(tmp_path: 
         repository.get_scene_graphs("project-01")
 
 
+@pytest.mark.parametrize("collection", ["characters", "locations", "events", "relations"])
+def test_commit_scene_rejects_duplicate_scene_graph_ids(
+    tmp_path: Path,
+    collection: str,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    scene = semantic_scene_record()
+    invalid = scene_with_duplicate(scene, collection)
+
+    with pytest.raises(ValueError, match="IDs must be unique"):
+        repository.commit_scene(
+            None,
+            invalid,
+            project_snapshot("project-01", version=0, scenes=(invalid,)),
+        )
+
+    assert repository.get_scene_graphs("project-01") == ()
+    assert repository.get_current("project-01") is None
+
+
+@pytest.mark.parametrize(
+    ("path", "reference"),
+    [
+        ("location.parent_location_id", "character_001"),
+        ("event.participant_ids", ("location_001",)),
+        ("event.location_ids", ("character_001",)),
+        ("relation.source_id", "relation_001"),
+        ("relation.target_id", "character_999"),
+        ("relation.start_event_id", "character_001"),
+        ("relation.end_event_id", "event_999"),
+        ("movement.character_id", "location_001"),
+        ("movement.from_location_id", "character_001"),
+        ("movement.to_location_id", "location_999"),
+        ("movement.event_id", "location_001"),
+        ("coreference.resolved_entity_id", "relation_001"),
+        ("unresolved.possible_entity_ids", ("relation_001",)),
+        ("contradiction.subject_id", "relation_001"),
+    ],
+)
+def test_commit_scene_rejects_dangling_or_wrong_kind_scene_reference(
+    tmp_path: Path,
+    path: str,
+    reference: object,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    scene = scene_with_reference(semantic_scene_record(), path, reference)
+
+    with pytest.raises(ValueError, match="unknown|reference"):
+        repository.commit_scene(
+            None,
+            scene,
+            project_snapshot("project-01", version=0, scenes=(scene,)),
+        )
+
+    assert repository.get_scene_graphs("project-01") == ()
+    assert repository.get_current("project-01") is None
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "duplicate",
+        "wrong-kind",
+        "dangling",
+    ],
+)
+def test_get_scene_graphs_rejects_hash_valid_semantic_corruption(
+    tmp_path: Path,
+    corruption: str,
+) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    repository = SQLiteSnapshotRepository(path)
+    repository.initialize()
+    scene = semantic_scene_record()
+    repository.commit_scene(
+        None,
+        scene,
+        project_snapshot("project-01", version=0, scenes=(scene,)),
+    )
+    if corruption == "duplicate":
+        invalid = scene_with_duplicate(scene, "characters")
+    elif corruption == "wrong-kind":
+        invalid = scene_with_reference(scene, "relation.source_id", "relation_001")
+    else:
+        invalid = scene_with_reference(scene, "relation.target_id", "character_999")
+    payload = scene_graph_payload(invalid.graph)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE scene_knowledge_graphs SET payload = ?, content_hash = ?",
+            (payload, content_hash(payload)),
+        )
+
+    with pytest.raises(SnapshotCorruptionError, match="scene.*semantic"):
+        repository.get_scene_graphs("project-01")
+
+
 @pytest.mark.parametrize("column", ["payload", "content_hash"])
 def test_get_current_rejects_project_content_hash_corruption(
     tmp_path: Path,
@@ -384,6 +492,43 @@ def test_commit_scene_rolls_back_scene_upsert_when_project_insert_fails(tmp_path
     assert versions == [(0,)]
 
 
+def test_commit_scene_rolls_back_scene_and_project_when_pointer_write_fails(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    repository = SQLiteSnapshotRepository(path)
+    repository.initialize()
+    original = scene_record("project-01", "scene-01", revision=1, summary="원본")
+    initial = project_snapshot("project-01", version=0, scenes=(original,))
+    repository.commit_scene(None, original, initial)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TRIGGER reject_current_pointer_update
+            BEFORE UPDATE ON current_project_snapshots
+            BEGIN
+                SELECT RAISE(ABORT, 'pointer write rejected');
+            END
+            """
+        )
+    revised = scene_record("project-01", "scene-01", revision=2, summary="개정고")
+
+    with pytest.raises(sqlite3.IntegrityError, match="pointer write rejected"):
+        repository.commit_scene(
+            0,
+            revised,
+            project_snapshot("project-01", version=1, scenes=(revised,)),
+        )
+
+    assert repository.get_scene_graphs("project-01") == (original,)
+    assert repository.get_current("project-01").snapshot == initial  # type: ignore[union-attr]
+    with sqlite3.connect(path) as connection:
+        versions = connection.execute(
+            "SELECT snapshot_version FROM project_snapshots ORDER BY snapshot_version"
+        ).fetchall()
+    assert versions == [(0,)]
+
+
 def test_repository_rejects_dangling_current_pointer(tmp_path: Path) -> None:
     path = tmp_path / "narrative-memory.sqlite3"
     repository = SQLiteSnapshotRepository(path)
@@ -443,6 +588,169 @@ def project_snapshot(
         schema_version="project-knowledge-graph-snapshot-v2",
         documents=tuple(scene.graph.document for scene in scenes),
     )
+
+
+def semantic_scene_record() -> SceneGraphRecord:
+    character = Character(
+        id="character_001",
+        canonical_name="서윤",
+        aliases=(),
+        description="",
+        gender="unknown",
+        age=None,
+        occupation=None,
+        affiliation=None,
+        status="alive",
+        first_mention="서윤",
+        confidence=0.9,
+    )
+    location = Location(
+        id="location_001",
+        canonical_name="온실",
+        aliases=(),
+        location_type="building",
+        parent_location_id=None,
+        description="",
+        first_mention="온실",
+        confidence=0.9,
+    )
+    event = Event(
+        id="event_001",
+        event_type="ARRIVAL",
+        name="도착",
+        summary="서윤이 온실에 도착한다.",
+        participant_ids=(character.id,),
+        location_ids=(location.id,),
+        time_expression=None,
+        narrative_time="present",
+        sequence=0,
+        evidence="도착한다",
+        confidence=0.9,
+    )
+    return SceneGraphRecord(
+        project_id="project-01",
+        scene_id="scene-01",
+        scene_revision=1,
+        scene_sequence=0,
+        graph=KnowledgeGraphOutput(
+            document=Document(
+                chapter_id="scene-01",
+                summary="서윤은 온실에 도착한다.",
+                narrative_time="present",
+            ),
+            entities=Entities(
+                characters=(character,),
+                locations=(location,),
+                events=(event,),
+            ),
+            relations=(
+                Relation(
+                    id="relation_001",
+                    source_id=character.id,
+                    relation_type="LOCATED_IN",
+                    target_id=location.id,
+                    state="active",
+                    directed=True,
+                    start_event_id=event.id,
+                    end_event_id=None,
+                    time_expression=None,
+                    scene_sequence=0,
+                    evidence="온실에",
+                    inference=False,
+                    confidence=0.9,
+                ),
+            ),
+            movements=(
+                Movement(
+                    character_id=character.id,
+                    from_location_id=None,
+                    to_location_id=location.id,
+                    movement_type="ARRIVAL",
+                    event_id=event.id,
+                    time_expression=None,
+                    sequence=0,
+                    evidence="도착한다",
+                    confidence=0.9,
+                ),
+            ),
+            coreferences=(
+                Coreference(
+                    expression="그녀",
+                    resolved_entity_id=character.id,
+                    evidence="그녀",
+                    confidence=0.9,
+                ),
+            ),
+            unresolved_references=(
+                UnresolvedReference(
+                    expression="그곳",
+                    possible_entity_ids=(location.id,),
+                    reason="모호함",
+                ),
+            ),
+            contradictions=(
+                Contradiction(
+                    subject_id=character.id,
+                    field_or_relation="status",
+                    existing_value="missing",
+                    new_value="alive",
+                    evidence="서윤",
+                    possible_explanation="",
+                ),
+            ),
+        ),
+    )
+
+
+def scene_with_duplicate(scene: SceneGraphRecord, collection: str) -> SceneGraphRecord:
+    if collection == "relations":
+        graph = scene.graph.model_copy(update={"relations": scene.graph.relations * 2})
+    else:
+        entities = scene.graph.entities.model_copy(
+            update={collection: getattr(scene.graph.entities, collection) * 2}
+        )
+        graph = scene.graph.model_copy(update={"entities": entities})
+    return replace(scene, graph=graph)
+
+
+def scene_with_reference(
+    scene: SceneGraphRecord,
+    path: str,
+    reference: object,
+) -> SceneGraphRecord:
+    section, field = path.split(".")
+    if section in {"location", "event"}:
+        collection = f"{section}s"
+        item = getattr(scene.graph.entities, collection)[0].model_copy(update={field: reference})
+        entities = scene.graph.entities.model_copy(update={collection: (item,)})
+        return replace(scene, graph=scene.graph.model_copy(update={"entities": entities}))
+    collection_by_section = {
+        "relation": "relations",
+        "movement": "movements",
+        "coreference": "coreferences",
+        "unresolved": "unresolved_references",
+        "contradiction": "contradictions",
+    }
+    collection = collection_by_section[section]
+    item = getattr(scene.graph, collection)[0].model_copy(update={field: reference})
+    return replace(
+        scene,
+        graph=scene.graph.model_copy(update={collection: (item,)}),
+    )
+
+
+def scene_graph_payload(graph: KnowledgeGraphOutput) -> bytes:
+    return (
+        json.dumps(
+            graph.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+            separators=(",", ": "),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
 
 
 def content_hash(payload: bytes) -> str:

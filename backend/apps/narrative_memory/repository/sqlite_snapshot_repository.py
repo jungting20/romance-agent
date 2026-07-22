@@ -20,6 +20,7 @@ from apps.narrative_memory.service.snapshot_codec import (
     decode_project_snapshot,
     encode_project_snapshot,
 )
+from apps.narrative_memory.service.validation import validate_scene_graph
 
 
 class SQLiteSnapshotRepository:
@@ -298,6 +299,7 @@ def _validate_scene(scene: SceneGraphRecord) -> None:
         raise ValueError("scene sequence must be a non-negative integer")
     if scene.graph.document.chapter_id != scene.scene_id:
         raise ValueError("scene ID must match the graph document chapter ID")
+    validate_scene_graph(scene.graph)
 
 
 def _encode_scene_graph(graph: KnowledgeGraphOutput) -> bytes:
@@ -316,9 +318,14 @@ def _encode_scene_graph(graph: KnowledgeGraphOutput) -> bytes:
 
 def _decode_scene_graph(payload: bytes) -> KnowledgeGraphOutput:
     try:
-        return KnowledgeGraphOutput.model_validate_json(payload, strict=True)
+        graph = KnowledgeGraphOutput.model_validate_json(payload, strict=True)
     except (UnicodeDecodeError, ValidationError, ValueError) as error:
         raise SnapshotCorruptionError("stored scene payload cannot be decoded") from error
+    try:
+        validate_scene_graph(graph)
+    except ValueError as error:
+        raise SnapshotCorruptionError("stored scene semantic invariants are invalid") from error
+    return graph
 
 
 def _stored_payload(raw_payload: object, label: str) -> bytes:
