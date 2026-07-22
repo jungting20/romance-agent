@@ -64,6 +64,32 @@ export function updateSceneContent(
   };
 }
 
+export function updateSceneTitle(
+  manuscript: Manuscript,
+  sceneId: string,
+  title: string,
+): Manuscript {
+  const scene = manuscript.scenes.find(({ id }) => id === sceneId);
+  if (!scene) {
+    throw new Error("원고 장면을 찾을 수 없습니다.");
+  }
+
+  const normalizedTitle = title.trim();
+  if (!normalizedTitle) {
+    throw new Error("장면 제목을 입력해 주세요.");
+  }
+  if (scene.title === normalizedTitle) {
+    return manuscript;
+  }
+
+  return {
+    ...manuscript,
+    scenes: manuscript.scenes.map((candidate) =>
+      candidate.id === sceneId ? { ...candidate, title: normalizedTitle } : candidate,
+    ),
+  };
+}
+
 export function addScene(manuscript: Manuscript, sceneId: string): Manuscript {
   if (!sceneId.trim()) throw new Error("새 장면 식별자가 필요합니다.");
   if (manuscript.scenes.some(({ id }) => id === sceneId)) {

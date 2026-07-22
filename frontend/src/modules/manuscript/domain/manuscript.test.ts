@@ -24,6 +24,46 @@ describe("Manuscript", () => {
     expect(manuscript.scenes[0]?.content).not.toBe("새로운 원고");
   });
 
+  test("normalizes and updates only one existing scene title", async () => {
+    const { addScene, createInitialManuscript, updateSceneTitle } = await import("./manuscript");
+    const manuscript = addScene(createInitialManuscript("project-1"), "scene-2");
+    const originalFirst = manuscript.scenes[0];
+    const originalSecond = manuscript.scenes[1];
+
+    const updated = updateSceneTitle(manuscript, "scene-2", "  남겨진 편지  ");
+
+    expect(updated.scenes[1]).toEqual({ ...originalSecond, title: "남겨진 편지" });
+    expect(updated.scenes[0]).toBe(originalFirst);
+    expect(updated.activeSceneId).toBe(manuscript.activeSceneId);
+    expect(manuscript.scenes[1]).toBe(originalSecond);
+  });
+
+  test("returns the same manuscript when the normalized title is unchanged", async () => {
+    const { createInitialManuscript, updateSceneTitle } = await import("./manuscript");
+    const manuscript = createInitialManuscript("project-1");
+    const title = manuscript.scenes[0]!.title;
+
+    expect(updateSceneTitle(manuscript, manuscript.activeSceneId, `  ${title}  `)).toBe(manuscript);
+  });
+
+  test.each(["", "   "])("rejects a blank scene title %j", async (title) => {
+    const { createInitialManuscript, updateSceneTitle } = await import("./manuscript");
+    const manuscript = createInitialManuscript("project-1");
+
+    expect(() => updateSceneTitle(manuscript, manuscript.activeSceneId, title)).toThrow(
+      "장면 제목을 입력해 주세요.",
+    );
+    expect(manuscript.scenes[0]!.title).toBe("비가 그친 뒤의 정원");
+  });
+
+  test("rejects a title update for a missing scene", async () => {
+    const { createInitialManuscript, updateSceneTitle } = await import("./manuscript");
+
+    expect(() => updateSceneTitle(createInitialManuscript("project-1"), "missing", "제목")).toThrow(
+      "원고 장면을 찾을 수 없습니다.",
+    );
+  });
+
   test("adds and activates one empty scene after the highest chapter number", async () => {
     const { addScene, createInitialManuscript } = await import("./manuscript");
     const manuscript = createInitialManuscript("project-1");
