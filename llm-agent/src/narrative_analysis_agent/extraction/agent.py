@@ -37,7 +37,7 @@ class ChunkInvocationResult:
     model_name: str
 
 
-class ProviderCallError(RuntimeError):
+class _ProviderCallError(RuntimeError):
     pass
 
 
@@ -93,7 +93,7 @@ class PydanticAIChunkAnalyzer:
                 instructions=call.system_prompt,
             )
         except AgentRunError:
-            raise ProviderCallError("scene analysis provider call failed") from None
+            raise _ProviderCallError("scene analysis provider call failed") from None
 
         return ChunkInvocationResult(
             extraction=map_chunk_extraction_output(result.output),

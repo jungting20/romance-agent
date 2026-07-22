@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.models.test import TestModel
 
+import narrative_analysis_agent.extraction as extraction
 from narrative_analysis_agent import LocationEventType
 from narrative_analysis_agent.assembly.models import (
     ExtractedEntity,
@@ -20,9 +21,9 @@ from narrative_analysis_agent.assembly.translation import map_chunk_extraction_o
 from narrative_analysis_agent.extraction.agent import (
     AgentUsage,
     ChunkAnalysisCall,
-    ProviderCallError,
     PydanticAIChunkAnalyzer,
     ScriptedChunkAnalyzer,
+    _ProviderCallError,
 )
 from narrative_analysis_agent.extraction.schemas import ChunkExtractionOutput
 
@@ -132,6 +133,11 @@ def test_strict_output_maps_to_provider_independent_internal_types() -> None:
         output.summary = "changed"
 
 
+def test_provider_call_error_is_not_exported_from_extraction_public_api() -> None:
+    assert "ProviderCallError" not in extraction.__all__
+    assert not hasattr(extraction, "ProviderCallError")
+
+
 @pytest.mark.parametrize(
     ("path", "value"),
     [
@@ -143,6 +149,9 @@ def test_strict_output_maps_to_provider_independent_internal_types() -> None:
         (("relationship_events", 0, "confidence"), 1.01),
         (("entities", 0, "evidence", 0, "start_offset"), -1),
         (("entities", 0, "evidence", 0, "end_offset"), 0),
+        (("entities", 0, "evidence", 0, "start_offset"), "0"),
+        (("entities", 0, "evidence", 0, "end_offset"), "1"),
+        (("relationship_events", 0, "confidence"), "0.5"),
     ],
 )
 def test_strict_output_rejects_invalid_provider_values(
@@ -173,7 +182,7 @@ def test_strict_evidence_rejects_end_before_start() -> None:
 def test_scripted_agent_consumes_per_chunk_sequences_and_copies_input() -> None:
     first = _domain_extraction("first")
     second = _domain_extraction("second")
-    source_script = [first, ProviderCallError("retry"), second]
+    source_script = [first, _ProviderCallError("retry"), second]
     agent = ScriptedChunkAnalyzer(scripts={_call().chunk_id: source_script})
     source_script.clear()
 
@@ -183,7 +192,7 @@ def test_scripted_agent_consumes_per_chunk_sequences_and_copies_input() -> None:
     assert first_result.response_messages_json == b"[]"
     assert first_result.usage == AgentUsage()
     assert len(agent.calls) == 1
-    with pytest.raises(ProviderCallError, match="retry"):
+    with pytest.raises(_ProviderCallError, match="retry"):
         asyncio.run(agent.analyze(_call()))
     assert asyncio.run(agent.analyze(_call())).extraction == second
 
@@ -229,7 +238,7 @@ def test_pydantic_ai_adapter_sanitizes_agent_run_errors_without_provider_body() 
         agent=_FailingAgent(),
     )
 
-    with pytest.raises(ProviderCallError) as captured:
+    with pytest.raises(_ProviderCallError) as captured:
         asyncio.run(adapter.analyze(_call()))
 
     assert "secret body" not in str(captured.value)

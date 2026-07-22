@@ -3,7 +3,6 @@ from narrative_analysis_agent.extraction.agent import (
     ChunkAnalysisCall,
     ChunkAnalyzerPort,
     ChunkInvocationResult,
-    ProviderCallError,
     PydanticAIChunkAnalyzer,
     ScriptedChunkAnalyzer,
 )
@@ -26,7 +25,6 @@ __all__ = [
     "PromptDefinition",
     "PromptDefinitionError",
     "PromptRegistryPort",
-    "ProviderCallError",
     "PydanticAIChunkAnalyzer",
     "ScriptedChunkAnalyzer",
     "render_scene_analysis_user_prompt",
