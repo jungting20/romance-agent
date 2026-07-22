@@ -20,6 +20,7 @@ from narrative_analysis_agent.errors import (
     PromptLoadError,
     ProviderUnavailableError,
 )
+from narrative_analysis_agent.facade import NarrativeAnalysisAgent
 
 __all__ = [
     "AnalysisAuditError",
@@ -32,6 +33,7 @@ __all__ = [
     "LocationEventCandidate",
     "LocationEventType",
     "NarrativeAnalysisConfig",
+    "NarrativeAnalysisAgent",
     "NarrativeAnalysisError",
     "PlaceCandidate",
     "PromptLoadError",
