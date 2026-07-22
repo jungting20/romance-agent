@@ -3,14 +3,21 @@ import { forwardRef, type ChangeEvent, type SyntheticEvent } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import type { Scene, TextRange } from "@/modules/manuscript";
 
+import { SceneTitleField } from "./scene-title-field";
+
 interface ManuscriptEditorProps {
   scene: Scene;
+  titleEditingDisabled: boolean;
+  onTitleCommit: (title: string) => void;
   onChange: (content: string) => void;
   onSelectionChange: (range: TextRange) => void;
 }
 
 export const ManuscriptEditor = forwardRef<HTMLTextAreaElement, ManuscriptEditorProps>(
-  function ManuscriptEditor({ scene, onChange, onSelectionChange }, ref) {
+  function ManuscriptEditor(
+    { scene, titleEditingDisabled, onTitleCommit, onChange, onSelectionChange },
+    ref,
+  ) {
     function captureSelection(event: SyntheticEvent<HTMLTextAreaElement>) {
       onSelectionChange({
         start: event.currentTarget.selectionStart,
@@ -23,7 +30,12 @@ export const ManuscriptEditor = forwardRef<HTMLTextAreaElement, ManuscriptEditor
         <p className="text-xs tracking-[0.16em] text-muted-foreground uppercase">
           Chapter {scene.chapterNumber.toString().padStart(2, "0")}
         </p>
-        <h2 className="mt-3 font-heading text-3xl font-semibold">{scene.title}</h2>
+        <SceneTitleField
+          key={scene.id}
+          title={scene.title}
+          disabled={titleEditingDisabled}
+          onCommit={onTitleCommit}
+        />
         <Textarea
           ref={ref}
           aria-label="원고 본문"
