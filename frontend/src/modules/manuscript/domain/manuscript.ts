@@ -64,6 +64,61 @@ export function updateSceneContent(
   };
 }
 
+export function updateSceneTitle(
+  manuscript: Manuscript,
+  sceneId: string,
+  title: string,
+): Manuscript {
+  const scene = manuscript.scenes.find(({ id }) => id === sceneId);
+  if (!scene) {
+    throw new Error("원고 장면을 찾을 수 없습니다.");
+  }
+
+  const normalizedTitle = title.trim();
+  if (!normalizedTitle) {
+    throw new Error("장면 제목을 입력해 주세요.");
+  }
+  if (scene.title === normalizedTitle) {
+    return manuscript;
+  }
+
+  return {
+    ...manuscript,
+    scenes: manuscript.scenes.map((candidate) =>
+      candidate.id === sceneId ? { ...candidate, title: normalizedTitle } : candidate,
+    ),
+  };
+}
+
+export function addScene(manuscript: Manuscript, sceneId: string): Manuscript {
+  if (!sceneId.trim()) throw new Error("새 장면 식별자가 필요합니다.");
+  if (manuscript.scenes.some(({ id }) => id === sceneId)) {
+    throw new Error("이미 존재하는 원고 장면입니다.");
+  }
+
+  const chapterNumber = Math.max(...manuscript.scenes.map((scene) => scene.chapterNumber)) + 1;
+  const scene: Scene = {
+    id: sceneId,
+    title: "제목 없는 장면",
+    chapterNumber,
+    content: "",
+    relatedCharacterIds: [],
+    relatedWorldEntryIds: [],
+  };
+
+  return { ...manuscript, scenes: [...manuscript.scenes, scene], activeSceneId: sceneId };
+}
+
+export function selectScene(manuscript: Manuscript, sceneId: string): Manuscript {
+  if (!manuscript.scenes.some(({ id }) => id === sceneId)) {
+    throw new Error("원고 장면을 찾을 수 없습니다.");
+  }
+
+  return manuscript.activeSceneId === sceneId
+    ? manuscript
+    : { ...manuscript, activeSceneId: sceneId };
+}
+
 export function insertText(content: string, cursorPosition: number, insertion: string): string {
   if (cursorPosition < 0 || cursorPosition > content.length) {
     throw new Error("커서 위치가 올바르지 않습니다.");

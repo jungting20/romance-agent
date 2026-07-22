@@ -51,6 +51,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -80,6 +81,7 @@ describe("ManuscriptConflictDialog", () => {
     const { rerender } = render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -103,6 +105,7 @@ describe("ManuscriptConflictDialog", () => {
     rerender(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -130,6 +133,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={null}
         isComparing={false}
         isResolving={false}
@@ -150,6 +154,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -173,6 +178,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving
@@ -203,6 +209,7 @@ describe("ManuscriptConflictDialog", () => {
           </button>
           <ManuscriptConflictDialog
             open={open}
+            kind="scene-content"
             comparison={getComparison()}
             isComparing={false}
             isResolving={false}
@@ -239,6 +246,7 @@ describe("ManuscriptConflictDialog", () => {
     render(
       <ManuscriptConflictDialog
         open
+        kind="scene-content"
         comparison={getComparison()}
         isComparing={false}
         isResolving={false}
@@ -255,5 +263,77 @@ describe("ManuscriptConflictDialog", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("내 편집본을 서버에 저장하지 못했어요");
     await user.click(screen.getByRole("button", { name: "내 편집본 저장 다시 시도" }));
     expect(onRetryKeepLocal).toHaveBeenCalledOnce();
+  });
+
+  test("offers structural conflict actions without a scene diff table", () => {
+    render(
+      <ManuscriptConflictDialog
+        open
+        kind="scene-structure"
+        comparison={null}
+        isComparing={false}
+        isResolving={false}
+        compareError={false}
+        onOpenChange={vi.fn()}
+        onKeepLocal={vi.fn()}
+        onApplyServer={vi.fn()}
+        onRetryCompare={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("서버 최신 원고에 아직 없는 새 장면이 있어요.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "내 새 장면 유지" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "서버 최신본 적용" })).toBeEnabled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("shows structural workspace loading without resolution actions", () => {
+    render(
+      <ManuscriptConflictDialog
+        open
+        kind="scene-structure"
+        comparison={null}
+        isComparing
+        isResolving={false}
+        compareError={false}
+        onOpenChange={vi.fn()}
+        onKeepLocal={vi.fn()}
+        onApplyServer={vi.fn()}
+        onRetryCompare={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("서버 최신 원고를 불러오는 중이에요.");
+    expect(screen.getByRole("button", { name: "내 새 장면 유지" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "서버 최신본 적용" })).toBeDisabled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("offers a structural workspace retry while confirming the local draft is preserved", async () => {
+    const onRetryCompare = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ManuscriptConflictDialog
+        open
+        kind="scene-structure"
+        comparison={null}
+        isComparing={false}
+        isResolving={false}
+        compareError
+        onOpenChange={vi.fn()}
+        onKeepLocal={vi.fn()}
+        onApplyServer={vi.fn()}
+        onRetryCompare={onRetryCompare}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "서버 최신 원고를 불러오지 못했어요. 현재 로컬 초안은 그대로 보관하고 있어요.",
+    );
+    await user.click(screen.getByRole("button", { name: "서버 최신 원고 다시 불러오기" }));
+    expect(onRetryCompare).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "내 새 장면 유지" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "서버 최신본 적용" })).toBeDisabled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });

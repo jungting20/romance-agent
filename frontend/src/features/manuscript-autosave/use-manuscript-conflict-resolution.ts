@@ -8,22 +8,56 @@ import type {
 } from "@/app/infrastructure/api/contracts";
 import {
   projectKeys,
+  projectWorkspaceQueryOptions,
   useCompareManuscriptSceneMutation,
   useSaveManuscriptMutation,
 } from "@/features/project-persistence";
 import type { Manuscript } from "@/modules/manuscript";
-import { updateSceneContent } from "@/modules/manuscript";
+import { updateSceneContent, updateSceneTitle } from "@/modules/manuscript";
+
+import { findLocalSceneAdditions, mergeLocalSceneAdditions } from "./manuscript-structure-conflict";
 
 type ConflictAutosaveStatus = "saving" | "saved" | "conflict";
+type ConflictKind = "scene-content" | "scene-structure";
+
+export interface ManuscriptStructureConflict {
+  serverManuscript: Manuscript;
+  serverRevision: number;
+}
+
+type ConflictPayload =
+  | {
+      kind: "scene-content";
+      comparison: CompareManuscriptSceneResponse;
+      localTitle: string;
+    }
+  | { kind: "scene-structure"; comparison: ManuscriptStructureConflict };
+
+type ConflictState =
+  | { phase: "idle" }
+  | { phase: "loading"; kind: ConflictKind }
+  | { phase: "load-error"; kind: ConflictKind }
+  | ({ phase: "ready" | "resolving" | "resolve-error" } & ConflictPayload);
 
 interface ManuscriptConflictHost {
   getDraft: () => Manuscript;
+  getAcknowledgedManuscript: () => Manuscript;
   getManuscriptGeneration: () => number;
   isSaveInFlight: () => boolean;
   beginResolutionSave: () => number | null;
   finishResolutionSave: (manuscriptGeneration: number) => void;
   adoptManuscript: (manuscript: Manuscript, manuscriptRevision: number) => void;
   setStatus: (status: ConflictAutosaveStatus) => void;
+}
+
+function getConflictPayload(state: ConflictState): ConflictPayload | null {
+  if (state.phase !== "ready" && state.phase !== "resolving" && state.phase !== "resolve-error") {
+    return null;
+  }
+
+  return state.kind === "scene-content"
+    ? { kind: state.kind, comparison: state.comparison, localTitle: state.localTitle }
+    : { kind: state.kind, comparison: state.comparison };
 }
 
 export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
@@ -36,37 +70,60 @@ export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
   compareAsyncRef.current = compareMutation.mutateAsync;
 
   const [conflict, setConflict] = useState<ApiRequestError | null>(null);
-  const [conflictComparison, setConflictComparison] =
-    useState<CompareManuscriptSceneResponse | null>(null);
+  const [conflictState, setConflictStateValue] = useState<ConflictState>({ phase: "idle" });
+  const conflictStateRef = useRef<ConflictState>({ phase: "idle" });
   const [isConflictDialogOpen, setConflictDialogOpen] = useState(false);
-  const [isComparingConflict, setComparingConflict] = useState(false);
-  const [isConflictCompareError, setConflictCompareError] = useState(false);
-  const [isResolvingConflict, setResolvingConflict] = useState(false);
-  const [isConflictResolutionError, setConflictResolutionError] = useState(false);
-  const conflictComparisonRef = useRef<CompareManuscriptSceneResponse | null>(null);
   const comparisonRequestRef = useRef(0);
 
+  const setConflictState = useCallback((nextState: ConflictState) => {
+    conflictStateRef.current = nextState;
+    setConflictStateValue(nextState);
+  }, []);
+
   const requestConflictComparison = useCallback(
-    async ({
-      manuscriptId,
-      sceneId,
-      localContent,
-    }: {
-      manuscriptId: string;
-      sceneId: string;
-      localContent: string;
-    }) => {
+    async (requestedKind?: ConflictKind) => {
+      const base = host.getAcknowledgedManuscript();
+      const local = host.getDraft();
+      const kind =
+        requestedKind ??
+        (findLocalSceneAdditions(base, local).length > 0 ? "scene-structure" : "scene-content");
       const requestId = comparisonRequestRef.current + 1;
       const manuscriptGeneration = host.getManuscriptGeneration();
       comparisonRequestRef.current = requestId;
       setConflictDialogOpen(true);
-      setComparingConflict(true);
-      setConflictCompareError(false);
+      setConflictState({ phase: "loading", kind });
 
       try {
+        if (kind === "scene-structure") {
+          const latest = await queryClient.fetchQuery({
+            ...projectWorkspaceQueryOptions(local.projectId),
+            staleTime: 0,
+          });
+          if (
+            comparisonRequestRef.current !== requestId ||
+            host.getManuscriptGeneration() !== manuscriptGeneration
+          ) {
+            return;
+          }
+          setConflictState({
+            phase: "ready",
+            kind,
+            comparison: {
+              serverManuscript: latest.manuscript,
+              serverRevision: latest.manuscriptRevision,
+            },
+          });
+          return;
+        }
+
+        const scene = local.scenes.find(({ id }) => id === local.activeSceneId);
+        if (!scene) {
+          setConflictState({ phase: "load-error", kind });
+          return;
+        }
         const comparison = await compareAsyncRef.current({
-          manuscriptId,
-          request: { sceneId, localContent },
+          manuscriptId: local.id,
+          request: { sceneId: scene.id, localContent: scene.content },
         });
         if (
           comparisonRequestRef.current !== requestId ||
@@ -74,58 +131,41 @@ export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
         ) {
           return;
         }
-        conflictComparisonRef.current = comparison;
-        setConflictComparison(comparison);
+        setConflictState({ phase: "ready", kind, comparison, localTitle: scene.title });
       } catch {
         if (
           comparisonRequestRef.current === requestId &&
           host.getManuscriptGeneration() === manuscriptGeneration
         ) {
-          setConflictCompareError(true);
-        }
-      } finally {
-        if (
-          comparisonRequestRef.current === requestId &&
-          host.getManuscriptGeneration() === manuscriptGeneration
-        ) {
-          setComparingConflict(false);
+          setConflictState({ phase: "load-error", kind });
         }
       }
     },
-    [host],
+    [host, queryClient, setConflictState],
   );
-
-  const requestLatestDraftComparison = useCallback(() => {
-    const currentDraft = host.getDraft();
-    const scene = currentDraft.scenes.find(({ id }) => id === currentDraft.activeSceneId);
-    if (!scene) {
-      return;
-    }
-    void requestConflictComparison({
-      manuscriptId: currentDraft.id,
-      sceneId: scene.id,
-      localContent: scene.content,
-    });
-  }, [host, requestConflictComparison]);
 
   const enterConflict = useCallback(
     (error: ApiRequestError) => {
       setConflict(error);
       host.setStatus("conflict");
-      requestLatestDraftComparison();
+      void requestConflictComparison();
     },
-    [host, requestLatestDraftComparison],
+    [host, requestConflictComparison],
   );
 
   const retryConflictComparison = useCallback(() => {
-    requestLatestDraftComparison();
-  }, [requestLatestDraftComparison]);
+    const currentState = conflictStateRef.current;
+    const kind = currentState.phase === "idle" ? undefined : currentState.kind;
+    void requestConflictComparison(kind);
+  }, [requestConflictComparison]);
 
   const openConflictDialog = useCallback(() => {
     if (conflict) {
-      requestLatestDraftComparison();
+      const currentState = conflictStateRef.current;
+      const kind = currentState.phase === "idle" ? undefined : currentState.kind;
+      void requestConflictComparison(kind);
     }
-  }, [conflict, requestLatestDraftComparison]);
+  }, [conflict, requestConflictComparison]);
 
   const setConflictDialogVisibility = useCallback(
     (open: boolean) => {
@@ -139,39 +179,45 @@ export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
   const resetConflict = useCallback(() => {
     comparisonRequestRef.current += 1;
     setConflict(null);
-    conflictComparisonRef.current = null;
-    setConflictComparison(null);
+    setConflictState({ phase: "idle" });
     setConflictDialogOpen(false);
-    setComparingConflict(false);
-    setConflictCompareError(false);
-    setResolvingConflict(false);
-    setConflictResolutionError(false);
-  }, []);
+  }, [setConflictState]);
 
   const keepLocal = useCallback(async () => {
-    const comparison = conflictComparisonRef.current;
-    if (!comparison || isResolvingConflict || host.isSaveInFlight()) {
+    const currentState = conflictStateRef.current;
+    const payload = getConflictPayload(currentState);
+    if (!payload || currentState.phase === "resolving" || host.isSaveInFlight()) {
       return;
     }
 
-    const resolvedManuscript = updateSceneContent(
-      comparison.serverManuscript,
-      comparison.sceneId,
-      comparison.localContent,
-    );
     const manuscriptGeneration = host.beginResolutionSave();
     if (manuscriptGeneration === null) {
       return;
     }
-    setResolvingConflict(true);
-    setConflictResolutionError(false);
+    setConflictState({ phase: "resolving", ...payload });
 
     try {
+      const resolvedManuscript =
+        payload.kind === "scene-content"
+          ? updateSceneTitle(
+              updateSceneContent(
+                payload.comparison.serverManuscript,
+                payload.comparison.sceneId,
+                payload.comparison.localContent,
+              ),
+              payload.comparison.sceneId,
+              payload.localTitle,
+            )
+          : mergeLocalSceneAdditions(
+              host.getAcknowledgedManuscript(),
+              host.getDraft(),
+              payload.comparison.serverManuscript,
+            );
       const saved = await saveAsyncRef.current({
         manuscriptId: resolvedManuscript.id,
         request: {
           manuscript: resolvedManuscript,
-          expectedRevision: comparison.serverRevision,
+          expectedRevision: payload.comparison.serverRevision,
         },
       });
       if (host.getManuscriptGeneration() !== manuscriptGeneration) {
@@ -179,11 +225,8 @@ export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
       }
       host.adoptManuscript(saved.manuscript, saved.manuscriptRevision);
       setConflict(null);
-      conflictComparisonRef.current = null;
-      setConflictComparison(null);
+      setConflictState({ phase: "idle" });
       setConflictDialogOpen(false);
-      setConflictCompareError(false);
-      setConflictResolutionError(false);
       host.setStatus("saved");
     } catch (error) {
       if (host.getManuscriptGeneration() !== manuscriptGeneration) {
@@ -195,40 +238,30 @@ export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
         error.error.code === "MANUSCRIPT_REVISION_CONFLICT"
       ) {
         setConflict(error);
-        setConflictResolutionError(false);
         host.setStatus("conflict");
-        await requestConflictComparison({
-          manuscriptId: resolvedManuscript.id,
-          sceneId: comparison.sceneId,
-          localContent: comparison.localContent,
-        });
+        await requestConflictComparison(payload.kind);
       } else {
         setConflictDialogOpen(true);
-        setConflictResolutionError(true);
+        setConflictState({ phase: "resolve-error", ...payload });
         host.setStatus("conflict");
       }
     } finally {
       host.finishResolutionSave(manuscriptGeneration);
-      if (host.getManuscriptGeneration() === manuscriptGeneration) {
-        setResolvingConflict(false);
-      }
     }
-  }, [host, isResolvingConflict, requestConflictComparison]);
+  }, [host, requestConflictComparison, setConflictState]);
 
   const applyServer = useCallback(() => {
-    const comparison = conflictComparisonRef.current;
-    if (!comparison || isResolvingConflict || host.isSaveInFlight()) {
+    const currentState = conflictStateRef.current;
+    const payload = getConflictPayload(currentState);
+    if (!payload || currentState.phase === "resolving" || host.isSaveInFlight()) {
       return;
     }
 
-    const serverManuscript = comparison.serverManuscript;
-    host.adoptManuscript(serverManuscript, comparison.serverRevision);
+    const serverManuscript = payload.comparison.serverManuscript;
+    host.adoptManuscript(serverManuscript, payload.comparison.serverRevision);
     setConflict(null);
-    conflictComparisonRef.current = null;
-    setConflictComparison(null);
+    setConflictState({ phase: "idle" });
     setConflictDialogOpen(false);
-    setConflictCompareError(false);
-    setConflictResolutionError(false);
     host.setStatus("saved");
     queryClient.setQueryData<ProjectWorkspaceResponse>(
       projectKeys.workspace(serverManuscript.projectId),
@@ -237,20 +270,23 @@ export function useManuscriptConflictResolution(host: ManuscriptConflictHost) {
           ? {
               ...workspace,
               manuscript: serverManuscript,
-              manuscriptRevision: comparison.serverRevision,
+              manuscriptRevision: payload.comparison.serverRevision,
             }
           : workspace,
     );
-  }, [host, isResolvingConflict, queryClient]);
+  }, [host, queryClient, setConflictState]);
+
+  const payload = getConflictPayload(conflictState);
 
   return {
     conflict,
-    conflictComparison,
+    conflictKind: conflictState.phase === "idle" ? null : conflictState.kind,
+    conflictComparison: payload?.kind === "scene-content" ? payload.comparison : null,
     isConflictDialogOpen,
-    isComparingConflict,
-    isConflictCompareError,
-    isResolvingConflict,
-    isConflictResolutionError,
+    isComparingConflict: conflictState.phase === "loading",
+    isConflictCompareError: conflictState.phase === "load-error",
+    isResolvingConflict: conflictState.phase === "resolving",
+    isConflictResolutionError: conflictState.phase === "resolve-error",
     keepLocal,
     retryKeepLocal: keepLocal,
     applyServer,

@@ -9,6 +9,7 @@ import type {
 } from "@/app/infrastructure/api/contracts";
 
 import {
+  projectWorkspaceQueryOptions,
   projectKeys,
   useCompareManuscriptSceneMutation,
   useCreateProjectMutation,
@@ -57,6 +58,17 @@ describe("project persistence queries", () => {
 
     expect(projects.result.current.data?.items[0].id).toBe("silver-garden");
     expect(workspace.result.current.data?.project.id).toBe("silver-garden");
+  });
+
+  it("fetches a project workspace through reusable query options", async () => {
+    const queryClient = createTestQueryClient();
+
+    const workspace = await queryClient.fetchQuery(projectWorkspaceQueryOptions("silver-garden"));
+
+    expect(workspace.project.id).toBe("silver-garden");
+    expect(
+      queryClient.getQueryData<ProjectWorkspaceResponse>(projectKeys.workspace("silver-garden")),
+    ).toEqual(workspace);
   });
 
   it("seeds the workspace cache and adds a created project to the list cache", async () => {

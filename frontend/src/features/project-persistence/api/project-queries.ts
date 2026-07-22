@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
   CompareManuscriptSceneRequest,
@@ -34,11 +34,15 @@ export function useProjectsQuery() {
   });
 }
 
-export function useProjectWorkspaceQuery(projectId: string) {
-  return useQuery({
+export function projectWorkspaceQueryOptions(projectId: string) {
+  return queryOptions({
     queryKey: projectKeys.workspace(projectId),
     queryFn: () => getProjectWorkspace(projectId),
   });
+}
+
+export function useProjectWorkspaceQuery(projectId: string) {
+  return useQuery(projectWorkspaceQueryOptions(projectId));
 }
 
 export function useCreateProjectMutation() {
