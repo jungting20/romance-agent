@@ -27,40 +27,67 @@ this map when a structural change alters the responsibilities or major packages
 shown here; individual files do not need to be listed.
 
 The backend composes the public `NarrativeAnalysisAgent` facade and returns its
-chunk-by-chunk scene analysis without translating it into a project snapshot.
-It independently owns scene-to-project merging and persists immutable,
-versioned canonical project JSON snapshots in SQLite. The separate `llm-agent/`
-package owns chunking, prompts, and structured model calls.
+chunk-by-chunk scene analysis unchanged after independently merging the result
+into the current scene set and persisting immutable, versioned canonical
+project JSON snapshots in SQLite. The separate `llm-agent/` package owns
+chunking, prompts, structured model calls, and read-only project graph access.
 
 `AnalyzeSceneUseCase` is the backend application boundary for an explicit scene
 analysis request. It constructs the public request, invokes an injected
-facade-compatible dependency, returns the public analysis unchanged, and
-sanitizes public analysis errors without inspecting package-private causes.
+facade-compatible dependency, verifies the analysis source snapshot version,
+replaces the analyzed scene, rebuilds the next project snapshot, and commits
+both records atomically. It returns the public analysis unchanged and sanitizes
+analysis, merge, and repository errors without exposing internal causes.
 
 Narrative Memory scene analysis is invoked explicitly; it is not attached to
 manuscript saves or a background process, and this slice exposes no HTTP or API
-operation. The caller explicitly passes `model_name` and `prompt_path` to
-`build_narrative_analysis_agent()`, for example:
+operation. The normal composition path initializes the backend-owned database
+and constructs the analysis workflow:
 
 ```python
-agent = build_narrative_analysis_agent(
+from pathlib import Path
+
+from narrative_analysis_agent import packaged_prompt_path
+
+from apps.narrative_memory.composition import build_analyze_scene_use_case
+
+data_root = Path("/srv/romance-agent/data")
+use_case = build_analyze_scene_use_case(
     model_name="provider:model",
-    prompt_path=prompt_path,
+    prompt_path=packaged_prompt_path(),
+    project_graph_path=data_root / "narrative-memory.sqlite3",
 )
 ```
 
-A failed analysis does not automatically persist or merge its chunk results
-into a scene or project snapshot.
+`build_analyze_scene_use_case()` calls `repository.initialize()` before the
+agent opens its read-only project graph reader and passes the exact same
+`project_graph_path` to both the reader and writer. Only a successful analysis
+whose source snapshot version matches the current version reaches the atomic
+scene-and-project commit; analysis, merge, or persistence failure publishes no
+partial snapshot.
 
-For package-owned installed prompts, callers can explicitly select the public
-helper result as the configured root:
+`build_narrative_analysis_agent()` is the lower-level facade builder. Its
+`project_graph_path` is required, and backend code must initialize that exact
+database file and its v2 tables before constructing the read-only agent:
 
 ```python
+from pathlib import Path
+
 from narrative_analysis_agent import packaged_prompt_path
 
+from apps.narrative_memory.composition import build_narrative_analysis_agent
+from apps.narrative_memory.repository.sqlite_snapshot_repository import (
+    SQLiteSnapshotRepository,
+)
+
+data_root = Path("/srv/romance-agent/data")
+project_graph_path = data_root / "narrative-memory.sqlite3"
+repository = SQLiteSnapshotRepository(project_graph_path)
+repository.initialize()
 agent = build_narrative_analysis_agent(
     model_name="provider:model",
     prompt_path=packaged_prompt_path(),
+    project_graph_path=project_graph_path,
 )
 ```
 
