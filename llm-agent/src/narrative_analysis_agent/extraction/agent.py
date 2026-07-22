@@ -3,8 +3,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, cast
 
+from pydantic import ValidationError
 from pydantic_ai import Agent
-from pydantic_ai.exceptions import AgentRunError
+from pydantic_ai.exceptions import AgentRunError, UnexpectedModelBehavior
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
@@ -12,6 +13,8 @@ from pydantic_ai.usage import RunUsage
 from narrative_analysis_agent.assembly.models import SceneChunkExtraction
 from narrative_analysis_agent.assembly.translation import map_chunk_extraction_output
 from narrative_analysis_agent.extraction.schemas import ChunkExtractionOutput
+
+_OUTPUT_VALIDATION_EXHAUSTED = "Exceeded maximum output retries (0)"
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +41,10 @@ class ChunkInvocationResult:
 
 
 class _ProviderCallError(RuntimeError):
+    pass
+
+
+class _InvalidExtractionOutputError(RuntimeError):
     pass
 
 
@@ -92,6 +99,12 @@ class PydanticAIChunkAnalyzer:
                 call.user_prompt,
                 instructions=call.system_prompt,
             )
+        except UnexpectedModelBehavior as error:
+            if _is_structured_output_validation_exhaustion(error):
+                raise _InvalidExtractionOutputError(
+                    "scene analysis extraction is invalid"
+                ) from None
+            raise _ProviderCallError("scene analysis provider call failed") from None
         except AgentRunError:
             raise _ProviderCallError("scene analysis provider call failed") from None
 
@@ -106,6 +119,17 @@ class PydanticAIChunkAnalyzer:
             provider_name=result.response.provider_name,
             model_name=result.response.model_name,
         )
+
+
+def _is_structured_output_validation_exhaustion(error: UnexpectedModelBehavior) -> bool:
+    if error.message != _OUTPUT_VALIDATION_EXHAUSTED:
+        return False
+    cause = error.__cause__
+    while cause is not None:
+        if isinstance(cause, ValidationError):
+            return True
+        cause = cause.__cause__
+    return False
 
 
 type ScriptedResult = SceneChunkExtraction | Exception

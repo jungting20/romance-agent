@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from narrative_analysis_agent import (
     AnalysisAuditError,
@@ -35,10 +37,13 @@ from narrative_analysis_agent.audit.sqlite import SQLiteAgentAudit
 from narrative_analysis_agent.extraction.agent import (
     AgentUsage,
     ChunkAnalysisCall,
+    ChunkAnalyzerPort,
     ChunkInvocationResult,
+    PydanticAIChunkAnalyzer,
     _ProviderCallError,
 )
 from narrative_analysis_agent.extraction.prompts import PromptDefinition
+from narrative_analysis_agent.extraction.schemas import ChunkExtractionOutput
 from narrative_analysis_agent.orchestrator import SceneAnalysisOrchestrator
 
 NOW = datetime(2026, 7, 16, 9, 30, tzinfo=UTC)
@@ -117,7 +122,7 @@ def _result(
 
 
 def _orchestrator(
-    analyzer: ScriptedAnalyzer,
+    analyzer: ChunkAnalyzerPort,
     audit: RecordingAudit,
     registry: StubPromptRegistry | None = None,
 ) -> tuple[SceneAnalysisOrchestrator, StubPromptRegistry]:
@@ -335,6 +340,72 @@ def test_unexpected_analyzer_error_is_not_retried_or_exposed() -> None:
     ]
     formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
     assert "secret provider body" not in formatted
+
+
+class StructuredOutputFailingRunner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def run(self, *args: object, **kwargs: object) -> object:
+        self.calls += 1
+        try:
+            ChunkExtractionOutput.model_validate(
+                {
+                    "summary": "SECRET_MANUSCRIPT_BODY",
+                    "relationship_events": [
+                        {
+                            "subject_ref": "subject",
+                            "object_ref": "object",
+                            "category": "invalid-secret-category",
+                            "description": "SECRET_RESPONSE_BODY",
+                            "confidence": 0.5,
+                            "evidence": [],
+                        }
+                    ],
+                }
+            )
+        except ValidationError as error:
+            raise UnexpectedModelBehavior(
+                "Exceeded maximum output retries (0)",
+                body="SECRET_PROVIDER_BODY",
+            ) from error
+        raise AssertionError("invalid payload unexpectedly validated")
+
+
+def test_structured_output_validation_failure_is_not_retried_and_is_audited() -> None:
+    audit = RecordingAudit()
+    runner = StructuredOutputFailingRunner()
+    analyzer = PydanticAIChunkAnalyzer("configured-model", agent=runner)
+    orchestrator, _ = _orchestrator(analyzer, audit)
+
+    with pytest.raises(InvalidExtractionError) as captured:
+        asyncio.run(orchestrator.analyze_scene(_request()))
+
+    assert runner.calls == 1
+    assert captured.value.run_id == "run-01"
+    assert captured.value.args == ("scene analysis extraction is invalid",)
+    assert audit.event_types == [
+        "run_started",
+        "attempt_started",
+        "attempt_failed",
+        "run_failed",
+    ]
+    failed_attempt = audit.events[-2]
+    failed_run = audit.events[-1]
+    assert isinstance(failed_attempt, AttemptFailed)
+    assert failed_attempt.attempt_number == 1
+    assert failed_attempt.error_type == "InvalidExtractionError"
+    assert failed_attempt.error_message == "scene analysis extraction is invalid"
+    assert isinstance(failed_run, RunFailed)
+    assert failed_run.error_type == "InvalidExtractionError"
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    for secret in (
+        "SECRET_MANUSCRIPT_BODY",
+        "SECRET_RESPONSE_BODY",
+        "SECRET_PROVIDER_BODY",
+        "invalid-secret-category",
+    ):
+        assert secret not in formatted
 
 
 def test_non_json_extraction_fails_before_attempt_success_without_retry() -> None:

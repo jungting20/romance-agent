@@ -4,7 +4,7 @@ import traceback
 
 import pytest
 from pydantic import ValidationError
-from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.exceptions import AgentRunError, UnexpectedModelBehavior
 from pydantic_ai.models.test import TestModel
 
 import narrative_analysis_agent.extraction as extraction
@@ -133,9 +133,11 @@ def test_strict_output_maps_to_provider_independent_internal_types() -> None:
         output.summary = "changed"
 
 
-def test_provider_call_error_is_not_exported_from_extraction_public_api() -> None:
+def test_private_analysis_signals_are_not_exported_from_extraction_public_api() -> None:
     assert "ProviderCallError" not in extraction.__all__
     assert not hasattr(extraction, "ProviderCallError")
+    assert "InvalidExtractionOutputError" not in extraction.__all__
+    assert not hasattr(extraction, "_InvalidExtractionOutputError")
 
 
 @pytest.mark.parametrize(
@@ -227,23 +229,38 @@ def test_pydantic_ai_adapter_returns_validated_output_messages_usage_and_identit
     assert adapter.model_name == "scene-test-model"
 
 
-class _FailingAgent:
+class _ProviderFailingAgent:
     async def run(self, *args: object, **kwargs: object) -> object:
-        raise UnexpectedModelBehavior("structured output retries exhausted", body="secret body")
+        raise AgentRunError("secret provider body")
 
 
-def test_pydantic_ai_adapter_sanitizes_agent_run_errors_without_provider_body() -> None:
+class _ProtocolValidationFailingAgent:
+    async def run(self, *args: object, **kwargs: object) -> object:
+        invalid_payload = _output_payload()
+        invalid_payload["relationship_events"][0]["category"] = (  # type: ignore[index]
+            "SECRET_PROVIDER_CATEGORY"
+        )
+        try:
+            ChunkExtractionOutput.model_validate(invalid_payload)
+        except ValidationError as error:
+            raise UnexpectedModelBehavior(
+                "Invalid response from provider",
+                body="SECRET_PROVIDER_BODY",
+            ) from error
+        raise AssertionError("invalid provider payload unexpectedly validated")
+
+
+def test_pydantic_ai_adapter_sanitizes_provider_run_errors_without_provider_body() -> None:
     adapter = PydanticAIChunkAnalyzer(
         TestModel(model_name="scene-test-model"),
-        agent=_FailingAgent(),
+        agent=_ProviderFailingAgent(),
     )
 
     with pytest.raises(_ProviderCallError) as captured:
         asyncio.run(adapter.analyze(_call()))
 
-    assert "secret body" not in str(captured.value)
-    assert "structured output retries exhausted" not in str(captured.value)
-    assert "secret body" not in "".join(
+    assert "secret provider body" not in str(captured.value)
+    assert "secret provider body" not in "".join(
         traceback.format_exception(captured.type, captured.value, captured.tb)
     )
     assert captured.value.__cause__ is None
@@ -251,7 +268,43 @@ def test_pydantic_ai_adapter_sanitizes_agent_run_errors_without_provider_body() 
     assert captured.value.args == ("scene analysis provider call failed",)
 
 
+def test_pydantic_ai_adapter_keeps_provider_response_validation_as_provider_failure() -> None:
+    adapter = PydanticAIChunkAnalyzer(
+        TestModel(model_name="scene-test-model"),
+        agent=_ProtocolValidationFailingAgent(),
+    )
+
+    with pytest.raises(_ProviderCallError) as captured:
+        asyncio.run(adapter.analyze(_call()))
+
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert captured.value.args == ("scene analysis provider call failed",)
+    assert captured.value.__cause__ is None
+    assert "SECRET_PROVIDER_CATEGORY" not in formatted
+    assert "SECRET_PROVIDER_BODY" not in formatted
+
+
+def test_pydantic_ai_adapter_signals_structured_output_validation_separately() -> None:
+    invalid_payload = _output_payload()
+    invalid_payload["relationship_events"][0]["category"] = (  # type: ignore[index]
+        "SECRET_INVALID_CATEGORY"
+    )
+    adapter = PydanticAIChunkAnalyzer(
+        TestModel(custom_output_args=invalid_payload, model_name="scene-test-model")
+    )
+
+    with pytest.raises(RuntimeError) as captured:
+        asyncio.run(adapter.analyze(_call()))
+
+    assert type(captured.value).__name__ == "_InvalidExtractionOutputError"
+    assert captured.value.args == ("scene analysis extraction is invalid",)
+    assert captured.value.__cause__ is None
+    assert "SECRET_INVALID_CATEGORY" not in "".join(
+        traceback.format_exception(captured.type, captured.value, captured.tb)
+    )
+
+
 def test_pydantic_ai_adapter_exposes_explicit_configured_model_name() -> None:
-    adapter = PydanticAIChunkAnalyzer("openai:configured", agent=_FailingAgent())
+    adapter = PydanticAIChunkAnalyzer("openai:configured", agent=_ProviderFailingAgent())
 
     assert adapter.model_name == "openai:configured"

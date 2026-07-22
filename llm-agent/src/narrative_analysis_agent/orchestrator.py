@@ -38,6 +38,7 @@ from narrative_analysis_agent.errors import (
 from narrative_analysis_agent.extraction.agent import (
     ChunkAnalysisCall,
     ChunkAnalyzerPort,
+    _InvalidExtractionOutputError,
     _ProviderCallError,
 )
 from narrative_analysis_agent.extraction.prompts import (
@@ -118,6 +119,12 @@ class SceneAnalysisOrchestrator:
         except AnalysisAuditError as error:
             self._record_run_failure(run_id, type(error).__name__)
             raise
+        except _InvalidExtractionOutputError:
+            self._record_run_failure(run_id, "InvalidExtractionError")
+            raise InvalidExtractionError(
+                "scene analysis extraction is invalid",
+                run_id=run_id,
+            ) from None
         except _ProviderCallError:
             self._record_run_failure(run_id, "ProviderCallError")
             raise ProviderUnavailableError(_PROVIDER_FAILURE_MESSAGE, run_id=run_id) from None
@@ -197,6 +204,16 @@ class SceneAnalysisOrchestrator:
                             error_message="scene analysis cancelled",
                         )
                     )
+                raise
+            except _InvalidExtractionOutputError:
+                self._append_attempt_failure(
+                    run_id=run_id,
+                    chunk=chunk,
+                    attempt_number=attempt_number,
+                    latency_ms=(self._monotonic() - started_at) * 1000,
+                    error_type="InvalidExtractionError",
+                    error_message="scene analysis extraction is invalid",
+                )
                 raise
             except _ProviderCallError:
                 self._append_attempt_failure(
