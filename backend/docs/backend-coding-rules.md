@@ -137,6 +137,10 @@ verification, and handoff workflows. If the documents conflict, follow
   pass the exact same configured `project_graph_path` to the read-only agent and
   the writable repository. Do not add a v1 decoder, automatic migration, or
   runtime database deletion.
+- Keep the repository-local `narrative-analysis-agent` uv path source editable
+  and refresh the backend lock/environment after its public contract changes,
+  so backend verification imports the current worktree source instead of a
+  stale built copy.
 - Before committing, compare the agent's `source_snapshot_version` with the
   current project snapshot version. The repository must repeat that comparison
   inside its write transaction and reject both project-version mismatch and a

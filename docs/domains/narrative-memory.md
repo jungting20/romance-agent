@@ -99,11 +99,12 @@ v1의 `ChunkExtraction`, 추출 후보와 `pending`/`approved`/`rejected`/`needs
 
 ### 장면 병합과 프로젝트 snapshot
 
-- backend는 기존 프로젝트 대상과 명시적 별칭 연결이 있을 때만 청크 로컬
-  ID를 기존 프로젝트 ID로 재사용한다. 인물의 canonical name이 같다는
-  사실만으로는 재사용하지 않는다. 여러 청크의 명확히 같은 신규 대상은
-  하나로 통합하고, 애매한 대상은 별도로 유지하며 `POSSIBLE_SAME_AS`
-  관계를 보존한다. 신규 ID는
+- backend는 인물을 기존 프로젝트 인물과 명시적 별칭 연결이 있을 때만
+  기존 ID로 재사용하며 canonical name이 같다는 사실만으로는 재사용하지
+  않는다. 장소는 canonical name 또는 별칭이 일치하는 기존 장소가 유일할
+  때는 기존 ID를 재사용하고 여러 기존 장소와 일치하면 별도 대상으로 유지한다.
+  여러 청크의 명확히 같은 신규 대상은 하나로 통합하고, 애매한 대상은
+  별도로 유지하며 `POSSIBLE_SAME_AS` 관계를 보존한다. 신규 ID는
   `chunk.start_offset + chunk.text.find(first_mention)` 또는
   `chunk.start_offset + chunk.text.find(evidence)`로 구한 장면 절대 최초 등장
   위치, 정규화 이름과 결정적 tie breaker로

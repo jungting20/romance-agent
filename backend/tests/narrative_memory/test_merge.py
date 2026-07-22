@@ -242,6 +242,60 @@ def test_scene_merge_does_not_reuse_ambiguous_existing_name() -> None:
     assert [item.id for item in graph.entities.characters] == ["character_010"]
 
 
+def test_scene_merge_reuses_unique_existing_location_canonical_name() -> None:
+    existing_location = _location(
+        "location_007",
+        "중앙역",
+        first_mention="기존 중앙역",
+    )
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=4,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(locations=(existing_location,)),
+    )
+    analysis = _analysis(
+        chunks=(
+            _chunk(
+                ordinal=0,
+                text="중앙역에 도착했다.",
+                locations=(_location("location_001", "중앙역", first_mention="중앙역"),),
+            ),
+        )
+    )
+
+    graph = assemble_scene_graph(analysis, existing).graph
+
+    assert graph.entities.locations == (existing_location,)
+
+
+def test_scene_merge_does_not_reuse_ambiguous_existing_location_name() -> None:
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=4,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(
+            locations=(
+                _location("location_004", "중앙역", first_mention="도심 중앙역"),
+                _location("location_009", "중앙역", first_mention="교외 중앙역"),
+            )
+        ),
+    )
+    analysis = _analysis(
+        chunks=(
+            _chunk(
+                ordinal=0,
+                text="중앙역에 도착했다.",
+                locations=(_location("location_001", "중앙역", first_mention="중앙역"),),
+            ),
+        )
+    )
+
+    graph = assemble_scene_graph(analysis, existing).graph
+
+    assert [item.id for item in graph.entities.locations] == ["location_010"]
+
+
 def test_scene_merge_does_not_reuse_existing_character_for_same_canonical_name_alone() -> None:
     existing = ProjectKnowledgeGraphSnapshot(
         project_id="project-01",

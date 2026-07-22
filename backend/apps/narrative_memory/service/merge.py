@@ -143,7 +143,11 @@ def _character_id_map(
     ]
     entries.sort(key=lambda entry: _identity_order(*entry))
     existing_items = {item.id: item for item in existing.entities.characters}
-    result = _map_existing_identities(entries, existing_items)
+    result = _map_existing_identities(
+        entries,
+        existing_items,
+        _has_explicit_alias_bridge,
+    )
     remaining = [entry for entry in entries if _local_key(*entry) not in result]
     clusters = _clusters(
         remaining,
@@ -170,7 +174,11 @@ def _location_id_map(
     ]
     entries.sort(key=lambda entry: _identity_order(*entry))
     existing_items = {item.id: item for item in existing.entities.locations}
-    result = _map_existing_identities(entries, existing_items)
+    result = _map_existing_identities(
+        entries,
+        existing_items,
+        _shares_name_or_alias,
+    )
     remaining = [entry for entry in entries if _local_key(*entry) not in result]
     clusters = _clusters(
         remaining,
@@ -222,6 +230,7 @@ def _event_id_map(
 def _map_existing_identities[Item: Character | Location](
     entries: list[tuple[AnalyzedChunk, Item]],
     existing_items: dict[str, Item],
+    matches_identity: Callable[[Item, Item], bool],
 ) -> IdMap:
     result: IdMap = {}
     for chunk, item in entries:
@@ -229,7 +238,7 @@ def _map_existing_identities[Item: Character | Location](
         matches = {
             existing_id
             for existing_id, existing_item in existing_items.items()
-            if _has_explicit_alias_bridge(item, existing_item)
+            if matches_identity(item, existing_item)
         }
         if len(matches) == 1:
             result[key] = matches.pop()
@@ -247,6 +256,13 @@ def _has_explicit_alias_bridge(
     return bool(left_aliases & ({right_name} | right_aliases)) or bool(
         right_aliases & ({left_name} | left_aliases)
     )
+
+
+def _shares_name_or_alias(
+    left: Character | Location,
+    right: Character | Location,
+) -> bool:
+    return bool(_identity_tokens(left) & _identity_tokens(right))
 
 
 def _clusters[Item](
