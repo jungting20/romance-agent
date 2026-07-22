@@ -40,9 +40,9 @@ import {
   type ManuscriptAutosaveStatus,
   useManuscriptAutosave,
 } from "@/features/manuscript-autosave";
+import { useManuscriptSceneNavigation } from "@/features/manuscript-scene-navigation";
 import { useProjectWorkspaceQuery } from "@/features/project-persistence";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import type { TextRange } from "@/modules/manuscript";
 import { updateSceneContent } from "@/modules/manuscript";
 import { ManuscriptEditor } from "@/modules/manuscript/ui/manuscript-editor";
 import { SceneTree } from "@/modules/manuscript/ui/scene-tree";
@@ -213,7 +213,6 @@ function LoadedWritingWorkspace({
 }) {
   const [contextOpen, setContextOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [selection, setSelection] = useState<TextRange | null>(null);
   const [worldAnnouncement, setWorldAnnouncement] = useState("");
   const worldTabRef = useRef<HTMLButtonElement>(null);
   const worldLaunchRef = useRef<HTMLButtonElement>(null);
@@ -227,6 +226,7 @@ function LoadedWritingWorkspace({
     status,
     retry,
     flush,
+    conflictKind,
     conflictComparison,
     isConflictDialogOpen,
     isComparingConflict,
@@ -242,6 +242,12 @@ function LoadedWritingWorkspace({
   } = useManuscriptAutosave({
     manuscript: workspace.manuscript,
     manuscriptRevision: workspace.manuscriptRevision,
+  });
+  const sceneNavigation = useManuscriptSceneNavigation({
+    manuscript: draft,
+    updateDraft,
+    contextIsInline,
+    onCloseContext: () => setContextOpen(false),
   });
   const worldEditor = useWorldEntryEditor({
     projectId: project.id,
@@ -262,7 +268,7 @@ function LoadedWritingWorkspace({
     focusTarget?.focus();
     if (resetLaunchOrigin) openedFromLaunchRef.current = false;
   };
-  const scene = draft.scenes.find(({ id }) => id === draft.activeSceneId);
+  const scene = sceneNavigation.activeScene;
 
   if (!scene) {
     return (
@@ -274,6 +280,7 @@ function LoadedWritingWorkspace({
     );
   }
 
+  const selection = sceneNavigation.selection;
   const selectedRange = selection && selection.start !== selection.end ? selection : null;
   const selectedText = selectedRange
     ? scene.content.slice(selectedRange.start, selectedRange.end)
@@ -297,7 +304,7 @@ function LoadedWritingWorkspace({
         const updatedScene = updated.scenes.find(({ id }) => id === scene.id);
         updateDraft(updated);
         if (updatedScene) {
-          setSelection({
+          sceneNavigation.setSelection({
             start: updatedScene.content.length,
             end: updatedScene.content.length,
           });
@@ -309,9 +316,10 @@ function LoadedWritingWorkspace({
   const editor = (
     <main className="h-full min-h-0 min-w-0 overflow-y-auto p-3 sm:p-5 lg:p-6">
       <ManuscriptEditor
+        ref={sceneNavigation.editorRef}
         scene={scene}
         onChange={(content) => updateDraft(updateSceneContent(draft, scene.id, content))}
-        onSelectionChange={setSelection}
+        onSelectionChange={sceneNavigation.setSelection}
       />
     </main>
   );
@@ -330,7 +338,9 @@ function LoadedWritingWorkspace({
           </span>
           <div className="min-w-0">
             <h1 className="truncate font-heading text-base font-semibold">{project.title}</h1>
-            <p className="truncate text-[11px] text-muted-foreground">제1장 · {scene.title}</p>
+            <p className="truncate text-[11px] text-muted-foreground">
+              {scene.chapterNumber}장 · {scene.title}
+            </p>
           </div>
         </div>
         <AutosaveIndicator status={status} onRetry={retry} onOpenConflict={openConflictDialog} />
@@ -399,6 +409,9 @@ function LoadedWritingWorkspace({
                   <ContextPanelContent
                     draft={draft}
                     bible={bible}
+                    onAddScene={sceneNavigation.addNewScene}
+                    onSelectScene={sceneNavigation.activateScene}
+                    addSceneDisabled={status === "conflict"}
                     onEditWorld={handleEditorOpen}
                     editWorldButtonRef={worldLaunchRef}
                   />
@@ -414,6 +427,9 @@ function LoadedWritingWorkspace({
                 <ContextPanelContent
                   draft={draft}
                   bible={bible}
+                  onAddScene={sceneNavigation.addNewScene}
+                  onSelectScene={sceneNavigation.activateScene}
+                  addSceneDisabled={status === "conflict"}
                   onEditWorld={handleEditorOpen}
                   editWorldButtonRef={worldLaunchRef}
                 />
@@ -438,6 +454,9 @@ function LoadedWritingWorkspace({
               <ContextPanelContent
                 draft={draft}
                 bible={bible}
+                onAddScene={sceneNavigation.addNewScene}
+                onSelectScene={sceneNavigation.activateScene}
+                addSceneDisabled={status === "conflict"}
                 onEditWorld={handleEditorOpen}
                 editWorldButtonRef={worldLaunchRef}
               />
@@ -470,6 +489,9 @@ function LoadedWritingWorkspace({
           {worldAnnouncement}
         </p>
       )}
+      <p className="sr-only" aria-live="polite">
+        {sceneNavigation.announcement}
+      </p>
       {worldEditor.state && (
         <>
           <WorldEditorSheet
@@ -511,6 +533,7 @@ function LoadedWritingWorkspace({
       )}
       <ManuscriptConflictDialog
         open={isConflictDialogOpen}
+        kind={conflictKind ?? "scene-content"}
         comparison={conflictComparison}
         isComparing={isComparingConflict}
         isResolving={isResolvingConflict}
@@ -529,18 +552,29 @@ function LoadedWritingWorkspace({
 function ContextPanelContent({
   draft,
   bible,
+  onAddScene,
+  onSelectScene,
+  addSceneDisabled,
   onEditWorld,
   editWorldButtonRef,
 }: {
   draft: ProjectWorkspaceResponse["manuscript"];
   bible: ProjectWorkspaceResponse["storyBible"];
+  onAddScene: () => void;
+  onSelectScene: (sceneId: string) => void;
+  addSceneDisabled: boolean;
   onEditWorld: () => void;
   editWorldButtonRef: Ref<HTMLButtonElement>;
 }) {
   return (
     <>
       <TabsContent value="manuscript">
-        <SceneTree manuscript={draft} />
+        <SceneTree
+          manuscript={draft}
+          onAdd={onAddScene}
+          onSelect={onSelectScene}
+          addDisabled={addSceneDisabled}
+        />
       </TabsContent>
       <TabsContent value="characters">
         <StoryContextPanel bible={bible} mode="characters" />

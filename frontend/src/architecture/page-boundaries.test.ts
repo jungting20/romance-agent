@@ -105,7 +105,7 @@ const legacyBaseline: Record<string, Record<string, number>> = {
     "infrastructure-import:@/app/infrastructure/api/api-client": 1,
     "infrastructure-import:@/app/infrastructure/api/contracts": 1,
     "state-hook:useRef": 4,
-    "state-hook:useState": 4,
+    "state-hook:useState": 3,
     "type-assertion:non-const": 1,
   },
 };

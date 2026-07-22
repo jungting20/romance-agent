@@ -56,6 +56,7 @@ export function useManuscriptAutosave({
   }, []);
 
   const getDraft = useCallback(() => draftRef.current, []);
+  const getAcknowledgedManuscript = useCallback(() => acknowledgedManuscriptRef.current, []);
   const getManuscriptGeneration = useCallback(() => manuscriptGenerationRef.current, []);
   const isSaveInFlight = useCallback(() => inFlightRef.current, []);
 
@@ -90,6 +91,7 @@ export function useManuscriptAutosave({
   const conflictHost = useMemo(
     () => ({
       getDraft,
+      getAcknowledgedManuscript,
       getManuscriptGeneration,
       isSaveInFlight,
       beginResolutionSave,
@@ -102,6 +104,7 @@ export function useManuscriptAutosave({
       beginResolutionSave,
       finishResolutionSave,
       getDraft,
+      getAcknowledgedManuscript,
       getManuscriptGeneration,
       isSaveInFlight,
       setStatus,
@@ -256,6 +259,7 @@ export function useManuscriptAutosave({
     retry,
     flush,
     conflict: conflictResolution.conflict,
+    conflictKind: conflictResolution.conflictKind,
     conflictComparison: conflictResolution.conflictComparison,
     isConflictDialogOpen: conflictResolution.isConflictDialogOpen,
     isComparingConflict: conflictResolution.isComparingConflict,

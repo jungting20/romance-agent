@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 interface ManuscriptConflictDialogProps {
   open: boolean;
+  kind: "scene-content" | "scene-structure";
   comparison: CompareManuscriptSceneResponse | null;
   isComparing: boolean;
   isResolving: boolean;
@@ -37,6 +38,7 @@ const changeLabels: Record<SceneDiffKind, string> = {
 
 export function ManuscriptConflictDialog({
   open,
+  kind,
   comparison,
   isComparing,
   isResolving,
@@ -91,68 +93,95 @@ export function ManuscriptConflictDialog({
         </DialogHeader>
 
         <div className="min-h-48 overflow-auto px-5">
-          {isComparing && !comparison ? (
-            <p role="status" className="grid min-h-48 place-items-center text-muted-foreground">
-              편집본 차이를 불러오는 중이에요.
-            </p>
-          ) : compareError && !comparison ? (
-            <div className="grid min-h-48 place-items-center text-center">
-              <div>
-                <p role="alert" className="text-destructive">
-                  편집본 비교를 불러오지 못했어요. 현재 편집본은 그대로 보관하고 있어요.
-                </p>
-                <Button type="button" variant="outline" className="mt-4" onClick={onRetryCompare}>
-                  편집본 비교 다시 불러오기
-                </Button>
+          {kind === "scene-structure" &&
+            (isComparing ? (
+              <p role="status" className="grid min-h-48 place-items-center text-muted-foreground">
+                서버 최신 원고를 불러오는 중이에요.
+              </p>
+            ) : compareError ? (
+              <div className="grid min-h-48 place-items-center text-center">
+                <div>
+                  <p role="alert" className="text-destructive">
+                    서버 최신 원고를 불러오지 못했어요. 현재 로컬 초안은 그대로 보관하고 있어요.
+                  </p>
+                  <Button type="button" variant="outline" className="mt-4" onClick={onRetryCompare}>
+                    서버 최신 원고 다시 불러오기
+                  </Button>
+                </div>
               </div>
-            </div>
-          ) : comparison ? (
-            <>
-              {compareError && (
-                <div
-                  role="alert"
-                  className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 p-3 text-destructive"
-                >
-                  <span>최신 편집본 비교를 불러오지 못했어요.</span>
-                  <Button type="button" variant="outline" size="sm" onClick={onRetryCompare}>
+            ) : (
+              <div className="grid min-h-48 place-items-center text-center">
+                <div>
+                  <p className="font-medium">서버 최신 원고에 아직 없는 새 장면이 있어요.</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    현재 로컬 초안은 보관하고 있습니다.
+                  </p>
+                </div>
+              </div>
+            ))}
+          {kind === "scene-content" &&
+            (isComparing && !comparison ? (
+              <p role="status" className="grid min-h-48 place-items-center text-muted-foreground">
+                편집본 차이를 불러오는 중이에요.
+              </p>
+            ) : compareError && !comparison ? (
+              <div className="grid min-h-48 place-items-center text-center">
+                <div>
+                  <p role="alert" className="text-destructive">
+                    편집본 비교를 불러오지 못했어요. 현재 편집본은 그대로 보관하고 있어요.
+                  </p>
+                  <Button type="button" variant="outline" className="mt-4" onClick={onRetryCompare}>
                     편집본 비교 다시 불러오기
                   </Button>
                 </div>
-              )}
-              <table className="w-full table-fixed border-separate border-spacing-0 text-left">
-                <thead className="sticky top-0 z-10 bg-popover">
-                  <tr>
-                    <th scope="col" className="w-1/2 border-b border-r px-3 py-2 font-semibold">
-                      내 편집본
-                    </th>
-                    <th scope="col" className="w-1/2 border-b px-3 py-2 font-semibold">
-                      서버 최신본
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {comparison.rows.map((row, index) => (
-                    <tr
-                      key={`${row.kind}-${row.localLineNumber ?? "x"}-${row.serverLineNumber ?? "x"}-${index}`}
-                    >
-                      <DiffCell
-                        side="local"
-                        kind={row.kind}
-                        lineNumber={row.localLineNumber}
-                        text={row.localText}
-                      />
-                      <DiffCell
-                        side="server"
-                        kind={row.kind}
-                        lineNumber={row.serverLineNumber}
-                        text={row.serverText}
-                      />
+              </div>
+            ) : comparison ? (
+              <>
+                {compareError && (
+                  <div
+                    role="alert"
+                    className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 p-3 text-destructive"
+                  >
+                    <span>최신 편집본 비교를 불러오지 못했어요.</span>
+                    <Button type="button" variant="outline" size="sm" onClick={onRetryCompare}>
+                      편집본 비교 다시 불러오기
+                    </Button>
+                  </div>
+                )}
+                <table className="w-full table-fixed border-separate border-spacing-0 text-left">
+                  <thead className="sticky top-0 z-10 bg-popover">
+                    <tr>
+                      <th scope="col" className="w-1/2 border-b border-r px-3 py-2 font-semibold">
+                        내 편집본
+                      </th>
+                      <th scope="col" className="w-1/2 border-b px-3 py-2 font-semibold">
+                        서버 최신본
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          ) : null}
+                  </thead>
+                  <tbody>
+                    {comparison.rows.map((row, index) => (
+                      <tr
+                        key={`${row.kind}-${row.localLineNumber ?? "x"}-${row.serverLineNumber ?? "x"}-${index}`}
+                      >
+                        <DiffCell
+                          side="local"
+                          kind={row.kind}
+                          lineNumber={row.localLineNumber}
+                          text={row.localText}
+                        />
+                        <DiffCell
+                          side="server"
+                          kind={row.kind}
+                          lineNumber={row.serverLineNumber}
+                          text={row.serverText}
+                        />
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : null)}
         </div>
 
         <div className="grid gap-2 px-5 text-xs text-muted-foreground sm:grid-cols-2">
@@ -170,7 +199,12 @@ export function ManuscriptConflictDialog({
           <Button
             type="button"
             variant="outline"
-            disabled={!comparison || isComparing || isResolving || compareError}
+            disabled={
+              isComparing ||
+              isResolving ||
+              compareError ||
+              (kind === "scene-content" && !comparison)
+            }
             onClick={onApplyServer}
             autoFocus
           >
@@ -178,10 +212,19 @@ export function ManuscriptConflictDialog({
           </Button>
           <Button
             type="button"
-            disabled={!comparison || isComparing || isResolving || compareError}
+            disabled={
+              isComparing ||
+              isResolving ||
+              compareError ||
+              (kind === "scene-content" && !comparison)
+            }
             onClick={resolutionError ? onRetryKeepLocal : onKeepLocal}
           >
-            {resolutionError ? "내 편집본 저장 다시 시도" : "내 편집본 유지"}
+            {resolutionError
+              ? "내 편집본 저장 다시 시도"
+              : kind === "scene-structure"
+                ? "내 새 장면 유지"
+                : "내 편집본 유지"}
           </Button>
         </DialogFooter>
       </DialogContent>

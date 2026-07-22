@@ -24,6 +24,61 @@ describe("Manuscript", () => {
     expect(manuscript.scenes[0]?.content).not.toBe("새로운 원고");
   });
 
+  test("adds and activates one empty scene after the highest chapter number", async () => {
+    const { addScene, createInitialManuscript } = await import("./manuscript");
+    const manuscript = createInitialManuscript("project-1");
+
+    const updated = addScene(manuscript, "project-1-scene-2");
+
+    expect(updated.scenes).toHaveLength(2);
+    expect(updated.scenes[1]).toEqual({
+      id: "project-1-scene-2",
+      title: "제목 없는 장면",
+      chapterNumber: 2,
+      content: "",
+      relatedCharacterIds: [],
+      relatedWorldEntryIds: [],
+    });
+    expect(updated.activeSceneId).toBe("project-1-scene-2");
+    expect(manuscript.scenes).toHaveLength(1);
+  });
+
+  test("numbers from the maximum chapter rather than the array length", async () => {
+    const { addScene, createInitialManuscript } = await import("./manuscript");
+    const manuscript = createInitialManuscript("project-1");
+    const sparse = {
+      ...manuscript,
+      scenes: [{ ...manuscript.scenes[0]!, chapterNumber: 4 }],
+    };
+
+    expect(addScene(sparse, "scene-5").scenes[1]?.chapterNumber).toBe(5);
+  });
+
+  test.each(["", "project-1-scene-1"])("rejects invalid new scene id %j", async (sceneId) => {
+    const { addScene, createInitialManuscript } = await import("./manuscript");
+
+    expect(() => addScene(createInitialManuscript("project-1"), sceneId)).toThrow();
+  });
+
+  test("selects an existing scene without changing scene content", async () => {
+    const { addScene, createInitialManuscript, selectScene } = await import("./manuscript");
+    const manuscript = addScene(createInitialManuscript("project-1"), "scene-2");
+
+    const selected = selectScene(manuscript, "project-1-scene-1");
+
+    expect(selected.activeSceneId).toBe("project-1-scene-1");
+    expect(selected.scenes).toBe(manuscript.scenes);
+    expect(manuscript.activeSceneId).toBe("scene-2");
+  });
+
+  test("rejects selecting a missing scene", async () => {
+    const { createInitialManuscript, selectScene } = await import("./manuscript");
+
+    expect(() => selectScene(createInitialManuscript("project-1"), "missing-scene")).toThrow(
+      "원고 장면을 찾을 수 없습니다.",
+    );
+  });
+
   test("inserts text at the selected cursor position", async () => {
     const { insertText } = await import("./manuscript");
 

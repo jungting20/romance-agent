@@ -838,6 +838,166 @@ describe("WritingWorkspacePage", () => {
     expect(screen.getByRole("textbox", { name: "원고 본문" })).toBeInTheDocument();
   });
 
+  test("adds and selects scenes from the desktop workspace while saving the complete manuscript", async () => {
+    setViewportWidth(1024);
+    vi.stubGlobal("crypto", { randomUUID: () => "scene-2" });
+    const saveRequests: SaveManuscriptRequest[] = [];
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        saveRequests.push(body);
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 2,
+          projectActivity: {
+            projectId: body.manuscript.projectId,
+            updatedAt: "2026-07-14T03:00:00.000Z",
+          },
+        });
+      }),
+    );
+    const workspace = getWorkspace();
+    const user = userEvent.setup();
+    renderWorkspace();
+
+    await user.click(await screen.findByRole("button", { name: "새 장면 추가" }));
+
+    expect(screen.getByRole("button", { name: "2장 제목 없는 장면" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("heading", { name: "제목 없는 장면" })).toBeInTheDocument();
+    expect(screen.getByText("2장 · 제목 없는 장면")).toBeInTheDocument();
+    const editor = screen.getByRole("textbox", { name: "원고 본문" });
+    await waitFor(() => expect(editor).toHaveFocus());
+    expect(screen.getByText("2장 장면을 추가했어요")).toBeInTheDocument();
+    await waitFor(() => expect(saveRequests[0]?.manuscript.scenes).toHaveLength(2));
+
+    await user.click(screen.getByRole("button", { name: "1장 비가 그친 뒤의 정원" }));
+
+    expect(screen.getByRole("button", { name: "1장 비가 그친 뒤의 정원" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByText("1장 · 비가 그친 뒤의 정원")).toBeInTheDocument();
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "원고 본문" }).value).toBe(
+      workspace.manuscript.scenes[0].content,
+    );
+    expect(screen.getByRole("button", { name: "2장 제목 없는 장면" })).toBeInTheDocument();
+  });
+
+  test("closes the mobile manuscript sheet and focuses the editor after adding a scene", async () => {
+    setViewportWidth(375);
+    vi.stubGlobal("crypto", { randomUUID: () => "scene-2" });
+    const user = userEvent.setup();
+    renderWorkspace();
+
+    await user.click(await screen.findByRole("tab", { name: "원고 보기" }));
+    expect(screen.getByRole("dialog", { name: "원고 보기" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "새 장면 추가" }));
+
+    expect(screen.queryByRole("dialog", { name: "원고 보기" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "원고 본문" })).toHaveFocus());
+  });
+
+  test("disables scene addition while resolving a structural conflict", async () => {
+    setViewportWidth(1024);
+    vi.stubGlobal("crypto", { randomUUID: () => "scene-2" });
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+          { status: 409 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+    const addSceneButton = await screen.findByRole("button", { name: "새 장면 추가" });
+
+    await user.click(addSceneButton);
+
+    expect(await screen.findByRole("dialog", { name: "원고 저장 충돌 해결" })).toBeInTheDocument();
+    expect(addSceneButton).toBeDisabled();
+  });
+
+  test("keeps scene addition available after a save error and retries with the new scene", async () => {
+    setViewportWidth(1024);
+    vi.stubGlobal("crypto", { randomUUID: () => "scene-2" });
+    const saveRequests: SaveManuscriptRequest[] = [];
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        saveRequests.push(body);
+        if (saveRequests.length === 1) {
+          return HttpResponse.json(
+            { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+            { status: 500 },
+          );
+        }
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 2,
+          projectActivity: {
+            projectId: body.manuscript.projectId,
+            updatedAt: "2026-07-14T03:00:00.000Z",
+          },
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+
+    await user.click(await screen.findByRole("button", { name: "새 장면 추가" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
+    expect(screen.getByRole("button", { name: "새 장면 추가" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "2장 제목 없는 장면" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "원고 저장 다시 시도" }));
+
+    await waitFor(() => expect(saveRequests).toHaveLength(2));
+    expect(saveRequests[1].manuscript.scenes).toHaveLength(2);
+    expect(saveRequests[1].manuscript.activeSceneId).toBe(saveRequests[1].manuscript.scenes[1].id);
+  });
+
+  test("restores the saved active scene from a reload-equivalent workspace response", async () => {
+    setViewportWidth(1024);
+    const workspace = getWorkspace();
+    const restoredWorkspace: ProjectWorkspaceResponse = {
+      ...workspace,
+      manuscript: {
+        ...workspace.manuscript,
+        activeSceneId: "scene-2",
+        scenes: [
+          ...workspace.manuscript.scenes,
+          {
+            id: "scene-2",
+            title: "제목 없는 장면",
+            chapterNumber: 2,
+            content: "복원된 두 번째 장면",
+            relatedCharacterIds: [],
+            relatedWorldEntryIds: [],
+          },
+        ],
+      },
+      manuscriptRevision: 2,
+    };
+    server.use(
+      http.get("/api/projects/:projectId/workspace", () => HttpResponse.json(restoredWorkspace)),
+    );
+
+    renderWorkspace();
+
+    expect(await screen.findByRole("button", { name: "2장 제목 없는 장면" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByText("2장 · 제목 없는 장면")).toBeInTheDocument();
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "원고 본문" }).value).toBe(
+      "복원된 두 번째 장면",
+    );
+  });
+
   test("adds a resize handle only for each visible adjacent desktop panel", async () => {
     setViewportWidth(1280);
     const user = userEvent.setup();
@@ -1190,7 +1350,7 @@ describe("WritingWorkspacePage", () => {
 
     fireEvent.change(editor, { target: { value: "Escape 뒤에도 남는 로컬 장면" } });
     expect(await screen.findByRole("dialog", { name: "원고 저장 충돌 해결" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "내 편집본" })).toBeInTheDocument();
+    expect(await screen.findByRole("columnheader", { name: "내 편집본" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "서버 최신본" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "내 편집본 유지" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "서버 최신본 적용" })).toBeEnabled();
