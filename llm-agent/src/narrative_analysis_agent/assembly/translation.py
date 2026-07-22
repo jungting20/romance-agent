@@ -3,6 +3,7 @@ import math
 import re
 from collections.abc import Callable
 from hashlib import sha256
+from typing import TYPE_CHECKING
 
 from narrative_analysis_agent.chunking import SceneChunk
 from narrative_analysis_agent.contracts import (
@@ -10,6 +11,7 @@ from narrative_analysis_agent.contracts import (
     EntityCandidate,
     Evidence,
     LocationEventCandidate,
+    LocationEventType,
     PlaceCandidate,
     RelationshipEventCandidate,
 )
@@ -26,9 +28,88 @@ from .models import (
     SceneChunkExtraction,
 )
 
+if TYPE_CHECKING:
+    from narrative_analysis_agent.extraction.schemas import ChunkExtractionOutput
+
 
 class ExtractionTranslationError(ValueError):
     pass
+
+
+def map_chunk_extraction_output(output: "ChunkExtractionOutput") -> SceneChunkExtraction:
+    return SceneChunkExtraction(
+        summary=output.summary,
+        entities=tuple(
+            ExtractedEntity(
+                local_ref=item.local_ref,
+                normalized_name=item.normalized_name,
+                display_name=item.display_name,
+                aliases=tuple(item.aliases),
+                evidence=tuple(
+                    RelativeEvidence(
+                        start_offset=evidence.start_offset,
+                        end_offset=evidence.end_offset,
+                        text=evidence.text,
+                    )
+                    for evidence in item.evidence
+                ),
+            )
+            for item in output.entities
+        ),
+        places=tuple(
+            ExtractedPlace(
+                local_ref=item.local_ref,
+                normalized_name=item.normalized_name,
+                display_name=item.display_name,
+                aliases=tuple(item.aliases),
+                evidence=tuple(
+                    RelativeEvidence(
+                        start_offset=evidence.start_offset,
+                        end_offset=evidence.end_offset,
+                        text=evidence.text,
+                    )
+                    for evidence in item.evidence
+                ),
+            )
+            for item in output.places
+        ),
+        relationship_events=tuple(
+            ExtractedRelationshipEvent(
+                subject_ref=item.subject_ref,
+                object_ref=item.object_ref,
+                category=item.category,
+                description=item.description,
+                confidence=item.confidence,
+                evidence=tuple(
+                    RelativeEvidence(
+                        start_offset=evidence.start_offset,
+                        end_offset=evidence.end_offset,
+                        text=evidence.text,
+                    )
+                    for evidence in item.evidence
+                ),
+            )
+            for item in output.relationship_events
+        ),
+        location_events=tuple(
+            ExtractedLocationEvent(
+                character_ref=item.character_ref,
+                place_ref=item.place_ref,
+                event_type=LocationEventType(item.event_type),
+                description=item.description,
+                confidence=item.confidence,
+                evidence=tuple(
+                    RelativeEvidence(
+                        start_offset=evidence.start_offset,
+                        end_offset=evidence.end_offset,
+                        text=evidence.text,
+                    )
+                    for evidence in item.evidence
+                ),
+            )
+            for item in output.location_events
+        ),
+    )
 
 
 def translate_chunk_extraction(
