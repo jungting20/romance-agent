@@ -730,6 +730,13 @@ def test_analyze_scene_allows_memories_with_local_and_existing_typed_targets() -
                     kind="relation", reference_id="relation_010", description="기존 약속"
                 ),
             ),
+            _memory(
+                "memory_009",
+                character_id="character_010",
+                target=MemoryTarget(
+                    kind="character", reference_id="character_010", description="기존 서윤"
+                ),
+            ),
         ),
     )
     runner = GraphRunner((output,))
@@ -762,6 +769,15 @@ def test_analyze_scene_allows_memories_with_local_and_existing_typed_targets() -
                 character_memories=(_memory(character_id="character_999"),),
             ),
             id="memory-subject-dangling",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                locations=(_location(),),
+                relations=(_relation(),),
+                character_memories=(_memory(character_id="location_001"),),
+            ),
+            id="memory-subject-wrong-kind-location",
         ),
         pytest.param(
             _output(
