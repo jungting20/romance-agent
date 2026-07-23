@@ -30,20 +30,46 @@ def initialize_v2_tables(path: Path) -> None:
         )
 
 
-def canonical_payload(project_id: str = "project-01", snapshot_version: int = 3) -> bytes:
-    return json.dumps(
-        {
-            "project_id": project_id,
-            "snapshot_version": snapshot_version,
-            "schema_version": "project-knowledge-graph-snapshot-v2",
-            "documents": [],
-            "entities": {"characters": [], "locations": [], "events": []},
-            "relations": [],
-            "movements": [],
-            "coreferences": [],
-            "unresolved_references": [],
-            "contradictions": [],
+def character_memory_payload() -> dict[str, object]:
+    return {
+        "id": "memory_001",
+        "character_id": "character_001",
+        "target": {
+            "kind": "event",
+            "reference_id": "event_001",
+            "description": "비 내리던 날의 약속",
         },
+        "content": "서윤은 비 내리던 날의 약속을 기억한다.",
+        "state": "remembered",
+        "time_expression": "10년 전",
+        "scene_sequence": 4,
+        "evidence": "그녀는 10년 전 비 내리던 날의 약속을 기억했다",
+        "confidence": 0.94,
+    }
+
+
+def canonical_payload(
+    project_id: str = "project-01",
+    snapshot_version: int = 3,
+    *,
+    character_memories: list[dict[str, object]] | None = None,
+) -> bytes:
+    payload: dict[str, object] = {
+        "project_id": project_id,
+        "snapshot_version": snapshot_version,
+        "schema_version": "project-knowledge-graph-snapshot-v2",
+        "documents": [],
+        "entities": {"characters": [], "locations": [], "events": []},
+        "relations": [],
+        "movements": [],
+        "coreferences": [],
+        "unresolved_references": [],
+        "contradictions": [],
+    }
+    if character_memories is not None:
+        payload["character_memories"] = character_memories
+    return json.dumps(
+        payload,
         separators=(",", ":"),
     ).encode()
 
@@ -93,6 +119,30 @@ def test_reader_returns_current_v2_graph(tmp_path: Path) -> None:
         snapshot_version=3,
         schema_version="project-knowledge-graph-snapshot-v2",
     )
+
+
+def test_reader_decodes_legacy_v2_snapshot_without_character_memories(tmp_path: Path) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    initialize_v2_tables(path)
+    insert_current_snapshot(path)
+
+    result = ProjectGraphReader(path).read("project-01")
+
+    assert result.character_memories == ()
+
+
+def test_reader_round_trips_character_memories(tmp_path: Path) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    initialize_v2_tables(path)
+    insert_current_snapshot(
+        path,
+        payload=canonical_payload(character_memories=[character_memory_payload()]),
+    )
+
+    result = ProjectGraphReader(path).read("project-01")
+
+    assert result.character_memories[0].id == "memory_001"
+    assert result.character_memories[0].target.reference_id == "event_001"
 
 
 def test_reader_returns_empty_v2_graph_when_project_has_no_current_record(tmp_path: Path) -> None:
