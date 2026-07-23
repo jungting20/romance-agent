@@ -16,7 +16,10 @@ from narrative_analysis_agent.models import (
     SceneAnalysis,
     SceneAnalysisRequest,
 )
-from narrative_analysis_agent.project_graph_reader import ProjectGraphReader, ProjectGraphReadError
+from narrative_analysis_agent.project_graph_reader import (
+    ProjectGraphReader,
+    ProjectGraphReadError,
+)
 
 
 class NarrativeAnalysisError(RuntimeError):
@@ -64,47 +67,90 @@ class NarrativeAnalysisAgent:
         )
 
     async def analyze_scene(self, request: SceneAnalysisRequest) -> SceneAnalysis:
+        # 청크 분석에 적용할 시스템 지침을 불러온다.
+        instructions = self._load_instructions()
+
+        # 모든 청크가 공유할 현재 프로젝트 지식 그래프를 한 번만 조회한다.
+        existing = self._read_project_graph(request.project_id)
+
+        # 장면을 청크 순서대로 분석하며 중간 결과는 서로에게 누적하지 않는다.
+        chunks = await self._analyze_chunks(request, existing, instructions)
+
+        # 분석에 사용한 프로젝트 버전과 청크 결과를 최종 응답으로 조립한다.
+        return _build_scene_analysis(request, existing, chunks)
+
+    def _load_instructions(self) -> str:
         try:
-            instructions = self.prompt_path.read_text(encoding="utf-8")
+            return self.prompt_path.read_text(encoding="utf-8")
         except (OSError, UnicodeError):
             raise NarrativeAnalysisError("unable to load scene analysis prompt") from None
 
+    def _read_project_graph(self, project_id: str) -> ProjectKnowledgeGraphSnapshot:
         try:
-            existing = self._graph_reader.read(request.project_id)
+            return self._graph_reader.read(project_id)
         except ProjectGraphReadError:
             raise NarrativeAnalysisError("scene analysis failed") from None
 
+    async def _analyze_chunks(
+        self,
+        request: SceneAnalysisRequest,
+        existing: ProjectKnowledgeGraphSnapshot,
+        instructions: str,
+    ) -> tuple[AnalyzedChunk, ...]:
         analyzed: list[AnalyzedChunk] = []
         for chunk in chunk_scene(request.scene_id, request.scene_revision, request.text):
-            try:
-                result = await self._runner.run(
-                    _render_user_prompt(existing, chunk),
+            analyzed.append(
+                await self._analyze_chunk(
+                    request=request,
+                    chunk=chunk,
+                    existing=existing,
                     instructions=instructions,
                 )
-                _validate_output(result.output, request, chunk, existing)
-            except asyncio.CancelledError:
-                raise
-            except (AgentRunError, ValidationError, ValueError):
-                raise NarrativeAnalysisError("scene analysis failed") from None
-            analyzed.append(
-                AnalyzedChunk(
-                    chunk_id=chunk.chunk_id,
-                    ordinal=chunk.ordinal,
-                    start_offset=chunk.start_offset,
-                    end_offset=chunk.end_offset,
-                    text=chunk.text,
-                    extraction=result.output,
-                )
             )
+        return tuple(analyzed)
 
-        return SceneAnalysis(
-            project_id=request.project_id,
-            scene_id=request.scene_id,
-            scene_revision=request.scene_revision,
-            scene_sequence=request.scene_sequence,
-            source_snapshot_version=existing.snapshot_version,
-            chunks=tuple(analyzed),
+    async def _analyze_chunk(
+        self,
+        *,
+        request: SceneAnalysisRequest,
+        chunk: SceneChunk,
+        existing: ProjectKnowledgeGraphSnapshot,
+        instructions: str,
+    ) -> AnalyzedChunk:
+        try:
+            result = await self._runner.run(
+                _render_user_prompt(existing, chunk),
+                instructions=instructions,
+            )
+            _validate_output(result.output, request, chunk, existing)
+        except asyncio.CancelledError:
+            raise
+        except (AgentRunError, ValidationError, ValueError):
+            raise NarrativeAnalysisError("scene analysis failed") from None
+
+        return AnalyzedChunk(
+            chunk_id=chunk.chunk_id,
+            ordinal=chunk.ordinal,
+            start_offset=chunk.start_offset,
+            end_offset=chunk.end_offset,
+            text=chunk.text,
+            extraction=result.output,
         )
+
+
+def _build_scene_analysis(
+    request: SceneAnalysisRequest,
+    existing: ProjectKnowledgeGraphSnapshot,
+    chunks: tuple[AnalyzedChunk, ...],
+) -> SceneAnalysis:
+    return SceneAnalysis(
+        project_id=request.project_id,
+        scene_id=request.scene_id,
+        scene_revision=request.scene_revision,
+        scene_sequence=request.scene_sequence,
+        source_snapshot_version=existing.snapshot_version,
+        chunks=chunks,
+    )
 
 
 def _render_user_prompt(existing: ProjectKnowledgeGraphSnapshot, chunk: SceneChunk) -> str:

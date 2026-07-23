@@ -1,31 +1,47 @@
-# Narrative Analysis Agent Instructions
+# LLM Agent Package Instructions
 
 ## Scope and ownership
 
-This package owns scene-text chunking, the editable scene-analysis prompt,
-structured extraction, sequential model calls, and read-only project graph
-lookup for analysis context. Work only on paths assigned by the main agent; do
-not edit backend, frontend, domain contracts, or OpenAPI without assignment.
+`llm-agent/` hosts independently bounded LLM agent packages. Keep behavior,
+prompts, public contracts, provider composition, and tests inside the owning
+agent package. Do not apply one agent's domain rules or processing pipeline to
+another agent.
+
+Every agent package under `src/` must have its own `AGENTS.md`. That nested file
+defines the package-specific ownership, required reading, public boundary, and
+verification requirements. More specific nested instructions take precedence
+over this file.
+
+Work only on paths assigned by the main agent. Do not edit backend, frontend,
+domain contracts, or OpenAPI without assignment.
 
 ## Before editing
 
-1. Read the repository root `AGENTS.md`, this file, and
-   `docs/llm-agent-coding-rules.md` in full.
-2. Read `docs/domains/narrative-memory.md` and every relevant domain contract.
-3. Inspect nearby implementation and test patterns.
-4. Confirm scope, constraints, acceptance criteria, and verification commands.
+1. Read the repository root `AGENTS.md` and this file in full.
+2. Read the target package's nested `AGENTS.md`.
+3. Read the relevant domain contracts and package coding rules.
+4. Inspect nearby implementation and test patterns.
+5. Confirm scope, constraints, acceptance criteria, and verification commands.
 
-## Public boundary
+## Shared boundaries
 
-- Public Pydantic models are the single extraction and result representation.
-- Read the configured v2 project graph once per analysis through a SQLite
-  read-only connection and provide that same snapshot to every chunk.
-- Process 300-character chunks with 50-character overlap in numeric order.
-- Call each chunk exactly once. One failure returns no partial analysis.
-- Keep provider selection and prompt loading behind `NarrativeAnalysisAgent`.
-- Do not add audit storage, retries, database writes or schema management,
-  durable IDs, candidate status, scene snapshot assembly, or cross-chunk
-  merging.
+- Keep each agent's public API explicit and independent from other agents'
+  internal modules.
+- Keep model-provider details and prompt loading behind the owning agent's
+  public facade.
+- Keep prompts and package data inside the owning agent package. Update
+  `pyproject.toml` package-data configuration when a new implemented package
+  needs non-Python assets.
+- Do not introduce direct imports between agent packages without an explicitly
+  approved shared contract.
+- Keep ordinary tests deterministic and network-free by injecting dependencies
+  at external model, storage, clock, or ID-generation boundaries as applicable.
+- Put focused tests under `tests/unit/`, package integration tests under
+  `tests/integration/`, and real-provider evaluations under `tests/live/`.
+- Mark real-provider tests with `live`, require explicit opt-in, and keep them
+  outside the default test run.
+- Do not log prompts, provider responses, credentials, or other sensitive
+  model-call data from tests.
 
 ## Verification and handoff
 
