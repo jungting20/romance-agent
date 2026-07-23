@@ -32,6 +32,7 @@ def _validate_graph(graph: KnowledgeGraphOutput | ProjectKnowledgeGraphSnapshot)
     character_ids = {character.id for character in graph.entities.characters}
     location_ids = {location.id for location in graph.entities.locations}
     event_ids = {event.id for event in graph.entities.events}
+    relation_ids = {relation.id for relation in graph.relations}
     entity_ids = character_ids | location_ids | event_ids
     _require_unique(
         (
@@ -39,6 +40,7 @@ def _validate_graph(graph: KnowledgeGraphOutput | ProjectKnowledgeGraphSnapshot)
             *(location.id for location in graph.entities.locations),
             *(event.id for event in graph.entities.events),
             *(relation.id for relation in graph.relations),
+            *(memory.id for memory in graph.character_memories),
         ),
         "graph IDs",
     )
@@ -72,6 +74,16 @@ def _validate_graph(graph: KnowledgeGraphOutput | ProjectKnowledgeGraphSnapshot)
         )
     for contradiction in graph.contradictions:
         _require_reference(contradiction.subject_id, entity_ids, "contradiction subject")
+    for memory in graph.character_memories:
+        _require_reference(memory.character_id, character_ids, "memory character")
+        if memory.target.kind == "character":
+            _require_reference(memory.target.reference_id, character_ids, "memory target")
+        elif memory.target.kind == "location":
+            _require_reference(memory.target.reference_id, location_ids, "memory target")
+        elif memory.target.kind == "event":
+            _require_reference(memory.target.reference_id, event_ids, "memory target")
+        elif memory.target.kind == "relation":
+            _require_reference(memory.target.reference_id, relation_ids, "memory target")
 
     confidence_values = (
         *(item.confidence for item in graph.entities.characters),
@@ -80,6 +92,7 @@ def _validate_graph(graph: KnowledgeGraphOutput | ProjectKnowledgeGraphSnapshot)
         *(item.confidence for item in graph.relations),
         *(item.confidence for item in graph.movements),
         *(item.confidence for item in graph.coreferences),
+        *(item.confidence for item in graph.character_memories),
     )
     if any(
         not isinstance(confidence, int | float)
@@ -98,6 +111,7 @@ def _validate_graph(graph: KnowledgeGraphOutput | ProjectKnowledgeGraphSnapshot)
         *(item.evidence for item in graph.movements),
         *(item.evidence for item in graph.coreferences),
         *(item.evidence for item in graph.contradictions),
+        *(item.evidence for item in graph.character_memories),
     )
     if any(not isinstance(value, str) or not value for value in evidence_values):
         raise ProjectInvariantError("evidence and first mention must be non-empty strings")
