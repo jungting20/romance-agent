@@ -106,7 +106,14 @@ def test_memory_contract_types_are_exported_from_package() -> None:
     ["remembered", "forgotten", "repressed", "uncertain", "false_memory"],
 )
 def test_character_memory_accepts_each_public_state(state: str) -> None:
-    memory = CharacterMemory.model_validate(character_memory_payload(state=state))
+    updates: dict[str, object] = {"state": state}
+    if state == "false_memory":
+        updates["target"] = {
+            "kind": "described_event",
+            "reference_id": None,
+            "description": "실제로는 없었던 약속",
+        }
+    memory = CharacterMemory.model_validate(character_memory_payload(**updates))
 
     assert memory.state == state
 
@@ -114,6 +121,27 @@ def test_character_memory_accepts_each_public_state(state: str) -> None:
 def test_character_memory_rejects_unknown_state() -> None:
     with pytest.raises(ValidationError):
         CharacterMemory.model_validate(character_memory_payload(state="unknown"))
+
+
+def test_false_memory_rejects_linked_target() -> None:
+    with pytest.raises(ValidationError):
+        CharacterMemory.model_validate(character_memory_payload(state="false_memory"))
+
+
+@pytest.mark.parametrize("kind", ["described_event", "described_relation", "other"])
+def test_false_memory_accepts_description_only_target(kind: str) -> None:
+    memory = CharacterMemory.model_validate(
+        character_memory_payload(
+            state="false_memory",
+            target={
+                "kind": kind,
+                "reference_id": None,
+                "description": "실제로는 없었던 기억",
+            },
+        )
+    )
+
+    assert memory.target.kind == kind
 
 
 @pytest.mark.parametrize(

@@ -179,6 +179,16 @@ class CharacterMemory(StrictModel):
     evidence: str = Field(min_length=1)
     confidence: HighConfidence
 
+    @model_validator(mode="after")
+    def validate_false_memory_target(self) -> "CharacterMemory":
+        if self.state == "false_memory" and self.target.kind not in {
+            "described_event",
+            "described_relation",
+            "other",
+        }:
+            raise ValueError("false memories require a description-only target")
+        return self
+
 
 class KnowledgeGraphOutput(StrictModel):
     document: Document
@@ -203,6 +213,26 @@ class ProjectKnowledgeGraphSnapshot(StrictModel):
     unresolved_references: tuple[UnresolvedReference, ...] = ()
     contradictions: tuple[Contradiction, ...] = ()
     character_memories: tuple[CharacterMemory, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_character_memory_references(self) -> "ProjectKnowledgeGraphSnapshot":
+        memory_ids = tuple(memory.id for memory in self.character_memories)
+        if len(memory_ids) != len(set(memory_ids)):
+            raise ValueError("duplicate memory ID")
+
+        allowed_targets = {
+            "character": {item.id for item in self.entities.characters},
+            "location": {item.id for item in self.entities.locations},
+            "event": {item.id for item in self.entities.events},
+            "relation": {item.id for item in self.relations},
+        }
+        for memory in self.character_memories:
+            if memory.character_id not in allowed_targets["character"]:
+                raise ValueError("memory subject is unknown")
+            allowed = allowed_targets.get(memory.target.kind)
+            if allowed is not None and memory.target.reference_id not in allowed:
+                raise ValueError(f"memory {memory.target.kind} target is unknown")
+        return self
 
     @classmethod
     def empty(cls, project_id: str) -> "ProjectKnowledgeGraphSnapshot":

@@ -251,6 +251,12 @@ def _validate_output(
             "contradiction subject is unknown",
         )
     for memory in output.character_memories:
+        if memory.state == "false_memory" and memory.target.kind not in {
+            "described_event",
+            "described_relation",
+            "other",
+        }:
+            raise ValueError("false memory target is not description-only")
         if memory.character_id not in characters:
             raise ValueError("memory subject is unknown")
         _validate_memory_target(

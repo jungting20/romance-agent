@@ -827,6 +827,17 @@ def test_analyze_scene_allows_memories_with_local_and_existing_typed_targets() -
             ),
             id="memory-evidence-absent",
         ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                relations=(_relation(),),
+            ).model_copy(
+                update={
+                    "character_memories": (_memory().model_copy(update={"state": "false_memory"}),)
+                }
+            ),
+            id="linked-false-memory-model-copy",
+        ),
     ],
 )
 def test_analyze_scene_rejects_invalid_memories_without_retry(
