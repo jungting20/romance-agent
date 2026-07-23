@@ -14,6 +14,10 @@ Projects
 Story Bible ──────────────┐
 Narrative Memory ───────├─ Writing Assistant 일관성 검사
 Manuscript ───────────────┘
+
+Story Bible ──────────────┐
+Manuscript ───────────────┼─ Writing Assistant 대화 장면 생성
+호출자가 선택한 이전 기억 ─┘
 ```
 
 화살표는 작업 흐름에서 정보가 전달되는 방향을 나타내며 다른 도메인의 상태를 직접 변경할 수 있다는 뜻이 아니다. 여러 도메인이 필요한 작업은 애플리케이션 유스케이스가 조정한다.
@@ -66,6 +70,17 @@ Manuscript ───────────────┘
 4. Narrative Memory의 미해결 참조나 모순과 Story Bible의 `needs_review`
    사실은 확정 사실로 전달되지 않는다.
 
+### 대화 장면 생성
+
+1. 사용자가 대화 장면 생성을 명시적으로 요청한다.
+2. 애플리케이션 유스케이스가 Story Bible에서 선택한 세계관과 인물 설정, Manuscript의 원본 장면 ID와
+   현재 문맥, 호출자가 선택한 비권위 이전 기억, 장면 목적과 인물별 정보 경계를 Writing Assistant에
+   전달한다.
+3. Writing Assistant가 한 생성 시도를 고유 generation ID로 식별하고, 대화 발화와 정보 흐름을 포함한
+   strict JSON 결과를 반환한다.
+4. 현재 공개 금지 정보가 실제 대사에 노출되거나 metadata가 누출을 보고하면 전체 결과를 거부한다.
+5. 생성 결과는 Manuscript를 직접 변경하지 않으며 적용은 별도 애플리케이션 유스케이스가 조정한다.
+
 ## 의존 규칙
 
 - 도메인은 다른 도메인의 상태를 직접 변경해서는 안 된다.
@@ -75,5 +90,7 @@ Manuscript ───────────────┘
 - Narrative Memory 지식 그래프는 Story Bible 사실로 자동 전환되지 않으며,
   미해결 참조와 모순은 확정 사실이 아니다.
 - Writing Assistant는 명시적 일관성 검사에서만 제한된 Narrative Memory 요약을 읽을 수 있다.
+- Writing Assistant 대화 장면 생성의 관련 이전 기억은 호출자가 선택한 비권위 문맥이며 Narrative
+  Memory 확정 사실이나 Story Bible 기준 정보로 자동 승격되지 않는다.
 - 여러 도메인을 조합하는 흐름은 애플리케이션 유스케이스가 담당해야 한다.
 - 이 문서들은 화면, 저장소, API, 프레임워크와 무관한 계약이어야 한다.

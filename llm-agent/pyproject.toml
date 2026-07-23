@@ -6,6 +6,7 @@ dependencies = ["pydantic-ai>=2.9.1,<3"]
 
 [tool.setuptools.package-data]
 narrative_analysis_agent = ["prompts/**/*.md"]
+dialogue_generation_agent = ["prompts/**/*.md"]
 
 [dependency-groups]
 dev = ["pytest>=8.4,<10", "ruff>=0.12,<1"]
