@@ -13,4 +13,5 @@ __pycache__/
 .ruff_cache/
 .worktrees/
 .local/
+.playwright-mcp/
 .zellij-agent/ticket-worker/
