@@ -51,6 +51,14 @@ def assemble_scene_graph(
     analysis: SceneAnalysis,
     existing: ProjectKnowledgeGraphSnapshot,
 ) -> SceneGraphRecord:
+    try:
+        analysis = SceneAnalysis.model_validate(
+            analysis.model_dump(mode="python"),
+            strict=True,
+        )
+    except ValidationError as error:
+        raise MergeInvariantError("scene analysis invariants are invalid") from error
+
     if analysis.project_id != existing.project_id:
         raise MergeInvariantError("analysis and existing graph project IDs must match")
 

@@ -205,6 +205,31 @@ def test_use_case_rejected_memory_merge_publishes_no_scene_or_project_state(
     assert repository.get_current("project-01") is None
 
 
+def test_use_case_sanitizes_corrupt_description_only_memory_without_commit() -> None:
+    analysis = _analysis_with_memory()
+    chunk = analysis.chunks[0]
+    memory = chunk.extraction.character_memories[0]
+    target = memory.target.model_copy(update={"reference_id": "event_999"})
+    corrupted_extraction = chunk.extraction.model_copy(
+        update={"character_memories": (memory.model_copy(update={"target": target}),)}
+    )
+    corrupted_chunk = chunk.model_copy(update={"extraction": corrupted_extraction})
+    corrupted_analysis = analysis.model_copy(update={"chunks": (corrupted_chunk,)})
+    repository = RecordingSnapshotRepository(current=None, scenes=())
+
+    with pytest.raises(SceneAnalysisApplicationError) as captured:
+        asyncio.run(
+            AnalyzeSceneUseCase(RecordingAgent(corrupted_analysis), repository).execute(
+                _input_with_memory()
+            )
+        )
+
+    _assert_sanitized(captured.value, "event_999")
+    assert repository.scene_requests == []
+    assert repository.commit_attempts == 0
+    assert repository.commits == []
+
+
 def test_use_case_replaces_same_scene_and_builds_the_next_project_version() -> None:
     previous = _scene("scene-01", revision=2, sequence=1, summary="이전 요약")
     other = _scene("scene-02", revision=1, sequence=2, summary="다른 장면")

@@ -604,13 +604,15 @@ def test_commit_scene_rejects_dangling_or_wrong_kind_memory_reference(
 ) -> None:
     repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
     repository.initialize()
-    scene = scene_with_memory_reference(semantic_scene_record(), path, reference)
+    valid_scene = semantic_scene_record()
+    valid_project = semantic_project_snapshot(version=1, scene=valid_scene)
+    scene = scene_with_memory_reference(valid_scene, path, reference)
 
     with pytest.raises(ValueError, match="unknown|reference"):
         repository.commit_scene(
             None,
             scene,
-            semantic_project_snapshot(version=1, scene=scene),
+            valid_project,
         )
 
     assert repository.get_scene_graphs("project-01") == ()
@@ -620,17 +622,18 @@ def test_commit_scene_rejects_dangling_or_wrong_kind_memory_reference(
 def test_commit_scene_rejects_duplicate_memory_id(tmp_path: Path) -> None:
     repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
     repository.initialize()
-    scene = semantic_scene_record()
-    graph = scene.graph.model_copy(
-        update={"character_memories": scene.graph.character_memories * 2}
+    valid_scene = semantic_scene_record()
+    valid_project = semantic_project_snapshot(version=1, scene=valid_scene)
+    graph = valid_scene.graph.model_copy(
+        update={"character_memories": valid_scene.graph.character_memories * 2}
     )
-    invalid = replace(scene, graph=graph)
+    invalid = replace(valid_scene, graph=graph)
 
-    with pytest.raises(ValueError, match="duplicate memory ID"):
+    with pytest.raises(ValueError, match="graph IDs must be unique"):
         repository.commit_scene(
             None,
             invalid,
-            semantic_project_snapshot(version=1, scene=invalid),
+            valid_project,
         )
 
     assert repository.get_scene_graphs("project-01") == ()

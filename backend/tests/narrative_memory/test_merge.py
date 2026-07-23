@@ -758,6 +758,32 @@ def test_scene_merge_revalidates_linked_false_memory_model_copy() -> None:
     assert isinstance(captured.value.__cause__, ValidationError)
 
 
+def test_scene_merge_revalidates_description_only_target_with_retained_id() -> None:
+    valid_target = _memory_target(
+        "described_event",
+        reference_id=None,
+        description="실제로는 없었던 약속",
+    )
+    valid_memory = _memory(target=valid_target, evidence="기억했다")
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 실제로는 없었던 약속을 기억했다.",
+        characters=(_character("character_001", "서윤", first_mention="서윤"),),
+        character_memories=(valid_memory,),
+    )
+    corrupted_target = valid_target.model_copy(update={"reference_id": "event_999"})
+    corrupted_memory = valid_memory.model_copy(update={"target": corrupted_target})
+    corrupted_extraction = chunk.extraction.model_copy(
+        update={"character_memories": (corrupted_memory,)}
+    )
+    chunk = chunk.model_copy(update={"extraction": corrupted_extraction})
+
+    with pytest.raises(MergeInvariantError) as captured:
+        assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project())
+
+    assert isinstance(captured.value.__cause__, ValidationError)
+
+
 @pytest.mark.parametrize(
     "invalid_reference",
     [
