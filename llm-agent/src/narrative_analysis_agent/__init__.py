@@ -6,7 +6,11 @@ from narrative_analysis_agent.agent import (
 from narrative_analysis_agent.models import (
     PROJECT_GRAPH_SCHEMA_VERSION,
     AnalyzedChunk,
+    CharacterMemory,
     KnowledgeGraphOutput,
+    MemoryState,
+    MemoryTarget,
+    MemoryTargetKind,
     ProjectKnowledgeGraphSnapshot,
     SceneAnalysis,
     SceneAnalysisRequest,
@@ -15,7 +19,11 @@ from narrative_analysis_agent.project_graph_reader import ProjectGraphReader, Pr
 
 __all__ = [
     "AnalyzedChunk",
+    "CharacterMemory",
     "KnowledgeGraphOutput",
+    "MemoryState",
+    "MemoryTarget",
+    "MemoryTargetKind",
     "NarrativeAnalysisAgent",
     "NarrativeAnalysisError",
     "PROJECT_GRAPH_SCHEMA_VERSION",

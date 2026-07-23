@@ -17,7 +17,8 @@ def test_v2_empty_project_snapshot_codec_is_canonical_and_round_trips() -> None:
     payload = encode_project_snapshot(snapshot)
 
     assert payload == (
-        b'{\n  "contradictions": [],\n  "coreferences": [],\n  "documents": [],\n'
+        b'{\n  "character_memories": [],\n  "contradictions": [],\n'
+        b'  "coreferences": [],\n  "documents": [],\n'
         b'  "entities": {\n    "characters": [],\n    "events": [],\n'
         b'    "locations": []\n  },\n  "movements": [],\n'
         b'  "project_id": "project-01",\n  "relations": [],\n'
@@ -33,9 +34,19 @@ def test_v2_semantic_project_snapshot_codec_is_canonical_and_round_trips() -> No
 
     payload = encode_project_snapshot(snapshot)
 
+    assert b'  "character_memories": [' in payload
     assert payload.endswith(b"\n")
     assert decode_project_snapshot(payload) == snapshot
     assert encode_project_snapshot(decode_project_snapshot(payload)) == payload
+
+
+def test_decoder_accepts_legacy_v2_snapshot_without_character_memories() -> None:
+    data = _snapshot_data()
+    data.pop("character_memories")
+
+    snapshot = decode_project_snapshot(json.dumps(data).encode())
+
+    assert snapshot.character_memories == ()
 
 
 def test_decoder_rejects_v1_snapshot() -> None:
@@ -79,18 +90,22 @@ def test_snapshot_codec_rejects_duplicate_document_chapter_id() -> None:
         encode_project_snapshot(invalid)
 
 
-@pytest.mark.parametrize("collection", ["characters", "locations", "events", "relations"])
+@pytest.mark.parametrize(
+    "collection",
+    ["characters", "locations", "events", "relations", "character_memories"],
+)
 def test_snapshot_codec_rejects_duplicate_graph_ids(collection: str) -> None:
     snapshot = _semantic_snapshot()
-    if collection == "relations":
-        invalid = snapshot.model_copy(update={"relations": snapshot.relations * 2})
+    if collection in {"relations", "character_memories"}:
+        invalid = snapshot.model_copy(update={collection: getattr(snapshot, collection) * 2})
     else:
         entities = snapshot.entities.model_copy(
             update={collection: getattr(snapshot.entities, collection) * 2}
         )
         invalid = snapshot.model_copy(update={"entities": entities})
 
-    with pytest.raises(ValueError, match="IDs must be unique"):
+    match = None if collection == "character_memories" else "IDs must be unique"
+    with pytest.raises(ValueError, match=match):
         encode_project_snapshot(invalid)
 
 
@@ -123,6 +138,48 @@ def test_snapshot_codec_rejects_dangling_or_wrong_kind_reference(
         encode_project_snapshot(snapshot)
 
 
+def test_encoder_revalidates_linked_false_memory_model_copy() -> None:
+    snapshot = _semantic_snapshot()
+    memory = snapshot.character_memories[0].model_copy(update={"state": "false_memory"})
+    invalid = snapshot.model_copy(update={"character_memories": (memory,)})
+
+    with pytest.raises(ValueError):
+        encode_project_snapshot(invalid)
+
+
+@pytest.mark.parametrize(
+    ("path", "reference"),
+    [
+        pytest.param("memory.character_id", "character_999", id="dangling-subject"),
+        pytest.param("memory.character_id", "location_001", id="wrong-kind-subject"),
+        pytest.param("memory.target.character", "character_999", id="character-target"),
+        pytest.param("memory.target.location", "location_999", id="location-target"),
+        pytest.param("memory.target.event", "event_999", id="event-target"),
+        pytest.param("memory.target.relation", "relation_999", id="relation-target"),
+    ],
+)
+def test_snapshot_codec_rejects_dangling_or_wrong_kind_memory_reference(
+    path: str,
+    reference: str,
+) -> None:
+    snapshot = _snapshot_with_memory_reference(path, reference)
+
+    with pytest.raises(ValueError):
+        encode_project_snapshot(snapshot)
+
+
+def test_encoder_rejects_description_only_memory_target_with_reference_id() -> None:
+    snapshot = _semantic_snapshot()
+    memory = snapshot.character_memories[0]
+    target = memory.target.model_copy(update={"kind": "described_event"})
+    invalid = snapshot.model_copy(
+        update={"character_memories": (memory.model_copy(update={"target": target}),)}
+    )
+
+    with pytest.raises(ValueError):
+        encode_project_snapshot(invalid)
+
+
 @pytest.mark.parametrize(
     "path",
     ["character", "location", "event", "relation", "movement", "coreference"],
@@ -151,6 +208,27 @@ def test_encoder_revalidates_model_copy_against_exact_public_model(
     invalid_value: object,
 ) -> None:
     snapshot = _snapshot_with_field(path, invalid_value)
+
+    with pytest.raises(ValueError):
+        encode_project_snapshot(snapshot)
+
+
+@pytest.mark.parametrize(
+    ("path", "invalid_value"),
+    [
+        pytest.param("memory.state", "dreamed", id="state"),
+        pytest.param("memory.scene_sequence", -1, id="scene-sequence"),
+        pytest.param("memory.evidence", "", id="evidence"),
+        pytest.param("memory.content", "", id="content"),
+        pytest.param("memory.target.description", "", id="description"),
+        pytest.param("memory.confidence", math.nan, id="confidence"),
+    ],
+)
+def test_encoder_revalidates_invalid_memory_model_copy(
+    path: str,
+    invalid_value: object,
+) -> None:
+    snapshot = _snapshot_with_memory_field(path, invalid_value)
 
     with pytest.raises(ValueError):
         encode_project_snapshot(snapshot)
@@ -288,6 +366,23 @@ def _semantic_snapshot() -> ProjectKnowledgeGraphSnapshot:
                         "possible_explanation": "",
                     }
                 ],
+                "character_memories": [
+                    {
+                        "id": "memory_001",
+                        "character_id": "character_001",
+                        "target": {
+                            "kind": "relation",
+                            "reference_id": "relation_001",
+                            "description": "서윤이 온실에 있었던 기억",
+                        },
+                        "content": "온실에 도착했다.",
+                        "state": "remembered",
+                        "time_expression": "오늘",
+                        "scene_sequence": 0,
+                        "evidence": "온실에 도착한 기억",
+                        "confidence": 0.9,
+                    }
+                ],
             }
         )
     )
@@ -331,6 +426,35 @@ def _snapshot_with_field(path: str, value: object) -> ProjectKnowledgeGraphSnaps
     collection = f"{section}s"
     item = getattr(snapshot, collection)[0].model_copy(update={field: value})
     return snapshot.model_copy(update={collection: (item,)})
+
+
+def _snapshot_with_memory_reference(
+    path: str,
+    reference: str,
+) -> ProjectKnowledgeGraphSnapshot:
+    snapshot = _semantic_snapshot()
+    memory = snapshot.character_memories[0]
+    if path == "memory.character_id":
+        memory = memory.model_copy(update={"character_id": reference})
+    else:
+        kind = path.rsplit(".", 1)[1]
+        target = memory.target.model_copy(update={"kind": kind, "reference_id": reference})
+        memory = memory.model_copy(update={"target": target})
+    return snapshot.model_copy(update={"character_memories": (memory,)})
+
+
+def _snapshot_with_memory_field(
+    path: str,
+    value: object,
+) -> ProjectKnowledgeGraphSnapshot:
+    snapshot = _semantic_snapshot()
+    memory = snapshot.character_memories[0]
+    if path == "memory.target.description":
+        target = memory.target.model_copy(update={"description": value})
+        memory = memory.model_copy(update={"target": target})
+    else:
+        memory = memory.model_copy(update={path.removeprefix("memory."): value})
+    return snapshot.model_copy(update={"character_memories": (memory,)})
 
 
 def _snapshot_with_confidence(

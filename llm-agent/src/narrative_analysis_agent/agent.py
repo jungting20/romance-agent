@@ -119,7 +119,7 @@ class NarrativeAnalysisAgent:
     ) -> AnalyzedChunk:
         try:
             result = await self._runner.run(
-                _render_user_prompt(existing, chunk),
+                _render_user_prompt(request, existing, chunk),
                 instructions=instructions,
             )
             _validate_output(result.output, request, chunk, existing)
@@ -153,8 +153,16 @@ def _build_scene_analysis(
     )
 
 
-def _render_user_prompt(existing: ProjectKnowledgeGraphSnapshot, chunk: SceneChunk) -> str:
+def _render_user_prompt(
+    request: SceneAnalysisRequest,
+    existing: ProjectKnowledgeGraphSnapshot,
+    chunk: SceneChunk,
+) -> str:
     envelope = {
+        "scene": {
+            "scene_id": request.scene_id,
+            "scene_sequence": request.scene_sequence,
+        },
         "existing_graph": existing.model_dump(mode="json"),
         "chunk": {
             "chunk_id": chunk.chunk_id,
@@ -180,10 +188,12 @@ def _validate_output(
     local_location_ids = tuple(item.id for item in output.entities.locations)
     local_event_ids = tuple(item.id for item in output.entities.events)
     local_relation_ids = tuple(item.id for item in output.relations)
+    local_memory_ids = tuple(item.id for item in output.character_memories)
     _validate_unique_ids(local_character_ids, "character")
     _validate_unique_ids(local_location_ids, "location")
     _validate_unique_ids(local_event_ids, "event")
     _validate_unique_ids(local_relation_ids, "relation")
+    _validate_unique_ids(local_memory_ids, "memory")
 
     local_characters = set(local_character_ids)
     local_locations = set(local_location_ids)
@@ -191,9 +201,11 @@ def _validate_output(
     known_characters = {item.id for item in existing.entities.characters}
     known_locations = {item.id for item in existing.entities.locations}
     known_events = {item.id for item in existing.entities.events}
+    known_relations = {item.id for item in existing.relations}
     characters = local_characters | known_characters
     locations = local_locations | known_locations
     events = local_events | known_events
+    relations = set(local_relation_ids) | known_relations
     entities = characters | locations | events
 
     for location in output.entities.locations:
@@ -238,6 +250,27 @@ def _validate_output(
             entities,
             "contradiction subject is unknown",
         )
+    for memory in output.character_memories:
+        if memory.state == "false_memory" and memory.target.kind not in {
+            "described_event",
+            "described_relation",
+            "other",
+        }:
+            raise ValueError("false memory target is not description-only")
+        if memory.character_id not in characters:
+            raise ValueError("memory subject is unknown")
+        _validate_memory_target(
+            memory.target.kind,
+            memory.target.reference_id,
+            {
+                "character": characters,
+                "location": locations,
+                "event": events,
+                "relation": relations,
+            },
+        )
+        if memory.scene_sequence != request.scene_sequence:
+            raise ValueError("memory scene sequence does not match the scene")
 
     evidence_values = [
         *(item.first_mention for item in output.entities.characters),
@@ -247,6 +280,7 @@ def _validate_output(
         *(item.evidence for item in output.movements),
         *(item.evidence for item in output.coreferences),
         *(item.evidence for item in output.contradictions),
+        *(item.evidence for item in output.character_memories),
     ]
     if any(not value or value not in chunk.text for value in evidence_values):
         raise ValueError("evidence is not present in the chunk")
@@ -260,3 +294,17 @@ def _validate_unique_ids(ids: tuple[str, ...], kind: str) -> None:
 def _validate_reference(reference: str | None, allowed: set[str], message: str) -> None:
     if reference is not None and reference not in allowed:
         raise ValueError(message)
+
+
+def _validate_memory_target(
+    kind: str,
+    reference_id: str | None,
+    allowed_ids: dict[str, set[str]],
+) -> None:
+    allowed = allowed_ids.get(kind)
+    if allowed is None:
+        if reference_id is not None:
+            raise ValueError("description-only memory target references an ID")
+        return
+    if reference_id not in allowed:
+        raise ValueError(f"memory {kind} target is unknown")

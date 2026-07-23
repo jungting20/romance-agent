@@ -17,12 +17,14 @@ from narrative_analysis_agent import (
 )
 from narrative_analysis_agent.models import (
     Character,
+    CharacterMemory,
     Contradiction,
     Coreference,
     Document,
     Entities,
     Event,
     Location,
+    MemoryTarget,
     Movement,
     Relation,
     UnresolvedReference,
@@ -46,6 +48,7 @@ def _output(
     coreferences: tuple[Coreference, ...] = (),
     unresolved_references: tuple[UnresolvedReference, ...] = (),
     contradictions: tuple[Contradiction, ...] = (),
+    character_memories: tuple[CharacterMemory, ...] = (),
 ) -> KnowledgeGraphOutput:
     return KnowledgeGraphOutput(
         document=Document(chapter_id=chapter_id, summary="", narrative_time="present"),
@@ -55,6 +58,7 @@ def _output(
         coreferences=coreferences,
         unresolved_references=unresolved_references,
         contradictions=contradictions,
+        character_memories=character_memories,
     )
 
 
@@ -123,6 +127,32 @@ def _relation(
         evidence="근거",
         inference=False,
         confidence=0.8,
+    )
+
+
+def _memory(
+    identifier: str = "memory_001",
+    *,
+    character_id: str = "character_001",
+    target: MemoryTarget | None = None,
+    scene_sequence: int = 2,
+    evidence: str = "기억한다",
+) -> CharacterMemory:
+    return CharacterMemory(
+        id=identifier,
+        character_id=character_id,
+        target=target
+        or MemoryTarget(
+            kind="relation",
+            reference_id="relation_001",
+            description="두 사람의 약속",
+        ),
+        content="서윤은 약속을 기억한다.",
+        state="remembered",
+        time_expression=None,
+        scene_sequence=scene_sequence,
+        evidence=evidence,
+        confidence=0.9,
     )
 
 
@@ -213,7 +243,20 @@ def _agent(
 
 
 def test_analyze_scene_reads_graph_once_and_sends_it_to_every_chunk() -> None:
-    snapshot = ProjectKnowledgeGraphSnapshot.empty("project-01")
+    snapshot = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=5,
+        schema_version="project-knowledge-graph-snapshot-v2",
+        entities=Entities(characters=(_character("character_010"),)),
+        character_memories=(
+            _memory(
+                character_id="character_010",
+                target=MemoryTarget(
+                    kind="character", reference_id="character_010", description="기존 서윤"
+                ),
+            ),
+        ),
+    )
     reader = RecordingGraphReader(snapshot)
     runner = GraphRunner()
     agent = _agent(runner, graph_reader=reader)
@@ -226,9 +269,12 @@ def test_analyze_scene_reads_graph_once_and_sends_it_to_every_chunk() -> None:
     assert [prompt["existing_graph"] for prompt in prompts] == [
         snapshot.model_dump(mode="json")
     ] * 3
+    assert [prompt["scene"] for prompt in prompts] == [
+        {"scene_id": "scene-01", "scene_sequence": 2}
+    ] * 3
     assert [prompt["chunk"]["ordinal"] for prompt in prompts] == [0, 1, 2]
-    assert all(set(prompt) == {"existing_graph", "chunk"} for prompt in prompts)
-    assert result.source_snapshot_version == 0
+    assert all(set(prompt) == {"scene", "existing_graph", "chunk"} for prompt in prompts)
+    assert result.source_snapshot_version == 5
 
 
 def test_analyze_scene_preserves_chunk_order_and_structured_outputs() -> None:
@@ -611,6 +657,199 @@ def test_analyze_scene_allows_typed_references_to_existing_project_ids() -> None
 
     assert len(runner.calls) == 1
     assert analysis.source_snapshot_version == 4
+
+
+def test_analyze_scene_allows_memories_with_local_and_existing_typed_targets() -> None:
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=4,
+        schema_version="project-knowledge-graph-snapshot-v2",
+        entities=Entities(
+            characters=(_character("character_010"),),
+            locations=(_location("location_010"),),
+            events=(_event("event_010"),),
+        ),
+        relations=(
+            _relation(
+                "relation_010",
+                source_id="character_010",
+                target_id="location_010",
+                start_event_id="event_010",
+            ),
+        ),
+    )
+    output = _output(
+        characters=(_character(),),
+        locations=(_location(),),
+        events=(_event(),),
+        relations=(_relation(),),
+        character_memories=(
+            _memory(
+                "memory_001",
+                target=MemoryTarget(
+                    kind="character", reference_id="character_001", description="서윤"
+                ),
+            ),
+            _memory(
+                "memory_002",
+                target=MemoryTarget(
+                    kind="location", reference_id="location_001", description="온실"
+                ),
+            ),
+            _memory(
+                "memory_003",
+                target=MemoryTarget(kind="event", reference_id="event_001", description="도착"),
+            ),
+            _memory(
+                "memory_004",
+                target=MemoryTarget(
+                    kind="relation", reference_id="relation_001", description="약속"
+                ),
+            ),
+            _memory(
+                "memory_005",
+                target=MemoryTarget(
+                    kind="character", reference_id="character_010", description="기존 서윤"
+                ),
+            ),
+            _memory(
+                "memory_006",
+                target=MemoryTarget(
+                    kind="location", reference_id="location_010", description="기존 온실"
+                ),
+            ),
+            _memory(
+                "memory_007",
+                target=MemoryTarget(
+                    kind="event", reference_id="event_010", description="기존 도착"
+                ),
+            ),
+            _memory(
+                "memory_008",
+                target=MemoryTarget(
+                    kind="relation", reference_id="relation_010", description="기존 약속"
+                ),
+            ),
+            _memory(
+                "memory_009",
+                character_id="character_010",
+                target=MemoryTarget(
+                    kind="character", reference_id="character_010", description="기존 서윤"
+                ),
+            ),
+        ),
+    )
+    runner = GraphRunner((output,))
+
+    analysis = asyncio.run(
+        _agent(runner, graph_reader=RecordingGraphReader(existing)).analyze_scene(
+            _request("근거 서윤은 약속을 기억한다")
+        )
+    )
+
+    assert analysis.chunks[0].extraction.character_memories == output.character_memories
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                relations=(_relation(),),
+                character_memories=(_memory(), _memory()),
+            ),
+            id="duplicate-memory-id",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                relations=(_relation(),),
+                character_memories=(_memory(character_id="character_999"),),
+            ),
+            id="memory-subject-dangling",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                locations=(_location(),),
+                relations=(_relation(),),
+                character_memories=(_memory(character_id="location_001"),),
+            ),
+            id="memory-subject-wrong-kind-location",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                locations=(_location(),),
+                relations=(_relation(),),
+                character_memories=(
+                    _memory(
+                        target=MemoryTarget(
+                            kind="character", reference_id="character_999", description="낯선 인물"
+                        )
+                    ),
+                ),
+            ),
+            id="memory-target-dangling",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                locations=(_location(),),
+                relations=(_relation(),),
+                character_memories=(
+                    _memory().model_copy(
+                        update={
+                            "target": MemoryTarget(
+                                kind="character", reference_id="character_001", description="서윤"
+                            ).model_copy(update={"reference_id": "location_001"})
+                        }
+                    ),
+                ),
+            ),
+            id="memory-target-wrong-kind",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                relations=(_relation(),),
+                character_memories=(_memory(scene_sequence=3),),
+            ),
+            id="memory-scene-sequence-mismatch",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                relations=(_relation(),),
+                character_memories=(_memory(evidence="원문에 없음"),),
+            ),
+            id="memory-evidence-absent",
+        ),
+        pytest.param(
+            _output(
+                characters=(_character(),),
+                relations=(_relation(),),
+            ).model_copy(
+                update={
+                    "character_memories": (_memory().model_copy(update={"state": "false_memory"}),)
+                }
+            ),
+            id="linked-false-memory-model-copy",
+        ),
+    ],
+)
+def test_analyze_scene_rejects_invalid_memories_without_retry(
+    output: KnowledgeGraphOutput,
+) -> None:
+    runner = GraphRunner((output,))
+
+    with pytest.raises(NarrativeAnalysisError, match="scene analysis failed") as captured:
+        asyncio.run(_agent(runner).analyze_scene(_request("근거 서윤은 약속을 기억한다")))
+
+    assert len(runner.calls) == 1
+    assert captured.value.__cause__ is None
 
 
 def test_analyze_scene_loads_a_custom_prompt_for_each_request(tmp_path: Path) -> None:

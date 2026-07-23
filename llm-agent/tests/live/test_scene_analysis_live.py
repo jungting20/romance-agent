@@ -25,12 +25,16 @@ def _assert_confidence_and_evidence(output: KnowledgeGraphOutput, chunk_text: st
         assert not record.evidence or record.evidence in chunk_text
     for contradiction in output.contradictions:
         assert not contradiction.evidence or contradiction.evidence in chunk_text
+    for memory in output.character_memories:
+        assert memory.confidence >= 0.8
+        assert memory.evidence in chunk_text
 
 
 def _assert_references_are_known(output: KnowledgeGraphOutput) -> None:
     characters = {item.id for item in output.entities.characters}
     locations = {item.id for item in output.entities.locations}
     events = {item.id for item in output.entities.events}
+    relations = {item.id for item in output.relations}
     entities = characters | locations | events
 
     for event in output.entities.events:
@@ -52,6 +56,18 @@ def _assert_references_are_known(output: KnowledgeGraphOutput) -> None:
         assert set(unresolved.possible_entity_ids) <= entities
     for contradiction in output.contradictions:
         assert contradiction.subject_id in entities
+    for memory in output.character_memories:
+        assert memory.character_id in characters
+        target_ids = {
+            "character": characters,
+            "location": locations,
+            "event": events,
+            "relation": relations,
+        }
+        if memory.target.kind in target_ids:
+            assert memory.target.reference_id in target_ids[memory.target.kind]
+        else:
+            assert memory.target.reference_id is None
 
 
 def test_live_scene_analysis_has_grounded_graph_collections(
@@ -71,5 +87,10 @@ def test_live_scene_analysis_has_grounded_graph_collections(
         assert isinstance(output.coreferences, tuple)
         assert isinstance(output.unresolved_references, tuple)
         assert isinstance(output.contradictions, tuple)
+        assert isinstance(output.character_memories, tuple)
+        assert all(
+            memory.scene_sequence == scene_request.scene_sequence
+            for memory in output.character_memories
+        )
         _assert_confidence_and_evidence(output, chunk.text)
         _assert_references_are_known(output)

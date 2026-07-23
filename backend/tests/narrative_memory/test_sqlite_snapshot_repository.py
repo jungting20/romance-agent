@@ -10,6 +10,7 @@ import pytest
 from narrative_analysis_agent import ProjectKnowledgeGraphSnapshot
 from narrative_analysis_agent.models import (
     Character,
+    CharacterMemory,
     Contradiction,
     Coreference,
     Document,
@@ -17,6 +18,7 @@ from narrative_analysis_agent.models import (
     Event,
     KnowledgeGraphOutput,
     Location,
+    MemoryTarget,
     Movement,
     Relation,
     UnresolvedReference,
@@ -158,6 +160,31 @@ def test_commit_scene_writes_scene_and_project_atomically(tmp_path: Path) -> Non
     assert datetime.fromisoformat(project_row[3]).tzinfo == UTC
 
 
+def test_commit_scene_round_trips_memories_with_canonical_hashes(tmp_path: Path) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    repository = SQLiteSnapshotRepository(path)
+    repository.initialize()
+    scene = semantic_scene_record()
+    snapshot = semantic_project_snapshot(version=1, scene=scene)
+
+    stored = repository.commit_scene(None, scene, snapshot)
+
+    assert repository.get_scene_graphs("project-01") == (scene,)
+    assert repository.get_current("project-01") == stored
+    assert stored.snapshot.character_memories == scene.graph.character_memories
+    with sqlite3.connect(path) as connection:
+        scene_hash, scene_payload = connection.execute(
+            "SELECT content_hash, payload FROM scene_knowledge_graphs"
+        ).fetchone()
+        project_hash, project_payload = connection.execute(
+            "SELECT content_hash, payload FROM project_snapshots"
+        ).fetchone()
+    assert b'  "character_memories": [' in scene_payload
+    assert b'  "character_memories": [' in project_payload
+    assert scene_hash == content_hash(scene_payload)
+    assert project_hash == content_hash(project_payload)
+
+
 def test_commit_scene_replaces_scene_and_preserves_project_history(tmp_path: Path) -> None:
     path = tmp_path / "narrative-memory.sqlite3"
     repository = SQLiteSnapshotRepository(path)
@@ -181,6 +208,34 @@ def test_commit_scene_replaces_scene_and_preserves_project_history(tmp_path: Pat
             ORDER BY snapshot_version
             """,
             ("project-01",),
+        ).fetchall()
+    assert versions == [
+        (1, encode_project_snapshot(initial)),
+        (2, encode_project_snapshot(current)),
+    ]
+
+
+def test_commit_scene_replaces_memories_and_preserves_project_history(tmp_path: Path) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    repository = SQLiteSnapshotRepository(path)
+    repository.initialize()
+    original = semantic_scene_record()
+    revised = scene_with_memory_field(
+        replace(original, scene_revision=2),
+        "memory.content",
+        "온실은 안전하다.",
+    )
+    initial = semantic_project_snapshot(version=1, scene=original)
+    current = semantic_project_snapshot(version=2, scene=revised)
+
+    repository.commit_scene(None, original, initial)
+    repository.commit_scene(1, revised, current)
+
+    assert repository.get_scene_graphs("project-01") == (revised,)
+    assert repository.get_current("project-01").snapshot == current  # type: ignore[union-attr]
+    with sqlite3.connect(path) as connection:
+        versions = connection.execute(
+            "SELECT snapshot_version, payload FROM project_snapshots ORDER BY snapshot_version"
         ).fetchall()
     assert versions == [
         (1, encode_project_snapshot(initial)),
@@ -344,6 +399,41 @@ def test_commit_scene_revalidates_project_model_copy_before_write_and_preserves_
     assert repository.get_current("project-01").snapshot == initial  # type: ignore[union-attr]
 
 
+@pytest.mark.parametrize(
+    ("path", "invalid_value"),
+    [
+        pytest.param("memory.state", "dreamed", id="state"),
+        pytest.param("memory.scene_sequence", -1, id="scene-sequence"),
+        pytest.param("memory.evidence", "", id="evidence"),
+        pytest.param("memory.content", "", id="content"),
+        pytest.param("memory.target.description", "", id="description"),
+        pytest.param("memory.confidence", float("nan"), id="confidence"),
+    ],
+)
+def test_commit_scene_revalidates_invalid_memory_copy_before_storage(
+    tmp_path: Path,
+    path: str,
+    invalid_value: object,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    original = semantic_scene_record()
+    initial = semantic_project_snapshot(version=1, scene=original)
+    repository.commit_scene(None, original, initial)
+    revised = replace(original, scene_revision=2)
+    invalid = scene_with_memory_field(revised, path, invalid_value)
+
+    with pytest.raises(ValueError):
+        repository.commit_scene(
+            1,
+            invalid,
+            semantic_project_snapshot(version=2, scene=revised),
+        )
+
+    assert repository.get_scene_graphs("project-01") == (original,)
+    assert repository.get_current("project-01").snapshot == initial  # type: ignore[union-attr]
+
+
 def test_commit_scene_rejects_cross_project_input_without_partial_write(tmp_path: Path) -> None:
     repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
     repository.initialize()
@@ -407,6 +497,35 @@ def test_get_scene_graphs_rejects_scene_payload_that_matches_its_hash(tmp_path: 
         repository.get_scene_graphs("project-01")
 
 
+def test_get_scene_graphs_accepts_legacy_v2_payload_without_character_memories(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    repository = SQLiteSnapshotRepository(path)
+    repository.initialize()
+    scene = scene_record("project-01", "scene-01", revision=1)
+    repository.commit_scene(
+        None,
+        scene,
+        project_snapshot("project-01", version=1, scenes=(scene,)),
+    )
+    with sqlite3.connect(path) as connection:
+        payload = bytes(
+            connection.execute("SELECT payload FROM scene_knowledge_graphs").fetchone()[0]
+        )
+        data = json.loads(payload)
+        data.pop("character_memories")
+        legacy_payload = json.dumps(data).encode()
+        connection.execute(
+            "UPDATE scene_knowledge_graphs SET payload = ?, content_hash = ?",
+            (legacy_payload, content_hash(legacy_payload)),
+        )
+
+    stored = repository.get_scene_graphs("project-01")
+
+    assert stored[0].graph.character_memories == ()
+
+
 @pytest.mark.parametrize("collection", ["characters", "locations", "events", "relations"])
 def test_commit_scene_rejects_duplicate_scene_graph_ids(
     tmp_path: Path,
@@ -468,6 +587,60 @@ def test_commit_scene_rejects_dangling_or_wrong_kind_scene_reference(
 
 
 @pytest.mark.parametrize(
+    ("path", "reference"),
+    [
+        pytest.param("memory.character_id", "character_999", id="dangling-subject"),
+        pytest.param("memory.character_id", "location_001", id="wrong-kind-subject"),
+        pytest.param("memory.target.character", "character_999", id="character-target"),
+        pytest.param("memory.target.location", "location_999", id="location-target"),
+        pytest.param("memory.target.event", "event_999", id="event-target"),
+        pytest.param("memory.target.relation", "relation_999", id="relation-target"),
+    ],
+)
+def test_commit_scene_rejects_dangling_or_wrong_kind_memory_reference(
+    tmp_path: Path,
+    path: str,
+    reference: str,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    valid_scene = semantic_scene_record()
+    valid_project = semantic_project_snapshot(version=1, scene=valid_scene)
+    scene = scene_with_memory_reference(valid_scene, path, reference)
+
+    with pytest.raises(ValueError, match="unknown|reference"):
+        repository.commit_scene(
+            None,
+            scene,
+            valid_project,
+        )
+
+    assert repository.get_scene_graphs("project-01") == ()
+    assert repository.get_current("project-01") is None
+
+
+def test_commit_scene_rejects_duplicate_memory_id(tmp_path: Path) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    valid_scene = semantic_scene_record()
+    valid_project = semantic_project_snapshot(version=1, scene=valid_scene)
+    graph = valid_scene.graph.model_copy(
+        update={"character_memories": valid_scene.graph.character_memories * 2}
+    )
+    invalid = replace(valid_scene, graph=graph)
+
+    with pytest.raises(ValueError, match="graph IDs must be unique"):
+        repository.commit_scene(
+            None,
+            invalid,
+            valid_project,
+        )
+
+    assert repository.get_scene_graphs("project-01") == ()
+    assert repository.get_current("project-01") is None
+
+
+@pytest.mark.parametrize(
     "corruption",
     [
         "duplicate",
@@ -499,6 +672,28 @@ def test_get_scene_graphs_rejects_hash_valid_semantic_corruption(
         connection.execute(
             "UPDATE scene_knowledge_graphs SET payload = ?, content_hash = ?",
             (payload, content_hash(payload)),
+        )
+
+    with pytest.raises(SnapshotCorruptionError, match="scene.*semantic"):
+        repository.get_scene_graphs("project-01")
+
+
+def test_get_scene_graphs_rejects_hash_valid_memory_corruption(tmp_path: Path) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    repository = SQLiteSnapshotRepository(path)
+    repository.initialize()
+    scene = semantic_scene_record()
+    repository.commit_scene(None, scene, semantic_project_snapshot(version=1, scene=scene))
+    with sqlite3.connect(path) as connection:
+        payload = bytes(
+            connection.execute("SELECT payload FROM scene_knowledge_graphs").fetchone()[0]
+        )
+        data = json.loads(payload)
+        data["character_memories"][0]["character_id"] = "character_999"
+        invalid_payload = json.dumps(data).encode()
+        connection.execute(
+            "UPDATE scene_knowledge_graphs SET payload = ?, content_hash = ?",
+            (invalid_payload, content_hash(invalid_payload)),
         )
 
     with pytest.raises(SnapshotCorruptionError, match="scene.*semantic"):
@@ -550,6 +745,26 @@ def test_get_current_rejects_v1_payload_even_when_hash_matches(tmp_path: Path) -
         connection.execute(
             "INSERT INTO current_project_snapshots VALUES (?, ?)",
             ("project-01", 0),
+        )
+
+    with pytest.raises(SnapshotCorruptionError, match="snapshot payload"):
+        repository.get_current("project-01")
+
+
+def test_get_current_rejects_hash_valid_memory_corruption(tmp_path: Path) -> None:
+    path = tmp_path / "narrative-memory.sqlite3"
+    repository = SQLiteSnapshotRepository(path)
+    repository.initialize()
+    scene = semantic_scene_record()
+    repository.commit_scene(None, scene, semantic_project_snapshot(version=1, scene=scene))
+    with sqlite3.connect(path) as connection:
+        payload = bytes(connection.execute("SELECT payload FROM project_snapshots").fetchone()[0])
+        data = json.loads(payload)
+        data["character_memories"][0]["target"]["reference_id"] = "relation_999"
+        invalid_payload = json.dumps(data).encode()
+        connection.execute(
+            "UPDATE project_snapshots SET payload = ?, content_hash = ?",
+            (invalid_payload, content_hash(invalid_payload)),
         )
 
     with pytest.raises(SnapshotCorruptionError, match="snapshot payload"):
@@ -617,6 +832,29 @@ def test_commit_scene_rolls_back_scene_upsert_when_project_insert_fails(tmp_path
             "SELECT snapshot_version FROM project_snapshots ORDER BY snapshot_version"
         ).fetchall()
     assert versions == [(1,)]
+
+
+def test_commit_scene_preserves_memory_state_on_stale_version(tmp_path: Path) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    original = semantic_scene_record()
+    initial = semantic_project_snapshot(version=1, scene=original)
+    repository.commit_scene(None, original, initial)
+    revised = scene_with_memory_field(
+        replace(original, scene_revision=2),
+        "memory.content",
+        "새로운 기억",
+    )
+
+    with pytest.raises(SnapshotVersionConflict, match="expected.*current"):
+        repository.commit_scene(
+            None,
+            revised,
+            semantic_project_snapshot(version=2, scene=revised),
+        )
+
+    assert repository.get_scene_graphs("project-01") == (original,)
+    assert repository.get_current("project-01").snapshot == initial  # type: ignore[union-attr]
 
 
 def test_commit_scene_rolls_back_scene_and_project_when_pointer_write_fails(
@@ -717,6 +955,27 @@ def project_snapshot(
     )
 
 
+def semantic_project_snapshot(
+    *,
+    version: int,
+    scene: SceneGraphRecord,
+) -> ProjectKnowledgeGraphSnapshot:
+    graph = scene.graph
+    return ProjectKnowledgeGraphSnapshot(
+        project_id=scene.project_id,
+        snapshot_version=version,
+        schema_version="project-knowledge-graph-snapshot-v2",
+        documents=(graph.document,),
+        entities=graph.entities,
+        relations=graph.relations,
+        movements=graph.movements,
+        coreferences=graph.coreferences,
+        unresolved_references=graph.unresolved_references,
+        contradictions=graph.contradictions,
+        character_memories=graph.character_memories,
+    )
+
+
 def semantic_scene_record() -> SceneGraphRecord:
     character = Character(
         id="character_001",
@@ -754,6 +1013,21 @@ def semantic_scene_record() -> SceneGraphRecord:
         evidence="도착한다",
         confidence=0.9,
     )
+    relation = Relation(
+        id="relation_001",
+        source_id=character.id,
+        relation_type="LOCATED_IN",
+        target_id=location.id,
+        state="active",
+        directed=True,
+        start_event_id=event.id,
+        end_event_id=None,
+        time_expression=None,
+        scene_sequence=0,
+        evidence="온실에",
+        inference=False,
+        confidence=0.9,
+    )
     return SceneGraphRecord(
         project_id="project-01",
         scene_id="scene-01",
@@ -770,23 +1044,7 @@ def semantic_scene_record() -> SceneGraphRecord:
                 locations=(location,),
                 events=(event,),
             ),
-            relations=(
-                Relation(
-                    id="relation_001",
-                    source_id=character.id,
-                    relation_type="LOCATED_IN",
-                    target_id=location.id,
-                    state="active",
-                    directed=True,
-                    start_event_id=event.id,
-                    end_event_id=None,
-                    time_expression=None,
-                    scene_sequence=0,
-                    evidence="온실에",
-                    inference=False,
-                    confidence=0.9,
-                ),
-            ),
+            relations=(relation,),
             movements=(
                 Movement(
                     character_id=character.id,
@@ -823,6 +1081,23 @@ def semantic_scene_record() -> SceneGraphRecord:
                     new_value="alive",
                     evidence="서윤",
                     possible_explanation="",
+                ),
+            ),
+            character_memories=(
+                CharacterMemory(
+                    id="memory_001",
+                    character_id=character.id,
+                    target=MemoryTarget(
+                        kind="relation",
+                        reference_id=relation.id,
+                        description="서윤이 온실에 있었던 기억",
+                    ),
+                    content="온실에 도착했다.",
+                    state="remembered",
+                    time_expression="오늘",
+                    scene_sequence=0,
+                    evidence="온실에 도착한 기억",
+                    confidence=0.9,
                 ),
             ),
         ),
@@ -883,6 +1158,37 @@ def scene_with_field(
         scene,
         graph=scene.graph.model_copy(update={collection: (item,)}),
     )
+
+
+def scene_with_memory_reference(
+    scene: SceneGraphRecord,
+    path: str,
+    reference: str,
+) -> SceneGraphRecord:
+    memory = scene.graph.character_memories[0]
+    if path == "memory.character_id":
+        memory = memory.model_copy(update={"character_id": reference})
+    else:
+        kind = path.rsplit(".", 1)[1]
+        target = memory.target.model_copy(update={"kind": kind, "reference_id": reference})
+        memory = memory.model_copy(update={"target": target})
+    graph = scene.graph.model_copy(update={"character_memories": (memory,)})
+    return replace(scene, graph=graph)
+
+
+def scene_with_memory_field(
+    scene: SceneGraphRecord,
+    path: str,
+    value: object,
+) -> SceneGraphRecord:
+    memory = scene.graph.character_memories[0]
+    if path == "memory.target.description":
+        target = memory.target.model_copy(update={"description": value})
+        memory = memory.model_copy(update={"target": target})
+    else:
+        memory = memory.model_copy(update={path.removeprefix("memory."): value})
+    graph = scene.graph.model_copy(update={"character_memories": (memory,)})
+    return replace(scene, graph=graph)
 
 
 def scene_graph_payload(graph: KnowledgeGraphOutput) -> bytes:

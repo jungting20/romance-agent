@@ -1,16 +1,28 @@
 import json
 import math
+from typing import get_args
 
 import pytest
 from pydantic import ValidationError
 
+from narrative_analysis_agent import (
+    CharacterMemory as PublicCharacterMemory,
+)
+from narrative_analysis_agent import (
+    MemoryState as PublicMemoryState,
+)
+from narrative_analysis_agent import (
+    MemoryTarget as PublicMemoryTarget,
+)
 from narrative_analysis_agent.models import (
     Character,
+    CharacterMemory,
     Contradiction,
     Coreference,
     Event,
     KnowledgeGraphOutput,
     Location,
+    MemoryTarget,
     Movement,
     ProjectKnowledgeGraphSnapshot,
     Relation,
@@ -38,11 +50,244 @@ def validate_graph(payload: dict[str, object]) -> KnowledgeGraphOutput:
     return KnowledgeGraphOutput.model_validate_json(json.dumps(payload))
 
 
+def character_memory() -> CharacterMemory:
+    return CharacterMemory(
+        id="memory_001",
+        character_id="character_001",
+        target=MemoryTarget(
+            kind="event",
+            reference_id="event_001",
+            description="비 내리던 날의 약속",
+        ),
+        content="서윤은 비 내리던 날의 약속을 기억한다.",
+        state="remembered",
+        time_expression="10년 전",
+        scene_sequence=4,
+        evidence="그녀는 10년 전 비 내리던 날의 약속을 기억했다",
+        confidence=0.94,
+    )
+
+
+def character_memory_payload(**updates: object) -> dict[str, object]:
+    payload = character_memory().model_dump(mode="json")
+    payload.update(updates)
+    return payload
+
+
 def test_knowledge_graph_accepts_exact_json_structure() -> None:
     output = validate_graph(graph_payload())
 
     assert output.document.chapter_id == "scene-01"
     assert output.entities.characters == ()
+
+
+def test_character_memory_round_trips_through_json_validation() -> None:
+    memory = character_memory()
+
+    restored = CharacterMemory.model_validate_json(memory.model_dump_json())
+
+    assert restored == memory
+
+
+def test_memory_contract_types_are_exported_from_package() -> None:
+    assert PublicCharacterMemory is CharacterMemory
+    assert PublicMemoryTarget is MemoryTarget
+    assert set(get_args(PublicMemoryState)) == {
+        "remembered",
+        "forgotten",
+        "repressed",
+        "uncertain",
+        "false_memory",
+    }
+
+
+@pytest.mark.parametrize(
+    "state",
+    ["remembered", "forgotten", "repressed", "uncertain", "false_memory"],
+)
+def test_character_memory_accepts_each_public_state(state: str) -> None:
+    updates: dict[str, object] = {"state": state}
+    if state == "false_memory":
+        updates["target"] = {
+            "kind": "described_event",
+            "reference_id": None,
+            "description": "실제로는 없었던 약속",
+        }
+    memory = CharacterMemory.model_validate(character_memory_payload(**updates))
+
+    assert memory.state == state
+
+
+def test_character_memory_rejects_unknown_state() -> None:
+    with pytest.raises(ValidationError):
+        CharacterMemory.model_validate(character_memory_payload(state="unknown"))
+
+
+def test_false_memory_rejects_linked_target() -> None:
+    with pytest.raises(ValidationError):
+        CharacterMemory.model_validate(character_memory_payload(state="false_memory"))
+
+
+@pytest.mark.parametrize("kind", ["described_event", "described_relation", "other"])
+def test_false_memory_accepts_description_only_target(kind: str) -> None:
+    memory = CharacterMemory.model_validate(
+        character_memory_payload(
+            state="false_memory",
+            target={
+                "kind": kind,
+                "reference_id": None,
+                "description": "실제로는 없었던 기억",
+            },
+        )
+    )
+
+    assert memory.target.kind == kind
+
+
+@pytest.mark.parametrize(
+    ("kind", "reference_id"),
+    [
+        ("character", "character_002"),
+        ("location", "location_001"),
+        ("event", "event_002"),
+        ("relation", "relation_001"),
+    ],
+)
+def test_memory_target_accepts_linked_target_kinds(kind: str, reference_id: str) -> None:
+    target = MemoryTarget(
+        kind=kind,
+        reference_id=reference_id,
+        description="연결된 대상",
+    )
+
+    assert target.reference_id == reference_id
+
+
+@pytest.mark.parametrize("kind", ["described_event", "described_relation", "other"])
+def test_memory_target_accepts_description_only_target_kinds(kind: str) -> None:
+    target = MemoryTarget(kind=kind, reference_id=None, description="설명만 있는 대상")
+
+    assert target.reference_id is None
+
+
+def test_knowledge_graph_accepts_character_memories() -> None:
+    payload = graph_payload()
+    payload["character_memories"] = [character_memory().model_dump(mode="json")]
+
+    output = validate_graph(payload)
+
+    assert output.character_memories == (character_memory(),)
+
+
+def test_character_memory_rejects_unknown_fields() -> None:
+    payload = character_memory().model_dump(mode="json")
+    payload["unknown"] = True
+
+    with pytest.raises(ValidationError):
+        CharacterMemory.model_validate(payload)
+
+
+def test_memory_target_rejects_unknown_fields() -> None:
+    payload = character_memory().target.model_dump(mode="json")
+    payload["unknown"] = True
+
+    with pytest.raises(ValidationError):
+        MemoryTarget.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("memory_id", "target_kind", "reference_id"),
+    [
+        ("invalid_001", "event", "event_001"),
+        ("memory_001", "character", "event_001"),
+        ("memory_001", "location", "character_001"),
+        ("memory_001", "event", "location_001"),
+        ("memory_001", "relation", "event_001"),
+    ],
+)
+def test_character_memory_rejects_invalid_id_prefixes(
+    memory_id: str, target_kind: str, reference_id: str
+) -> None:
+    with pytest.raises(ValidationError):
+        CharacterMemory.model_validate(
+            character_memory_payload(
+                id=memory_id,
+                target={
+                    "kind": target_kind,
+                    "reference_id": reference_id,
+                    "description": "잘못된 참조",
+                },
+            ),
+        )
+
+
+@pytest.mark.parametrize("kind", ["described_event", "described_relation", "other"])
+def test_memory_target_rejects_reference_for_description_only_target(kind: str) -> None:
+    with pytest.raises(ValidationError):
+        MemoryTarget(kind=kind, reference_id="event_001", description="설명만 있는 대상")
+
+
+@pytest.mark.parametrize("kind", ["character", "location", "event", "relation"])
+def test_memory_target_requires_reference_for_linked_target(kind: str) -> None:
+    with pytest.raises(ValidationError):
+        MemoryTarget(kind=kind, reference_id=None, description="연결된 대상")
+
+
+@pytest.mark.parametrize(
+    ("target_description", "content", "evidence"),
+    [
+        ("", "기억", "근거"),
+        ("대상", "", "근거"),
+        ("대상", "기억", ""),
+    ],
+)
+def test_character_memory_rejects_empty_required_text(
+    target_description: str, content: str, evidence: str
+) -> None:
+    with pytest.raises(ValidationError):
+        CharacterMemory.model_validate(
+            character_memory_payload(
+                target={
+                    "kind": "event",
+                    "reference_id": "event_001",
+                    "description": target_description,
+                },
+                content=content,
+                evidence=evidence,
+            )
+        )
+
+
+@pytest.mark.parametrize("confidence", [math.nan, math.inf, -math.inf, 0.79, 1.01])
+def test_character_memory_rejects_invalid_confidence(confidence: float) -> None:
+    with pytest.raises(ValidationError):
+        CharacterMemory.model_validate(character_memory_payload(confidence=confidence))
+
+
+def test_character_memory_rejects_negative_scene_sequence() -> None:
+    with pytest.raises(ValidationError):
+        CharacterMemory.model_validate(character_memory_payload(scene_sequence=-1))
+
+
+def test_character_memory_and_target_are_frozen() -> None:
+    memory = character_memory()
+
+    with pytest.raises(ValidationError):
+        memory.content = "변경됨"  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        memory.target.description = "변경됨"  # type: ignore[misc]
+
+
+def test_legacy_v2_snapshot_defaults_character_memories_to_empty() -> None:
+    snapshot = ProjectKnowledgeGraphSnapshot.model_validate(
+        {
+            "project_id": "project-01",
+            "snapshot_version": 1,
+            "schema_version": "project-knowledge-graph-snapshot-v2",
+        }
+    )
+
+    assert snapshot.character_memories == ()
 
 
 def test_knowledge_graph_rejects_unknown_fields() -> None:

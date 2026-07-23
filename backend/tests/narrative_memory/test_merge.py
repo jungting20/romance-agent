@@ -5,6 +5,7 @@ from narrative_analysis_agent.models import (
     PROJECT_GRAPH_SCHEMA_VERSION,
     AnalyzedChunk,
     Character,
+    CharacterMemory,
     Contradiction,
     Coreference,
     Document,
@@ -12,12 +13,14 @@ from narrative_analysis_agent.models import (
     Event,
     KnowledgeGraphOutput,
     Location,
+    MemoryTarget,
     Movement,
     ProjectKnowledgeGraphSnapshot,
     Relation,
     SceneAnalysis,
     UnresolvedReference,
 )
+from pydantic import ValidationError
 
 from apps.narrative_memory.service.merge import (
     MergeInvariantError,
@@ -487,6 +490,415 @@ def test_reused_character_and_location_remain_exact_canonical_objects_across_sce
     assert snapshot.entities.locations.count(existing_location) == 1
 
 
+def test_scene_merge_rewrites_memory_subject_and_typed_target_ids() -> None:
+    existing_character = _character(
+        "character_007",
+        "서윤",
+        aliases=("한서윤",),
+        first_mention="서윤",
+    )
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=7,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(characters=(existing_character,)),
+        relations=(
+            _relation(
+                "relation_009",
+                source_id=existing_character.id,
+                target_id=existing_character.id,
+            ),
+        ),
+    )
+    relation_target = _memory_target(
+        "relation",
+        reference_id="relation_001",
+        description="민준과의 약속",
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="한서윤은 민준을 기억했다. 정원을 떠올렸다. 도착을 회상했다. 약속을 잊지 않았다.",
+        characters=(
+            _character("character_001", "한서윤", first_mention="한서윤"),
+            _character("character_002", "민준", first_mention="민준"),
+        ),
+        locations=(_location("location_001", "정원", first_mention="정원"),),
+        events=(
+            _event(
+                "event_001",
+                participant_ids=("character_001", "character_002"),
+                location_ids=("location_001",),
+            ),
+        ),
+        relations=(
+            _relation(
+                "relation_001",
+                source_id="character_001",
+                target_id="character_002",
+                start_event_id="event_001",
+                evidence="약속",
+            ),
+        ),
+        character_memories=(
+            _memory(
+                "memory_010",
+                character_id="character_001",
+                target=_memory_target(
+                    "character",
+                    reference_id="character_002",
+                    description="민준",
+                ),
+                evidence="기억했다",
+            ),
+            _memory(
+                "memory_020",
+                character_id="character_001",
+                target=_memory_target(
+                    "location",
+                    reference_id="location_001",
+                    description="정원",
+                ),
+                evidence="떠올렸다",
+            ),
+            _memory(
+                "memory_030",
+                character_id="character_001",
+                target=_memory_target(
+                    "event",
+                    reference_id="event_001",
+                    description="도착",
+                ),
+                evidence="회상했다",
+            ),
+            _memory(
+                "memory_040",
+                character_id="character_001",
+                target=relation_target,
+                evidence="잊지 않았다",
+            ),
+        ),
+    )
+
+    graph = assemble_scene_graph(_analysis(chunks=(chunk,)), existing).graph
+
+    assert [memory.character_id for memory in graph.character_memories] == [
+        "character_007",
+        "character_007",
+        "character_007",
+        "character_007",
+    ]
+    assert [memory.target.reference_id for memory in graph.character_memories] == [
+        "character_008",
+        "location_001",
+        "event_001",
+        "relation_010",
+    ]
+    source_memory = chunk.extraction.character_memories[-1]
+    assert graph.character_memories[-1] == source_memory.model_copy(
+        update={
+            "id": "memory_004",
+            "character_id": "character_007",
+            "target": source_memory.target.model_copy(update={"reference_id": "relation_010"}),
+        }
+    )
+
+
+@pytest.mark.parametrize("target_kind", ("described_event", "described_relation", "other"))
+def test_scene_merge_preserves_description_only_memory_target(target_kind: str) -> None:
+    target = _memory_target(target_kind, reference_id=None, description="지하 비밀 문의 약속")
+    memory = _memory(target=target, evidence="기억했다")
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 지하 비밀 문의 약속을 기억했다.",
+        characters=(_character("character_001", "서윤", first_mention="서윤"),),
+        character_memories=(memory,),
+    )
+
+    graph = assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project()).graph
+
+    assert graph.character_memories == (
+        memory.model_copy(update={"id": "memory_001", "character_id": "character_001"}),
+    )
+    assert graph.character_memories[0].target == target
+    assert graph.character_memories[0].target.reference_id is None
+    assert graph.character_memories[0].target.description == "지하 비밀 문의 약속"
+
+
+def test_scene_merge_deduplicates_overlap_memories_and_preserves_semantic_changes() -> None:
+    target = _memory_target(
+        "described_event",
+        reference_id=None,
+        description="비 내리던 날의 약속",
+    )
+    duplicate = _memory(
+        "memory_001",
+        character_id="character_007",
+        target=target,
+        content="약속을 했다",
+        evidence="기억했다",
+    )
+    first = _chunk(
+        ordinal=0,
+        text="가" * 260 + "기억했다",
+        character_memories=(duplicate,),
+    )
+    second = _chunk(
+        ordinal=1,
+        text="나" * 10 + "기억했다",
+        character_memories=(
+            duplicate.model_copy(update={"id": "memory_099"}),
+            duplicate.model_copy(update={"id": "memory_002", "state": "forgotten"}),
+            duplicate.model_copy(update={"id": "memory_003", "time_expression": "어제"}),
+            duplicate.model_copy(update={"id": "memory_004", "content": "약속을 깨뜨렸다"}),
+        ),
+    )
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=7,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(characters=(_character("character_007", "서윤", first_mention="서윤"),)),
+    )
+
+    forward = assemble_scene_graph(_analysis(chunks=(first, second)), existing).graph
+    reversed_input = assemble_scene_graph(_analysis(chunks=(second, first)), existing).graph
+
+    assert reversed_input.character_memories == forward.character_memories
+    assert len(forward.character_memories) == 4
+    assert {
+        (memory.content, memory.state, memory.time_expression)
+        for memory in forward.character_memories
+    } == {
+        ("약속을 했다", "remembered", None),
+        ("약속을 했다", "forgotten", None),
+        ("약속을 했다", "remembered", "어제"),
+        ("약속을 깨뜨렸다", "remembered", None),
+    }
+    assert [memory.id for memory in forward.character_memories] == [
+        "memory_001",
+        "memory_002",
+        "memory_003",
+        "memory_004",
+    ]
+
+
+def test_scene_merge_allocates_memory_ids_after_existing_maximum() -> None:
+    existing_memory = _memory(
+        "memory_019",
+        character_id="character_007",
+        target=_memory_target("other", reference_id=None, description="기존 기억"),
+        evidence="기존 근거",
+    )
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=7,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(characters=(_character("character_007", "서윤", first_mention="서윤"),)),
+        character_memories=(existing_memory,),
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 새 약속을 기억했다.",
+        character_memories=(
+            _memory(
+                character_id="character_007",
+                target=_memory_target("other", reference_id=None, description="새 약속"),
+                evidence="기억했다",
+            ),
+        ),
+    )
+
+    graph = assemble_scene_graph(_analysis(chunks=(chunk,)), existing).graph
+
+    assert [memory.id for memory in graph.character_memories] == ["memory_020"]
+
+
+def test_scene_merge_rejects_memory_evidence_missing_from_source_chunk() -> None:
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 잠시 멈춰다.",
+        characters=(_character("character_001", "서윤", first_mention="서윤"),),
+        character_memories=(
+            _memory(
+                target=_memory_target("other", reference_id=None, description="약속"),
+                evidence="기억했다",
+            ),
+        ),
+    )
+
+    with pytest.raises(MergeInvariantError, match="memory evidence"):
+        assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project())
+
+
+def test_scene_merge_revalidates_linked_false_memory_model_copy() -> None:
+    valid_memory = _memory(
+        target=_memory_target(
+            "character",
+            reference_id="character_002",
+            description="민준",
+        ),
+        evidence="거짓으로 회상했다",
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 민준을 만났다고 거짓으로 회상했다.",
+        characters=(
+            _character("character_001", "서윤", first_mention="서윤"),
+            _character("character_002", "민준", first_mention="민준"),
+        ),
+        character_memories=(valid_memory,),
+    )
+    corrupted_extraction = chunk.extraction.model_copy(
+        update={"character_memories": (valid_memory.model_copy(update={"state": "false_memory"}),)}
+    )
+    chunk = chunk.model_copy(update={"extraction": corrupted_extraction})
+
+    with pytest.raises(MergeInvariantError) as captured:
+        assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project())
+
+    assert isinstance(captured.value.__cause__, ValidationError)
+
+
+def test_scene_merge_revalidates_description_only_target_with_retained_id() -> None:
+    valid_target = _memory_target(
+        "described_event",
+        reference_id=None,
+        description="실제로는 없었던 약속",
+    )
+    valid_memory = _memory(target=valid_target, evidence="기억했다")
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 실제로는 없었던 약속을 기억했다.",
+        characters=(_character("character_001", "서윤", first_mention="서윤"),),
+        character_memories=(valid_memory,),
+    )
+    corrupted_target = valid_target.model_copy(update={"reference_id": "event_999"})
+    corrupted_memory = valid_memory.model_copy(update={"target": corrupted_target})
+    corrupted_extraction = chunk.extraction.model_copy(
+        update={"character_memories": (corrupted_memory,)}
+    )
+    chunk = chunk.model_copy(update={"extraction": corrupted_extraction})
+
+    with pytest.raises(MergeInvariantError) as captured:
+        assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project())
+
+    assert isinstance(captured.value.__cause__, ValidationError)
+
+
+@pytest.mark.parametrize(
+    "invalid_reference",
+    [
+        "dangling-subject",
+        "wrong-kind-subject",
+        "dangling-target",
+        "wrong-kind-target",
+    ],
+)
+def test_scene_merge_rejects_dangling_or_wrong_kind_memory_reference(
+    invalid_reference: str,
+) -> None:
+    target = _memory_target(
+        "character",
+        reference_id="character_002",
+        description="민준",
+    )
+    memory = _memory(target=target, evidence="기억했다")
+    if invalid_reference == "dangling-subject":
+        memory = memory.model_copy(update={"character_id": "character_999"})
+    elif invalid_reference == "wrong-kind-subject":
+        memory = memory.model_copy(update={"character_id": "location_001"})
+    elif invalid_reference == "dangling-target":
+        memory = memory.model_copy(
+            update={"target": target.model_copy(update={"reference_id": "character_999"})}
+        )
+    else:
+        memory = memory.model_copy(
+            update={"target": target.model_copy(update={"reference_id": "location_001"})}
+        )
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 민준을 기억했다.",
+        characters=(
+            _character("character_001", "서윤", first_mention="서윤"),
+            _character("character_002", "민준", first_mention="민준"),
+        ),
+        locations=(_location("location_001", "방", first_mention="서윤"),),
+        character_memories=(memory,),
+    )
+
+    with pytest.raises(MergeInvariantError) as captured:
+        assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project())
+
+    assert isinstance(captured.value.__cause__, (ProjectInvariantError, ValidationError))
+
+
+def test_scene_merge_memory_existing_relation_closes_transitive_dependencies() -> None:
+    subject = _character("character_007", "서윤", first_mention="서윤")
+    participant = _character("character_010", "민준", first_mention="민준")
+    unreferenced = _character("character_099", "이전 인물", first_mention="이전 인물")
+    parent = _location("location_006", "건물", first_mention="건물")
+    location = _location(
+        "location_008",
+        "방",
+        first_mention="방",
+        parent_location_id=parent.id,
+    )
+    start_event = _event(
+        "event_009",
+        participant_ids=(participant.id,),
+        location_ids=(location.id,),
+    )
+    end_event = _event("event_012", participant_ids=(subject.id,))
+    relation = _relation(
+        "relation_010",
+        source_id=subject.id,
+        target_id=location.id,
+        start_event_id=start_event.id,
+        end_event_id=end_event.id,
+    )
+    existing = ProjectKnowledgeGraphSnapshot(
+        project_id="project-01",
+        snapshot_version=7,
+        schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        entities=Entities(
+            characters=(subject, participant, unreferenced),
+            locations=(parent, location),
+            events=(start_event, end_event),
+        ),
+        relations=(
+            relation,
+            _relation(
+                "relation_099",
+                source_id=unreferenced.id,
+                target_id=unreferenced.id,
+            ),
+        ),
+    )
+    memory = _memory(
+        character_id=subject.id,
+        target=_memory_target(
+            "relation",
+            reference_id=relation.id,
+            description="약속",
+        ),
+        evidence="회상했다",
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 그 약속을 회상했다.",
+        character_memories=(memory,),
+    )
+
+    graph = assemble_scene_graph(_analysis(chunks=(chunk,)), existing).graph
+
+    assert graph.character_memories[0].character_id == subject.id
+    assert graph.character_memories[0].target.reference_id == relation.id
+    assert graph.relations == (relation,)
+    assert graph.entities.characters == (subject, participant)
+    assert graph.entities.locations == (parent, location)
+    assert graph.entities.events == (start_event, end_event)
+    assert unreferenced not in graph.entities.characters
+
+
 def test_scene_merge_includes_only_referenced_existing_dependency_closure() -> None:
     character = _character("character_007", "서윤", first_mention="서윤")
     old_character = _character("character_099", "이전 인물", first_mention="이전 인물")
@@ -935,6 +1347,121 @@ def test_rebuild_project_graph_preserves_active_and_ended_relation_records() -> 
     assert [relation.state for relation in snapshot.relations] == ["active", "ended"]
 
 
+def test_rebuild_project_graph_orders_and_replaces_character_memories_by_current_scene() -> None:
+    old_scene = _scene_record("scene-01", revision=1, sequence=0, character_name="이전 인물")
+    replacement = _scene_record("scene-01", revision=2, sequence=1, character_name="새 인물")
+    other = _scene_record("scene-02", revision=3, sequence=0, character_name="다른 인물")
+    old_memory = _memory(
+        "memory_001",
+        character_id=old_scene.graph.entities.characters[0].id,
+        target=_memory_target("other", reference_id=None, description="이전 기억"),
+        evidence="이전 근거",
+        scene_sequence=old_scene.scene_sequence,
+    )
+    replacement_memory = _memory(
+        "memory_002",
+        character_id=replacement.graph.entities.characters[0].id,
+        target=_memory_target("other", reference_id=None, description="새 기억"),
+        evidence="새 근거",
+        scene_sequence=replacement.scene_sequence,
+    )
+    other_memory = _memory(
+        "memory_003",
+        character_id=other.graph.entities.characters[0].id,
+        target=_memory_target("other", reference_id=None, description="다른 기억"),
+        evidence="다른 근거",
+        scene_sequence=other.scene_sequence,
+    )
+    old_scene = replace(
+        old_scene,
+        graph=old_scene.graph.model_copy(update={"character_memories": (old_memory,)}),
+    )
+    replacement = replace(
+        replacement,
+        graph=replacement.graph.model_copy(update={"character_memories": (replacement_memory,)}),
+    )
+    other = replace(
+        other,
+        graph=other.graph.model_copy(update={"character_memories": (other_memory,)}),
+    )
+
+    snapshot = rebuild_project_graph(
+        "project-01",
+        9,
+        (replacement, old_scene, other),
+    )
+
+    assert snapshot.character_memories == (other_memory, replacement_memory)
+    assert old_memory not in snapshot.character_memories
+    assert snapshot == rebuild_project_graph(
+        "project-01",
+        9,
+        (other, old_scene, replacement),
+    )
+
+
+def test_rebuild_project_graph_rejects_identical_memory_id_across_current_scenes() -> None:
+    first = _scene_record("scene-01", revision=1, sequence=0, character_name="서윤")
+    second = _scene_record("scene-02", revision=1, sequence=1, character_name="서윤")
+    character = first.graph.entities.characters[0]
+    memory = _memory(
+        "memory_001",
+        character_id=character.id,
+        target=_memory_target("other", reference_id=None, description="같은 기억"),
+        evidence="같은 근거",
+        scene_sequence=0,
+    )
+    first = replace(
+        first,
+        graph=first.graph.model_copy(update={"character_memories": (memory,)}),
+    )
+    second = replace(
+        second,
+        graph=second.graph.model_copy(
+            update={
+                "entities": Entities(characters=(character,)),
+                "character_memories": (memory,),
+            }
+        ),
+    )
+
+    with pytest.raises(MergeInvariantError) as captured:
+        rebuild_project_graph("project-01", 2, (first, second))
+
+    assert isinstance(captured.value.__cause__, (ProjectInvariantError, ValidationError))
+
+
+def test_rebuild_project_graph_preserves_same_memory_content_with_distinct_ids() -> None:
+    first = _scene_record("scene-01", revision=1, sequence=0, character_name="서윤")
+    second = _scene_record("scene-02", revision=1, sequence=1, character_name="서윤")
+    character = first.graph.entities.characters[0]
+    first_memory = _memory(
+        "memory_001",
+        character_id=character.id,
+        target=_memory_target("other", reference_id=None, description="같은 기억"),
+        evidence="같은 근거",
+        scene_sequence=0,
+    )
+    second_memory = first_memory.model_copy(update={"id": "memory_002", "scene_sequence": 1})
+    first = replace(
+        first,
+        graph=first.graph.model_copy(update={"character_memories": (first_memory,)}),
+    )
+    second = replace(
+        second,
+        graph=second.graph.model_copy(
+            update={
+                "entities": Entities(characters=(character,)),
+                "character_memories": (second_memory,),
+            }
+        ),
+    )
+
+    snapshot = rebuild_project_graph("project-01", 2, (second, first))
+
+    assert snapshot.character_memories == (first_memory, second_memory)
+
+
 def test_rebuild_project_graph_translates_project_validation_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -978,6 +1505,7 @@ def _chunk(
     coreferences: tuple[Coreference, ...] = (),
     unresolved_references: tuple[UnresolvedReference, ...] = (),
     contradictions: tuple[Contradiction, ...] = (),
+    character_memories: tuple[CharacterMemory, ...] = (),
 ) -> AnalyzedChunk:
     return AnalyzedChunk(
         chunk_id=f"scene-01:r2:{ordinal:04d}",
@@ -997,6 +1525,7 @@ def _chunk(
             coreferences=coreferences,
             unresolved_references=unresolved_references,
             contradictions=contradictions,
+            character_memories=character_memories,
         ),
     )
 
@@ -1088,6 +1617,39 @@ def _relation(
         scene_sequence=0,
         evidence=evidence,
         inference=False,
+        confidence=0.9,
+    )
+
+
+def _memory_target(
+    kind: str,
+    *,
+    reference_id: str | None,
+    description: str,
+) -> MemoryTarget:
+    return MemoryTarget(kind=kind, reference_id=reference_id, description=description)
+
+
+def _memory(
+    memory_id: str = "memory_001",
+    *,
+    character_id: str = "character_001",
+    target: MemoryTarget,
+    content: str = "약속을 기억한다",
+    state: str = "remembered",
+    time_expression: str | None = None,
+    scene_sequence: int = 4,
+    evidence: str,
+) -> CharacterMemory:
+    return CharacterMemory(
+        id=memory_id,
+        character_id=character_id,
+        target=target,
+        content=content,
+        state=state,
+        time_expression=time_expression,
+        scene_sequence=scene_sequence,
+        evidence=evidence,
         confidence=0.9,
     )
 

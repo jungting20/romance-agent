@@ -1,21 +1,28 @@
 import asyncio
 import traceback
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
 from narrative_analysis_agent import (
+    AnalyzedChunk,
+    CharacterMemory,
+    MemoryTarget,
     NarrativeAnalysisError,
     ProjectKnowledgeGraphSnapshot,
     SceneAnalysis,
     SceneAnalysisRequest,
 )
-from narrative_analysis_agent.models import Document, Entities, KnowledgeGraphOutput
+from narrative_analysis_agent.models import Character, Document, Entities, KnowledgeGraphOutput
 
 from apps.narrative_memory.repository.snapshot_repository import (
     SnapshotCorruptionError,
     SnapshotRepositoryError,
     SnapshotVersionConflict,
     StoredProjectSnapshot,
+)
+from apps.narrative_memory.repository.sqlite_snapshot_repository import (
+    SQLiteSnapshotRepository,
 )
 from apps.narrative_memory.service.models import SceneGraphRecord
 from apps.narrative_memory.service.scene_analysis_use_case import (
@@ -145,6 +152,82 @@ def test_use_case_persists_scene_and_project_after_successful_analysis() -> None
     assert project.project_id == "project-01"
     assert project.snapshot_version == 1
     assert tuple(document.chapter_id for document in project.documents) == ("scene-01",)
+
+
+def test_use_case_persists_explicit_memory_in_scene_and_project_snapshots(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    analysis = _analysis_with_memory()
+
+    result = asyncio.run(
+        AnalyzeSceneUseCase(RecordingAgent(analysis), repository).execute(_input_with_memory())
+    )
+
+    assert result is analysis
+    scenes = repository.get_scene_graphs("project-01")
+    current = repository.get_current("project-01")
+    assert len(scenes) == 1
+    assert current is not None
+    scene_memory = scenes[0].graph.character_memories[0]
+    assert scene_memory == CharacterMemory(
+        id="memory_001",
+        character_id="character_001",
+        target=MemoryTarget(
+            kind="described_event",
+            reference_id=None,
+            description="온실에서 나눈 약속",
+        ),
+        content="서윤은 온실에서 나눈 약속을 기억한다.",
+        state="remembered",
+        time_expression="그날",
+        scene_sequence=7,
+        evidence="약속을 기억했다",
+        confidence=0.95,
+    )
+    assert current.snapshot.character_memories == (scene_memory,)
+
+
+def test_use_case_rejected_memory_merge_publishes_no_scene_or_project_state(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "narrative-memory.sqlite3")
+    repository.initialize()
+    analysis = _analysis_with_memory(evidence="원문에 없는 기억 근거")
+
+    with pytest.raises(SceneAnalysisApplicationError):
+        asyncio.run(
+            AnalyzeSceneUseCase(RecordingAgent(analysis), repository).execute(_input_with_memory())
+        )
+
+    assert repository.get_scene_graphs("project-01") == ()
+    assert repository.get_current("project-01") is None
+
+
+def test_use_case_sanitizes_corrupt_description_only_memory_without_commit() -> None:
+    analysis = _analysis_with_memory()
+    chunk = analysis.chunks[0]
+    memory = chunk.extraction.character_memories[0]
+    target = memory.target.model_copy(update={"reference_id": "event_999"})
+    corrupted_extraction = chunk.extraction.model_copy(
+        update={"character_memories": (memory.model_copy(update={"target": target}),)}
+    )
+    corrupted_chunk = chunk.model_copy(update={"extraction": corrupted_extraction})
+    corrupted_analysis = analysis.model_copy(update={"chunks": (corrupted_chunk,)})
+    repository = RecordingSnapshotRepository(current=None, scenes=())
+
+    with pytest.raises(SceneAnalysisApplicationError) as captured:
+        asyncio.run(
+            AnalyzeSceneUseCase(RecordingAgent(corrupted_analysis), repository).execute(
+                _input_with_memory()
+            )
+        )
+
+    _assert_sanitized(captured.value, "event_999")
+    assert repository.scene_requests == []
+    assert repository.commit_attempts == 0
+    assert repository.commits == []
 
 
 def test_use_case_replaces_same_scene_and_builds_the_next_project_version() -> None:
@@ -331,6 +414,16 @@ def _input(*, scene_sequence: int = 7) -> AnalyzeSceneInput:
     )
 
 
+def _input_with_memory() -> AnalyzeSceneInput:
+    return AnalyzeSceneInput(
+        project_id="project-01",
+        scene_id="scene-01",
+        scene_revision=3,
+        scene_sequence=7,
+        text="서윤은 그날 온실에서 나눈 약속을 기억했다.",
+    )
+
+
 def _analysis(
     *,
     source_snapshot_version: int = 0,
@@ -344,6 +437,66 @@ def _analysis(
         scene_sequence=scene_sequence,
         source_snapshot_version=source_snapshot_version,
         chunks=(),
+    )
+
+
+def _analysis_with_memory(*, evidence: str = "약속을 기억했다") -> SceneAnalysis:
+    text = "서윤은 그날 온실에서 나눈 약속을 기억했다."
+    return SceneAnalysis(
+        project_id="project-01",
+        scene_id="scene-01",
+        scene_revision=3,
+        scene_sequence=7,
+        source_snapshot_version=0,
+        chunks=(
+            AnalyzedChunk(
+                chunk_id="scene-01:r3:c0",
+                ordinal=0,
+                start_offset=0,
+                end_offset=len(text),
+                text=text,
+                extraction=KnowledgeGraphOutput(
+                    document=Document(
+                        chapter_id="scene-01",
+                        summary="서윤이 과거의 약속을 명시적으로 기억한다.",
+                        narrative_time="present",
+                    ),
+                    entities=Entities(
+                        characters=(
+                            Character(
+                                id="character_007",
+                                canonical_name="서윤",
+                                description="약속을 기억하는 인물",
+                                gender="female",
+                                age=None,
+                                occupation=None,
+                                affiliation=None,
+                                status="alive",
+                                first_mention="서윤",
+                                confidence=0.95,
+                            ),
+                        )
+                    ),
+                    character_memories=(
+                        CharacterMemory(
+                            id="memory_009",
+                            character_id="character_007",
+                            target=MemoryTarget(
+                                kind="described_event",
+                                reference_id=None,
+                                description="온실에서 나눈 약속",
+                            ),
+                            content="서윤은 온실에서 나눈 약속을 기억한다.",
+                            state="remembered",
+                            time_expression="그날",
+                            scene_sequence=7,
+                            evidence=evidence,
+                            confidence=0.95,
+                        ),
+                    ),
+                ),
+            ),
+        ),
     )
 
 

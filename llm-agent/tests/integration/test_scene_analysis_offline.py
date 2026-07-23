@@ -8,7 +8,13 @@ from narrative_analysis_agent import (
     NarrativeAnalysisAgent,
     SceneAnalysisRequest,
 )
-from narrative_analysis_agent.models import Character, Document, Entities
+from narrative_analysis_agent.models import (
+    Character,
+    CharacterMemory,
+    Document,
+    Entities,
+    MemoryTarget,
+)
 
 
 @dataclass
@@ -44,6 +50,23 @@ class OfflineRunner:
                             confidence=0.8,
                         ),
                     )
+                ),
+                character_memories=(
+                    CharacterMemory(
+                        id=f"memory_{self.calls:03d}",
+                        character_id=f"character_{self.calls:03d}",
+                        target=MemoryTarget(
+                            kind="character",
+                            reference_id=f"character_{self.calls:03d}",
+                            description="한서윤",
+                        ),
+                        content="한서윤은 자신을 기억한다.",
+                        state="remembered",
+                        time_expression=None,
+                        scene_sequence=7,
+                        evidence="가",
+                        confidence=0.8,
+                    ),
                 ),
             )
         )
@@ -96,3 +119,8 @@ def test_public_offline_flow_preserves_chunk_order_and_structured_output(tmp_pat
     assert [
         chunk.extraction.entities.characters[0].canonical_name for chunk in analysis.chunks
     ] == ["한서윤", "한서윤", "한서윤"]
+    assert [chunk.extraction.character_memories[0].id for chunk in analysis.chunks] == [
+        "memory_001",
+        "memory_002",
+        "memory_003",
+    ]

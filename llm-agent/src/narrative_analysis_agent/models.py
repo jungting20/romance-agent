@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 PROJECT_GRAPH_SCHEMA_VERSION = "project-knowledge-graph-snapshot-v2"
 UpperSnake = Annotated[
@@ -9,6 +9,22 @@ UpperSnake = Annotated[
 ]
 HighConfidence = Annotated[float, Field(ge=0.8, le=1.0, allow_inf_nan=False)]
 NarrativeTime = Literal["present", "flashback", "flashforward", "mixed", "unknown"]
+MemoryState = Literal[
+    "remembered",
+    "forgotten",
+    "repressed",
+    "uncertain",
+    "false_memory",
+]
+MemoryTargetKind = Literal[
+    "character",
+    "location",
+    "event",
+    "relation",
+    "described_event",
+    "described_relation",
+    "other",
+]
 
 
 class StrictModel(BaseModel):
@@ -130,6 +146,50 @@ class Contradiction(StrictModel):
     possible_explanation: str
 
 
+class MemoryTarget(StrictModel):
+    kind: MemoryTargetKind
+    reference_id: str | None
+    description: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_reference_id(self) -> "MemoryTarget":
+        linked_prefixes = {
+            "character": "character_",
+            "location": "location_",
+            "event": "event_",
+            "relation": "relation_",
+        }
+        expected_prefix = linked_prefixes.get(self.kind)
+        if expected_prefix is None:
+            if self.reference_id is not None:
+                raise ValueError("description-only memory targets must not reference an ID")
+        elif self.reference_id is None or not self.reference_id.startswith(expected_prefix):
+            raise ValueError(f"{self.kind} memory targets must reference a {expected_prefix} ID")
+        return self
+
+
+class CharacterMemory(StrictModel):
+    id: str = Field(pattern=r"^memory_[0-9]+$")
+    character_id: str
+    target: MemoryTarget
+    content: str = Field(min_length=1)
+    state: MemoryState
+    time_expression: str | None
+    scene_sequence: int = Field(ge=0)
+    evidence: str = Field(min_length=1)
+    confidence: HighConfidence
+
+    @model_validator(mode="after")
+    def validate_false_memory_target(self) -> "CharacterMemory":
+        if self.state == "false_memory" and self.target.kind not in {
+            "described_event",
+            "described_relation",
+            "other",
+        }:
+            raise ValueError("false memories require a description-only target")
+        return self
+
+
 class KnowledgeGraphOutput(StrictModel):
     document: Document
     entities: Entities
@@ -138,6 +198,7 @@ class KnowledgeGraphOutput(StrictModel):
     coreferences: tuple[Coreference, ...] = ()
     unresolved_references: tuple[UnresolvedReference, ...] = ()
     contradictions: tuple[Contradiction, ...] = ()
+    character_memories: tuple[CharacterMemory, ...] = ()
 
 
 class ProjectKnowledgeGraphSnapshot(StrictModel):
@@ -151,6 +212,27 @@ class ProjectKnowledgeGraphSnapshot(StrictModel):
     coreferences: tuple[Coreference, ...] = ()
     unresolved_references: tuple[UnresolvedReference, ...] = ()
     contradictions: tuple[Contradiction, ...] = ()
+    character_memories: tuple[CharacterMemory, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_character_memory_references(self) -> "ProjectKnowledgeGraphSnapshot":
+        memory_ids = tuple(memory.id for memory in self.character_memories)
+        if len(memory_ids) != len(set(memory_ids)):
+            raise ValueError("duplicate memory ID")
+
+        allowed_targets = {
+            "character": {item.id for item in self.entities.characters},
+            "location": {item.id for item in self.entities.locations},
+            "event": {item.id for item in self.entities.events},
+            "relation": {item.id for item in self.relations},
+        }
+        for memory in self.character_memories:
+            if memory.character_id not in allowed_targets["character"]:
+                raise ValueError("memory subject is unknown")
+            allowed = allowed_targets.get(memory.target.kind)
+            if allowed is not None and memory.target.reference_id not in allowed:
+                raise ValueError(f"memory {memory.target.kind} target is unknown")
+        return self
 
     @classmethod
     def empty(cls, project_id: str) -> "ProjectKnowledgeGraphSnapshot":
