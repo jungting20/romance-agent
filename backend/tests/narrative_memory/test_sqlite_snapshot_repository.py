@@ -626,7 +626,7 @@ def test_commit_scene_rejects_duplicate_memory_id(tmp_path: Path) -> None:
     )
     invalid = replace(scene, graph=graph)
 
-    with pytest.raises(ValueError, match="IDs must be unique"):
+    with pytest.raises(ValueError, match="duplicate memory ID"):
         repository.commit_scene(
             None,
             invalid,

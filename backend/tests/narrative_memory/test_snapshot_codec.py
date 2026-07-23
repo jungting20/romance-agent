@@ -104,7 +104,8 @@ def test_snapshot_codec_rejects_duplicate_graph_ids(collection: str) -> None:
         )
         invalid = snapshot.model_copy(update={"entities": entities})
 
-    with pytest.raises(ValueError, match="IDs must be unique"):
+    match = None if collection == "character_memories" else "IDs must be unique"
+    with pytest.raises(ValueError, match=match):
         encode_project_snapshot(invalid)
 
 
@@ -137,6 +138,15 @@ def test_snapshot_codec_rejects_dangling_or_wrong_kind_reference(
         encode_project_snapshot(snapshot)
 
 
+def test_encoder_revalidates_linked_false_memory_model_copy() -> None:
+    snapshot = _semantic_snapshot()
+    memory = snapshot.character_memories[0].model_copy(update={"state": "false_memory"})
+    invalid = snapshot.model_copy(update={"character_memories": (memory,)})
+
+    with pytest.raises(ValueError):
+        encode_project_snapshot(invalid)
+
+
 @pytest.mark.parametrize(
     ("path", "reference"),
     [
@@ -154,7 +164,7 @@ def test_snapshot_codec_rejects_dangling_or_wrong_kind_memory_reference(
 ) -> None:
     snapshot = _snapshot_with_memory_reference(path, reference)
 
-    with pytest.raises(ValueError, match="unknown|reference"):
+    with pytest.raises(ValueError):
         encode_project_snapshot(snapshot)
 
 

@@ -28,6 +28,7 @@ from apps.narrative_memory.service.models import SceneGraphRecord
 from apps.narrative_memory.service.validation import (
     ProjectInvariantError,
     validate_project_snapshot,
+    validate_scene_graph,
 )
 
 type LocalId = tuple[int, str]
@@ -68,38 +69,46 @@ def assemble_scene_graph(
         entity_map,
         event_map,
     )
-    graph = KnowledgeGraphOutput(
-        document=_merge_documents(analysis.scene_id, analysis.chunks),
-        entities=Entities(
-            characters=_merge_characters(analysis.chunks, existing, character_map),
-            locations=_merge_locations(analysis.chunks, existing, location_map),
-            events=_merge_events(
+    try:
+        graph = KnowledgeGraphOutput(
+            document=_merge_documents(analysis.scene_id, analysis.chunks),
+            entities=Entities(
+                characters=_merge_characters(analysis.chunks, existing, character_map),
+                locations=_merge_locations(analysis.chunks, existing, location_map),
+                events=_merge_events(
+                    analysis.chunks,
+                    event_map,
+                    character_map,
+                    location_map,
+                ),
+            ),
+            relations=relation_merge.items,
+            character_memories=_merge_character_memories(
                 analysis.chunks,
-                event_map,
+                existing,
                 character_map,
                 location_map,
+                event_map,
+                relation_merge.id_map,
             ),
-        ),
-        relations=relation_merge.items,
-        character_memories=_merge_character_memories(
-            analysis.chunks,
-            existing,
-            character_map,
-            location_map,
-            event_map,
-            relation_merge.id_map,
-        ),
-        movements=_merge_movements(
-            analysis.chunks,
-            character_map,
-            location_map,
-            event_map,
-        ),
-        coreferences=_merge_coreferences(analysis.chunks, entity_map),
-        unresolved_references=_merge_unresolved(analysis.chunks, entity_map),
-        contradictions=_merge_contradictions(analysis.chunks, entity_map),
-    )
-    graph = _with_existing_dependency_closure(graph, existing)
+            movements=_merge_movements(
+                analysis.chunks,
+                character_map,
+                location_map,
+                event_map,
+            ),
+            coreferences=_merge_coreferences(analysis.chunks, entity_map),
+            unresolved_references=_merge_unresolved(analysis.chunks, entity_map),
+            contradictions=_merge_contradictions(analysis.chunks, entity_map),
+        )
+        graph = _with_existing_dependency_closure(graph, existing)
+        graph = KnowledgeGraphOutput.model_validate(
+            graph.model_dump(mode="python"),
+            strict=True,
+        )
+        validate_scene_graph(graph)
+    except (ProjectInvariantError, ValidationError) as error:
+        raise MergeInvariantError("scene graph invariants are invalid") from error
     return SceneGraphRecord(
         project_id=analysis.project_id,
         scene_id=analysis.scene_id,
@@ -131,9 +140,8 @@ def rebuild_project_graph(
                 lambda graph: graph.unresolved_references,
             ),
             contradictions=_aggregate(ordered, lambda graph: graph.contradictions),
-            character_memories=_aggregate(
-                ordered,
-                lambda graph: graph.character_memories,
+            character_memories=tuple(
+                memory for scene in ordered for memory in scene.graph.character_memories
             ),
         )
         snapshot = ProjectKnowledgeGraphSnapshot.model_validate(

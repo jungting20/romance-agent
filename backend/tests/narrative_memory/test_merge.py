@@ -20,6 +20,7 @@ from narrative_analysis_agent.models import (
     SceneAnalysis,
     UnresolvedReference,
 )
+from pydantic import ValidationError
 
 from apps.narrative_memory.service.merge import (
     MergeInvariantError,
@@ -728,6 +729,82 @@ def test_scene_merge_rejects_memory_evidence_missing_from_source_chunk() -> None
         assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project())
 
 
+def test_scene_merge_revalidates_linked_false_memory_model_copy() -> None:
+    valid_memory = _memory(
+        target=_memory_target(
+            "character",
+            reference_id="character_002",
+            description="민준",
+        ),
+        evidence="거짓으로 회상했다",
+    )
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 민준을 만났다고 거짓으로 회상했다.",
+        characters=(
+            _character("character_001", "서윤", first_mention="서윤"),
+            _character("character_002", "민준", first_mention="민준"),
+        ),
+        character_memories=(valid_memory,),
+    )
+    corrupted_extraction = chunk.extraction.model_copy(
+        update={"character_memories": (valid_memory.model_copy(update={"state": "false_memory"}),)}
+    )
+    chunk = chunk.model_copy(update={"extraction": corrupted_extraction})
+
+    with pytest.raises(MergeInvariantError) as captured:
+        assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project())
+
+    assert isinstance(captured.value.__cause__, ValidationError)
+
+
+@pytest.mark.parametrize(
+    "invalid_reference",
+    [
+        "dangling-subject",
+        "wrong-kind-subject",
+        "dangling-target",
+        "wrong-kind-target",
+    ],
+)
+def test_scene_merge_rejects_dangling_or_wrong_kind_memory_reference(
+    invalid_reference: str,
+) -> None:
+    target = _memory_target(
+        "character",
+        reference_id="character_002",
+        description="민준",
+    )
+    memory = _memory(target=target, evidence="기억했다")
+    if invalid_reference == "dangling-subject":
+        memory = memory.model_copy(update={"character_id": "character_999"})
+    elif invalid_reference == "wrong-kind-subject":
+        memory = memory.model_copy(update={"character_id": "location_001"})
+    elif invalid_reference == "dangling-target":
+        memory = memory.model_copy(
+            update={"target": target.model_copy(update={"reference_id": "character_999"})}
+        )
+    else:
+        memory = memory.model_copy(
+            update={"target": target.model_copy(update={"reference_id": "location_001"})}
+        )
+    chunk = _chunk(
+        ordinal=0,
+        text="서윤은 민준을 기억했다.",
+        characters=(
+            _character("character_001", "서윤", first_mention="서윤"),
+            _character("character_002", "민준", first_mention="민준"),
+        ),
+        locations=(_location("location_001", "방", first_mention="서윤"),),
+        character_memories=(memory,),
+    )
+
+    with pytest.raises(MergeInvariantError) as captured:
+        assemble_scene_graph(_analysis(chunks=(chunk,)), _empty_project())
+
+    assert isinstance(captured.value.__cause__, (ProjectInvariantError, ValidationError))
+
+
 def test_scene_merge_memory_existing_relation_closes_transitive_dependencies() -> None:
     subject = _character("character_007", "서윤", first_mention="서윤")
     participant = _character("character_010", "민준", first_mention="민준")
@@ -1295,6 +1372,68 @@ def test_rebuild_project_graph_orders_and_replaces_character_memories_by_current
         9,
         (other, old_scene, replacement),
     )
+
+
+def test_rebuild_project_graph_rejects_identical_memory_id_across_current_scenes() -> None:
+    first = _scene_record("scene-01", revision=1, sequence=0, character_name="서윤")
+    second = _scene_record("scene-02", revision=1, sequence=1, character_name="서윤")
+    character = first.graph.entities.characters[0]
+    memory = _memory(
+        "memory_001",
+        character_id=character.id,
+        target=_memory_target("other", reference_id=None, description="같은 기억"),
+        evidence="같은 근거",
+        scene_sequence=0,
+    )
+    first = replace(
+        first,
+        graph=first.graph.model_copy(update={"character_memories": (memory,)}),
+    )
+    second = replace(
+        second,
+        graph=second.graph.model_copy(
+            update={
+                "entities": Entities(characters=(character,)),
+                "character_memories": (memory,),
+            }
+        ),
+    )
+
+    with pytest.raises(MergeInvariantError) as captured:
+        rebuild_project_graph("project-01", 2, (first, second))
+
+    assert isinstance(captured.value.__cause__, (ProjectInvariantError, ValidationError))
+
+
+def test_rebuild_project_graph_preserves_same_memory_content_with_distinct_ids() -> None:
+    first = _scene_record("scene-01", revision=1, sequence=0, character_name="서윤")
+    second = _scene_record("scene-02", revision=1, sequence=1, character_name="서윤")
+    character = first.graph.entities.characters[0]
+    first_memory = _memory(
+        "memory_001",
+        character_id=character.id,
+        target=_memory_target("other", reference_id=None, description="같은 기억"),
+        evidence="같은 근거",
+        scene_sequence=0,
+    )
+    second_memory = first_memory.model_copy(update={"id": "memory_002", "scene_sequence": 1})
+    first = replace(
+        first,
+        graph=first.graph.model_copy(update={"character_memories": (first_memory,)}),
+    )
+    second = replace(
+        second,
+        graph=second.graph.model_copy(
+            update={
+                "entities": Entities(characters=(character,)),
+                "character_memories": (second_memory,),
+            }
+        ),
+    )
+
+    snapshot = rebuild_project_graph("project-01", 2, (second, first))
+
+    assert snapshot.character_memories == (first_memory, second_memory)
 
 
 def test_rebuild_project_graph_translates_project_validation_failure(
