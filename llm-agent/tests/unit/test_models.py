@@ -106,7 +106,7 @@ def test_memory_contract_types_are_exported_from_package() -> None:
     ["remembered", "forgotten", "repressed", "uncertain", "false_memory"],
 )
 def test_character_memory_accepts_each_public_state(state: str) -> None:
-    memory = character_memory().model_copy(update={"state": state})
+    memory = CharacterMemory.model_validate(character_memory_payload(state=state))
 
     assert memory.state == state
 

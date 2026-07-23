@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from narrative_analysis_agent.models import ProjectKnowledgeGraphSnapshot
+from narrative_analysis_agent.models import (
+    CharacterMemory,
+    MemoryTarget,
+    ProjectKnowledgeGraphSnapshot,
+)
 from narrative_analysis_agent.project_graph_reader import ProjectGraphReader, ProjectGraphReadError
 
 
@@ -141,8 +145,23 @@ def test_reader_round_trips_character_memories(tmp_path: Path) -> None:
 
     result = ProjectGraphReader(path).read("project-01")
 
-    assert result.character_memories[0].id == "memory_001"
-    assert result.character_memories[0].target.reference_id == "event_001"
+    assert result.character_memories == (
+        CharacterMemory(
+            id="memory_001",
+            character_id="character_001",
+            target=MemoryTarget(
+                kind="event",
+                reference_id="event_001",
+                description="비 내리던 날의 약속",
+            ),
+            content="서윤은 비 내리던 날의 약속을 기억한다.",
+            state="remembered",
+            time_expression="10년 전",
+            scene_sequence=4,
+            evidence="그녀는 10년 전 비 내리던 날의 약속을 기억했다",
+            confidence=0.94,
+        ),
+    )
 
 
 def test_reader_returns_empty_v2_graph_when_project_has_no_current_record(tmp_path: Path) -> None:
