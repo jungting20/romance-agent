@@ -1,10 +1,12 @@
 import re
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 
 from narrative_analysis_agent.models import (
     PROJECT_GRAPH_SCHEMA_VERSION,
     AnalyzedChunk,
     Character,
+    CharacterMemory,
     Contradiction,
     Coreference,
     Document,
@@ -12,6 +14,7 @@ from narrative_analysis_agent.models import (
     Event,
     KnowledgeGraphOutput,
     Location,
+    MemoryTarget,
     Movement,
     NarrativeTime,
     ProjectKnowledgeGraphSnapshot,
@@ -31,6 +34,12 @@ type LocalId = tuple[int, str]
 type IdMap = dict[LocalId, str]
 type Entity = Character | Location | Event
 type EntityMap = dict[LocalId, str]
+
+
+@dataclass(frozen=True, slots=True)
+class RelationMerge:
+    items: tuple[Relation, ...]
+    id_map: IdMap
 
 
 class MergeInvariantError(ValueError):
@@ -53,6 +62,12 @@ def assemble_scene_graph(
         location_map,
     )
     entity_map = character_map | location_map | event_map
+    relation_merge = _merge_relations(
+        analysis.chunks,
+        existing,
+        entity_map,
+        event_map,
+    )
     graph = KnowledgeGraphOutput(
         document=_merge_documents(analysis.scene_id, analysis.chunks),
         entities=Entities(
@@ -65,11 +80,14 @@ def assemble_scene_graph(
                 location_map,
             ),
         ),
-        relations=_merge_relations(
+        relations=relation_merge.items,
+        character_memories=_merge_character_memories(
             analysis.chunks,
             existing,
-            entity_map,
+            character_map,
+            location_map,
             event_map,
+            relation_merge.id_map,
         ),
         movements=_merge_movements(
             analysis.chunks,
@@ -113,6 +131,10 @@ def rebuild_project_graph(
                 lambda graph: graph.unresolved_references,
             ),
             contradictions=_aggregate(ordered, lambda graph: graph.contradictions),
+            character_memories=_aggregate(
+                ordered,
+                lambda graph: graph.character_memories,
+            ),
         )
         snapshot = ProjectKnowledgeGraphSnapshot.model_validate(
             snapshot.model_dump(mode="python"),
@@ -551,7 +573,7 @@ def _merge_relations(
     existing: ProjectKnowledgeGraphSnapshot,
     entity_map: EntityMap,
     event_map: IdMap,
-) -> tuple[Relation, ...]:
+) -> RelationMerge:
     entries = [
         (chunk, relation)
         for chunk in _ordered_chunks(chunks)
@@ -591,6 +613,7 @@ def _merge_relations(
     existing_ids = {item.id for item in existing.relations}
     next_number = _next_id_number("relation", existing_ids)
     by_duplicate: dict[tuple[object, ...], str] = {}
+    id_map: IdMap = {}
     merged: list[Relation] = []
     for chunk, relation in rewritten:
         duplicate_key = (
@@ -602,10 +625,14 @@ def _merge_relations(
             durable_id = f"relation_{next_number:03d}"
             next_number += 1
             by_duplicate[duplicate_key] = durable_id
+        id_map[(chunk.ordinal, relation.id)] = durable_id
         candidate = relation.model_copy(update={"id": durable_id})
         if candidate not in merged:
             merged.append(candidate)
-    return tuple(sorted(merged, key=lambda item: _id_order(item.id)))
+    return RelationMerge(
+        items=tuple(sorted(merged, key=lambda item: _id_order(item.id))),
+        id_map=id_map,
+    )
 
 
 def _relation_order(chunk: AnalyzedChunk, relation: Relation) -> tuple[object, ...]:
@@ -631,6 +658,107 @@ def _relation_semantic_key(relation: Relation) -> tuple[object, ...]:
         normalize_text(relation.evidence),
         relation.inference,
         relation.confidence,
+    )
+
+
+def _merge_character_memories(
+    chunks: tuple[AnalyzedChunk, ...],
+    existing: ProjectKnowledgeGraphSnapshot,
+    character_map: IdMap,
+    location_map: IdMap,
+    event_map: IdMap,
+    relation_map: IdMap,
+) -> tuple[CharacterMemory, ...]:
+    target_maps = {
+        "character": character_map,
+        "location": location_map,
+        "event": event_map,
+        "relation": relation_map,
+    }
+    rewritten: list[tuple[AnalyzedChunk, CharacterMemory]] = []
+    for chunk in _ordered_chunks(chunks):
+        for memory in chunk.extraction.character_memories:
+            if not memory.evidence or memory.evidence not in chunk.text:
+                raise MergeInvariantError("memory evidence is not present in the source chunk")
+            rewritten.append(
+                (
+                    chunk,
+                    memory.model_copy(
+                        update={
+                            "character_id": _resolve_reference(
+                                chunk.ordinal,
+                                memory.character_id,
+                                character_map,
+                            ),
+                            "target": _rewrite_memory_target(
+                                chunk.ordinal,
+                                memory.target,
+                                target_maps,
+                            ),
+                        }
+                    ),
+                )
+            )
+
+    rewritten.sort(key=lambda entry: _memory_order(*entry))
+    next_number = _next_id_number(
+        "memory",
+        (item.id for item in existing.character_memories),
+    )
+    seen: set[tuple[object, ...]] = set()
+    merged: list[CharacterMemory] = []
+    for chunk, memory in rewritten:
+        duplicate_key = _memory_duplicate_key(chunk, memory)
+        if duplicate_key in seen:
+            continue
+        seen.add(duplicate_key)
+        merged.append(memory.model_copy(update={"id": f"memory_{next_number:03d}"}))
+        next_number += 1
+    return tuple(merged)
+
+
+def _rewrite_memory_target(
+    ordinal: int,
+    target: MemoryTarget,
+    target_maps: dict[str, IdMap],
+) -> MemoryTarget:
+    if target.reference_id is None:
+        return target
+    durable_id = _resolve_reference(
+        ordinal,
+        target.reference_id,
+        target_maps[target.kind],
+    )
+    return target.model_copy(update={"reference_id": durable_id})
+
+
+def _memory_order(
+    chunk: AnalyzedChunk,
+    memory: CharacterMemory,
+) -> tuple[object, ...]:
+    return (
+        *_memory_duplicate_key(chunk, memory),
+        memory.id,
+        chunk.ordinal,
+    )
+
+
+def _memory_duplicate_key(
+    chunk: AnalyzedChunk,
+    memory: CharacterMemory,
+) -> tuple[object, ...]:
+    return (
+        _absolute_evidence_position(chunk, memory.evidence),
+        memory.character_id,
+        memory.target.kind,
+        memory.target.reference_id or "",
+        memory.target.description,
+        normalize_text(memory.content),
+        memory.state,
+        normalize_text(memory.time_expression or ""),
+        memory.scene_sequence,
+        normalize_text(memory.evidence),
+        memory.confidence,
     )
 
 
@@ -796,9 +924,11 @@ def _with_existing_dependency_closure(
     characters = {item.id: item for item in graph.entities.characters}
     locations = {item.id: item for item in graph.entities.locations}
     events = {item.id: item for item in graph.entities.events}
+    relations = {item.id: item for item in graph.relations}
     existing_characters = {item.id: item for item in existing.entities.characters}
     existing_locations = {item.id: item for item in existing.entities.locations}
     existing_events = {item.id: item for item in existing.entities.events}
+    existing_relations = {item.id: item for item in existing.relations}
 
     pending = _graph_reference_ids(graph)
     processed: set[str] = set()
@@ -808,7 +938,12 @@ def _with_existing_dependency_closure(
         if reference in processed:
             continue
         processed.add(reference)
-        if reference in characters or reference in locations or reference in events:
+        if (
+            reference in characters
+            or reference in locations
+            or reference in events
+            or reference in relations
+        ):
             continue
         if character := existing_characters.get(reference):
             characters[reference] = character
@@ -822,6 +957,15 @@ def _with_existing_dependency_closure(
             events[reference] = event
             pending.update(event.participant_ids)
             pending.update(event.location_ids)
+            continue
+        if relation := existing_relations.get(reference):
+            relations[reference] = relation
+            pending.add(relation.source_id)
+            pending.add(relation.target_id)
+            if relation.start_event_id is not None:
+                pending.add(relation.start_event_id)
+            if relation.end_event_id is not None:
+                pending.add(relation.end_event_id)
 
     return graph.model_copy(
         update={
@@ -829,7 +973,8 @@ def _with_existing_dependency_closure(
                 characters=tuple(characters[key] for key in sorted(characters, key=_id_order)),
                 locations=tuple(locations[key] for key in sorted(locations, key=_id_order)),
                 events=tuple(events[key] for key in sorted(events, key=_id_order)),
-            )
+            ),
+            "relations": tuple(relations[key] for key in sorted(relations, key=_id_order)),
         }
     )
 
@@ -854,6 +999,8 @@ def _graph_reference_ids(graph: KnowledgeGraphOutput) -> set[str]:
             for reference in item.possible_entity_ids
         ),
         *(item.subject_id for item in graph.contradictions),
+        *(item.character_id for item in graph.character_memories),
+        *(item.target.reference_id for item in graph.character_memories),
     }
     return {reference for reference in references if reference is not None}
 
