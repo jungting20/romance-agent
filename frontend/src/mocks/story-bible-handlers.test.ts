@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type {
   ApiError,
+  CreateCharacterRequest,
   SaveWorldEntriesRequest,
   StoryBibleSnapshot,
 } from "@/app/infrastructure/api/contracts";
@@ -13,6 +14,19 @@ import {
 const API_ORIGIN = window.location.origin;
 const storyBibleUrl = `${API_ORIGIN}/api/projects/silver-garden/story-bible`;
 const saveUrl = `${storyBibleUrl}/world-entries`;
+const createCharacterUrl = `${storyBibleUrl}/characters`;
+
+const validCharacter: CreateCharacterRequest = {
+  name: " 민서 ",
+  gender: "여성",
+  age: "29세",
+  role: "서점 주인",
+  personality: "차분하다.",
+  proseStyle: "짧은 문장",
+  dialogueStyle: "정중한 말투",
+  desire: "서점을 지키고 싶다.",
+  hiddenFeeling: "다시 상처받을까 두렵다.",
+};
 
 const validRequest: SaveWorldEntriesRequest = {
   expectedRevision: 1,
@@ -47,6 +61,14 @@ async function saveWorldEntries(request: unknown, projectId = "silver-garden"): 
   });
 }
 
+async function writeCharacter(method: "POST" | "PATCH", request: unknown, characterId?: string) {
+  return fetch(characterId ? `${createCharacterUrl}/${characterId}` : createCharacterUrl, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
 describe("Story Bible persistence API handlers", () => {
   test("gets the seed Story Bible snapshot", async () => {
     const response = await getStoryBible();
@@ -57,6 +79,68 @@ describe("Story Bible persistence API handlers", () => {
       storyBible: { projectId: "silver-garden" },
       storyBibleRevision: 1,
     });
+  });
+
+  test("creates a server-identified character and preserves existing Story Bible data", async () => {
+    const before = await readSnapshot();
+    const response = await writeCharacter("POST", validCharacter);
+    const saved: StoryBibleSnapshot = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(response.headers.get("Location")).toMatch(/silver-garden-character-3$/);
+    expect(saved.storyBibleRevision).toBe(2);
+    expect(saved.storyBible.characters.slice(0, 2)).toEqual(before.storyBible.characters);
+    expect(saved.storyBible.worldEntries).toEqual(before.storyBible.worldEntries);
+    expect(saved.storyBible.characters[2]).toEqual({
+      id: "silver-garden-character-3",
+      ...validCharacter,
+      name: "민서",
+    });
+  });
+
+  test("partially updates the addressed initial protagonist and preserves every unrelated entry", async () => {
+    const before = await readSnapshot();
+    const response = await writeCharacter(
+      "PATCH",
+      { role: "온실 관리자", hiddenFeeling: "권위 있는 최신 감정" },
+      "silver-garden-character-1",
+    );
+    const saved: StoryBibleSnapshot = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(saved.storyBibleRevision).toBe(2);
+    expect(saved.storyBible.characters[0]).toEqual({
+      ...before.storyBible.characters[0],
+      role: "온실 관리자",
+      hiddenFeeling: "권위 있는 최신 감정",
+    });
+    expect(saved.storyBible.characters[1]).toEqual(before.storyBible.characters[1]);
+    expect(saved.storyBible.worldEntries).toEqual(before.storyBible.worldEntries);
+  });
+
+  test("rejects blank names and undeclared scene or memory fields without mutation", async () => {
+    const before = await readSnapshot();
+    const blank = await writeCharacter("PATCH", { name: "  " }, "silver-garden-character-1");
+    expect(blank.status).toBe(422);
+    expect(await blank.json()).toMatchObject({ code: "INVALID_CHARACTER" });
+
+    const excluded = await writeCharacter("POST", {
+      ...validCharacter,
+      currentDesire: "장면 상태",
+      previousMemories: [],
+    });
+    expect(excluded.status).toBe(400);
+    expect(await excluded.json()).toMatchObject({ code: "MALFORMED_REQUEST" });
+    expect(await readSnapshot()).toEqual(before);
+  });
+
+  test("maps a structurally valid empty update to INVALID_CHARACTER without mutation", async () => {
+    const before = await readSnapshot();
+    const response = await writeCharacter("PATCH", {}, "silver-garden-character-1");
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: "INVALID_CHARACTER" });
+    expect(await readSnapshot()).toEqual(before);
   });
 
   test.each(["get", "save"])(

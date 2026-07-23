@@ -1,15 +1,20 @@
+from collections.abc import Callable
 from dataclasses import FrozenInstanceError
 
 import pytest
 
 from apps.story_bible.domain.models import Character, StoryBible, WorldEntry
 from apps.story_bible.service.commands import (
+    CreateCharacterCommand,
     FieldError,
     SaveWorldEntriesCommand,
+    UpdateCharacterCommand,
     WorldEntryAddition,
     WorldEntryUpdate,
 )
 from apps.story_bible.service.errors import (
+    CharacterNotFoundError,
+    InvalidCharacterError,
     InvalidWorldEntriesError,
     StoryBibleRevisionConflictError,
 )
@@ -69,6 +74,112 @@ class RecordingRepository:
         self.current = StoryBibleSnapshot(story_bible=story_bible, revision=expected_revision + 1)
         return self.current
 
+    def modify(
+        self,
+        project_id: str,
+        transform: Callable[[StoryBible], StoryBible],
+    ) -> StoryBibleSnapshot:
+        self.current = StoryBibleSnapshot(
+            story_bible=transform(self.current.story_bible),
+            revision=self.current.revision + 1,
+        )
+        return self.current
+
+
+def create_character_command(**changes: str) -> CreateCharacterCommand:
+    values = {
+        "name": "  민서  ",
+        "gender": "여성",
+        "age": "29세",
+        "role": "서점 주인",
+        "personality": "차분하다",
+        "prose_style": "짧은 문장",
+        "dialogue_style": "정중한 말투",
+        "desire": "서점을 지키고 싶다",
+        "hidden_feeling": "두렵다",
+    }
+    values.update(changes)
+    return CreateCharacterCommand(**values)
+
+
+def test_create_character_appends_once_with_unique_generated_id() -> None:
+    repository = RecordingRepository()
+    generated = iter(["silver-garden-character-1", "silver-garden-character-2"])
+    service = StoryBibleService(
+        repository,
+        lambda _project_id: "unused-world-id",
+        lambda _project_id: next(generated),
+    )
+    existing_world_entries = repository.current.story_bible.world_entries
+
+    saved = service.create_character("silver-garden", create_character_command())
+
+    assert saved.revision == 2
+    assert [character.id for character in saved.story_bible.characters] == [
+        "silver-garden-character-1",
+        "silver-garden-character-2",
+    ]
+    assert saved.story_bible.characters[-1].name == "민서"
+    assert saved.story_bible.characters[-1].age == "29세"
+    assert saved.story_bible.world_entries is existing_world_entries
+
+
+@pytest.mark.parametrize("name", ["", "  \n"])
+def test_create_character_rejects_blank_name_without_modification(name: str) -> None:
+    repository = RecordingRepository()
+
+    with pytest.raises(InvalidCharacterError) as raised:
+        StoryBibleService(
+            repository,
+            lambda _project_id: "world-id",
+            lambda _project_id: "character-2",
+        ).create_character("silver-garden", create_character_command(name=name))
+
+    assert raised.value.field_errors == (FieldError("name", "인물 이름을 입력해 주세요."),)
+    assert repository.current == snapshot()
+
+
+def test_update_character_changes_only_supplied_fields() -> None:
+    repository = RecordingRepository()
+    service = StoryBibleService(
+        repository, lambda _project_id: "unused", lambda _project_id: "unused"
+    )
+    original = repository.current.story_bible.characters[0]
+    original_world_entries = repository.current.story_bible.world_entries
+
+    saved = service.update_character(
+        "silver-garden",
+        original.id,
+        UpdateCharacterCommand(name="  서윤 수정  ", age="31세", role=""),
+    )
+
+    updated = saved.story_bible.characters[0]
+    assert saved.revision == 2
+    assert updated.id == original.id
+    assert updated.name == "서윤 수정"
+    assert updated.age == "31세"
+    assert updated.role == ""
+    assert updated.desire == original.desire
+    assert saved.story_bible.world_entries is original_world_entries
+
+
+def test_update_character_rejects_empty_command_and_unknown_character() -> None:
+    repository = RecordingRepository()
+    service = StoryBibleService(
+        repository, lambda _project_id: "unused", lambda _project_id: "unused"
+    )
+
+    with pytest.raises(InvalidCharacterError) as empty:
+        service.update_character(
+            "silver-garden", "silver-garden-character-1", UpdateCharacterCommand()
+        )
+    assert empty.value.field_errors == ()
+
+    with pytest.raises(CharacterNotFoundError):
+        service.update_character("silver-garden", "missing", UpdateCharacterCommand(role="조언자"))
+
+    assert repository.current == snapshot()
+
 
 def command(
     *,
@@ -86,16 +197,22 @@ def command(
 def test_get_story_bible_delegates_to_repository() -> None:
     repository = RecordingRepository()
 
-    result = StoryBibleService(repository, lambda _project_id: "unused").get_story_bible(
-        "silver-garden"
-    )
+    result = StoryBibleService(
+        repository,
+        lambda _project_id: "unused",
+        lambda _project_id: "unused",
+    ).get_story_bible("silver-garden")
 
     assert result == snapshot()
 
 
 def test_save_normalizes_updates_and_additions_without_mutating_omitted_entries() -> None:
     repository = RecordingRepository()
-    service = StoryBibleService(repository, lambda _project_id: "silver-garden-world-2")
+    service = StoryBibleService(
+        repository,
+        lambda _project_id: "silver-garden-world-2",
+        lambda _project_id: "unused",
+    )
     original_characters = repository.current.story_bible.characters
     original_omitted = repository.current.story_bible.world_entries[1]
 
@@ -151,7 +268,11 @@ def test_save_rejects_lower_or_higher_revision_before_replace(expected_revision:
     repository = RecordingRepository()
 
     with pytest.raises(StoryBibleRevisionConflictError):
-        StoryBibleService(repository, lambda _project_id: "unused").save_world_entries(
+        StoryBibleService(
+            repository,
+            lambda _project_id: "unused",
+            lambda _project_id: "unused",
+        ).save_world_entries(
             "silver-garden",
             command(
                 expected_revision=expected_revision,
@@ -202,9 +323,11 @@ def test_invalid_command_is_all_or_nothing(
     repository = RecordingRepository()
 
     with pytest.raises(InvalidWorldEntriesError) as raised:
-        StoryBibleService(repository, lambda _project_id: "unused").save_world_entries(
-            "silver-garden", bad_command
-        )
+        StoryBibleService(
+            repository,
+            lambda _project_id: "unused",
+            lambda _project_id: "unused",
+        ).save_world_entries("silver-garden", bad_command)
 
     assert raised.value.field_errors == expected_errors
     assert repository.replace_calls == []
@@ -231,9 +354,11 @@ def test_save_translates_domain_errors_to_existing_field_errors(
     repository = RecordingRepository()
 
     with pytest.raises(InvalidWorldEntriesError) as raised:
-        StoryBibleService(repository, lambda _project_id: "world-2").save_world_entries(
-            "silver-garden", command(additions=(addition,))
-        )
+        StoryBibleService(
+            repository,
+            lambda _project_id: "world-2",
+            lambda _project_id: "unused",
+        ).save_world_entries("silver-garden", command(additions=(addition,)))
 
     assert raised.value.message == "세계관 항목을 확인해 주세요."
     assert raised.value.field_errors == (expected_error,)
@@ -244,7 +369,11 @@ def test_save_accumulates_all_domain_field_errors_for_one_addition() -> None:
     repository = RecordingRepository()
 
     with pytest.raises(InvalidWorldEntriesError) as raised:
-        StoryBibleService(repository, lambda _project_id: "world-2").save_world_entries(
+        StoryBibleService(
+            repository,
+            lambda _project_id: "world-2",
+            lambda _project_id: "unused",
+        ).save_world_entries(
             "silver-garden",
             command(additions=(WorldEntryAddition("place", "  ", "\n"),)),
         )
@@ -264,7 +393,11 @@ def test_invalid_addition_does_not_generate_an_id() -> None:
         raise AssertionError("ID generator must not run for invalid commands")
 
     with pytest.raises(InvalidWorldEntriesError) as raised:
-        StoryBibleService(repository, fail_if_called).save_world_entries(
+        StoryBibleService(
+            repository,
+            fail_if_called,
+            lambda _project_id: "unused",
+        ).save_world_entries(
             "silver-garden",
             command(additions=(WorldEntryAddition("place", "  ", "설명"),)),
         )
@@ -285,7 +418,11 @@ def test_generated_ids_avoid_existing_and_same_command_collisions() -> None:
             "silver-garden-world-4",
         ]
     )
-    service = StoryBibleService(repository, lambda _project_id: next(generated))
+    service = StoryBibleService(
+        repository,
+        lambda _project_id: next(generated),
+        lambda _project_id: "unused",
+    )
 
     saved = service.save_world_entries(
         "silver-garden",

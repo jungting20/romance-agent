@@ -2,8 +2,13 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { ApiRequestError } from "./api-client";
-import type { SaveWorldEntriesRequest } from "./contracts";
-import { getStoryBible, saveWorldEntries } from "./story-bible-api";
+import type { CreateCharacterRequest, SaveWorldEntriesRequest } from "./contracts";
+import {
+  createStoryBibleCharacter,
+  getStoryBible,
+  saveWorldEntries,
+  updateStoryBibleCharacter,
+} from "./story-bible-api";
 import { server } from "@/mocks/server";
 
 const saveRequest: SaveWorldEntriesRequest = {
@@ -19,6 +24,18 @@ const saveRequest: SaveWorldEntriesRequest = {
   additions: [
     { kind: "rule", title: "왕실의 서약", description: "서약을 어기면 계승권을 잃는다." },
   ],
+};
+
+const characterRequest: CreateCharacterRequest = {
+  name: "민서",
+  gender: "여성",
+  age: "29세",
+  role: "서점 주인",
+  personality: "차분하다.",
+  proseStyle: "짧은 문장",
+  dialogueStyle: "정중한 말투",
+  desire: "서점을 지키고 싶다.",
+  hiddenFeeling: "다시 상처받을까 두렵다.",
 };
 
 describe("Story Bible API adapters", () => {
@@ -93,5 +110,79 @@ describe("Story Bible API adapters", () => {
 
     await expect(response).rejects.toBeInstanceOf(ApiRequestError);
     await expect(response).rejects.toMatchObject({ status, error: { code } });
+  });
+
+  it("posts every mutable field without an id and consumes the authoritative snapshot", async () => {
+    let observedBody: unknown;
+    server.use(
+      http.post("/api/projects/:projectId/story-bible/characters", async ({ request }) => {
+        observedBody = await request.json();
+        return HttpResponse.json(
+          {
+            storyBible: {
+              projectId: "silver garden/2026",
+              characters: [{ id: "server-character-9", ...characterRequest, name: "서버 민서" }],
+              worldEntries: [],
+            },
+            storyBibleRevision: 9,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+
+    await expect(
+      createStoryBibleCharacter("silver garden/2026", characterRequest),
+    ).resolves.toMatchObject({
+      storyBibleRevision: 9,
+      storyBible: { characters: [{ id: "server-character-9", name: "서버 민서" }] },
+    });
+    expect(observedBody).toEqual(characterRequest);
+    expect(observedBody).not.toHaveProperty("id");
+  });
+
+  it("patches the encoded immutable character resource without revision data", async () => {
+    let observedBody: unknown;
+    server.use(
+      http.patch(
+        "/api/projects/:projectId/story-bible/characters/:characterId",
+        async ({ params, request }) => {
+          expect(params).toMatchObject({
+            projectId: "silver garden/2026",
+            characterId: "character/9",
+          });
+          observedBody = await request.json();
+          return HttpResponse.json({
+            storyBible: { projectId: params.projectId, characters: [], worldEntries: [] },
+            storyBibleRevision: 3,
+          });
+        },
+      ),
+    );
+
+    await updateStoryBibleCharacter("silver garden/2026", "character/9", {
+      hiddenFeeling: "권위 응답을 기다린다.",
+    });
+    expect(observedBody).toEqual({ hiddenFeeling: "권위 응답을 기다린다." });
+    expect(observedBody).not.toHaveProperty("id");
+    expect(observedBody).not.toHaveProperty("expectedRevision");
+  });
+
+  it("rejects an empty character update before issuing a PATCH request", async () => {
+    let requests = 0;
+    server.use(
+      http.patch("/api/projects/:projectId/story-bible/characters/:characterId", () => {
+        requests += 1;
+        return HttpResponse.json({});
+      }),
+    );
+
+    await expect(
+      updateStoryBibleCharacter("silver-garden", "silver-garden-character-1", {}),
+    ).rejects.toMatchObject({
+      status: 422,
+      error: { code: "INVALID_CHARACTER" },
+    });
+    expect(requests).toBe(0);
   });
 });

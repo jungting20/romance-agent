@@ -1,9 +1,12 @@
 import type {
+  ApiCharacter,
   ApiError,
   ApiProject,
+  CreateCharacterRequest,
   ProjectWorkspaceResponse,
   SaveWorldEntriesRequest,
   StoryBibleSnapshot,
+  UpdateCharacterRequest,
 } from "@/app/infrastructure/api/contracts";
 import type { PersistedManuscriptSession } from "@/mocks/data/manuscript-session-store";
 
@@ -24,6 +27,11 @@ export const apiErrors = {
   storyBibleNotFound: {
     code: "STORY_BIBLE_NOT_FOUND",
     message: "세계관 정보를 찾을 수 없습니다.",
+    fieldErrors: [],
+  },
+  characterNotFound: {
+    code: "CHARACTER_NOT_FOUND",
+    message: "인물을 찾을 수 없습니다.",
     fieldErrors: [],
   },
   storyBibleRevisionConflict: {
@@ -93,14 +101,24 @@ const initialProjectWorkspaces: readonly ProjectWorkspaceResponse[] = [
         {
           id: "silver-garden-character-1",
           name: "서윤",
+          gender: "여성",
+          age: "31세",
           role: "protagonist",
+          personality: "단호하고 세심하다.",
+          proseStyle: "감각적인 묘사와 짧은 문장을 쓴다.",
+          dialogueStyle: "감정을 숨기며 간결하게 말한다.",
           desire: "상대에게 흔들리지 않고 자신의 선택을 지키고 싶다.",
           hiddenFeeling: "여전히 상대의 진심을 확인하고 싶다.",
         },
         {
           id: "silver-garden-character-2",
           name: "도현",
+          gender: "남성",
+          age: "33세",
           role: "protagonist",
+          personality: "침착하고 주의 깊다.",
+          proseStyle: "절제된 문장으로 움직임을 묘사한다.",
+          dialogueStyle: "직접적이지만 말끝을 흐린다.",
           desire: "과거의 오해를 풀고 다시 신뢰받고 싶다.",
           hiddenFeeling: "이번에는 먼저 놓치고 싶지 않다.",
         },
@@ -243,6 +261,99 @@ export function getMockStoryBibleSnapshot(projectId: string): StoryBibleSnapshot
   };
 }
 
+export type SaveMockCharacterResult =
+  | { status: "not-found" }
+  | { status: "character-not-found" }
+  | { status: "invalid"; error: ApiError }
+  | { status: "saved"; snapshot: StoryBibleSnapshot; character: ApiCharacter };
+
+function invalidCharacter(): ApiError {
+  return {
+    code: "INVALID_CHARACTER",
+    message: "인물 정보를 확인해 주세요.",
+    fieldErrors: [{ path: "name", message: "이름을 입력해 주세요." }],
+  };
+}
+
+function emptyCharacterUpdate(): ApiError {
+  return {
+    code: "INVALID_CHARACTER",
+    message: "수정할 인물 정보가 필요합니다.",
+    fieldErrors: [],
+  };
+}
+
+function characterSnapshot(
+  workspaceIndex: number,
+  storyBibleRevision: number,
+  character: ApiCharacter,
+): SaveMockCharacterResult {
+  const workspace = projectWorkspaces[workspaceIndex];
+  storyBibleRevisions.set(workspace.project.id, storyBibleRevision + 1);
+  return {
+    status: "saved",
+    character: structuredClone(character),
+    snapshot: {
+      storyBible: structuredClone(workspace.storyBible),
+      storyBibleRevision: storyBibleRevision + 1,
+    },
+  };
+}
+
+export function createMockCharacter(
+  projectId: string,
+  request: CreateCharacterRequest,
+): SaveMockCharacterResult {
+  const workspaceIndex = projectWorkspaces.findIndex(({ project }) => project.id === projectId);
+  const revision = storyBibleRevisions.get(projectId);
+  if (workspaceIndex < 0 || revision === undefined) return { status: "not-found" };
+  if (!request.name.trim()) return { status: "invalid", error: invalidCharacter() };
+
+  const workspace = projectWorkspaces[workspaceIndex];
+  const ids = new Set(workspace.storyBible.characters.map(({ id }) => id));
+  let sequence = 1;
+  while (ids.has(`${projectId}-character-${sequence}`)) sequence += 1;
+  const character: ApiCharacter = {
+    id: `${projectId}-character-${sequence}`,
+    ...request,
+    name: request.name.trim(),
+  };
+  workspace.storyBible = {
+    ...workspace.storyBible,
+    characters: [...workspace.storyBible.characters, character],
+  };
+  return characterSnapshot(workspaceIndex, revision, character);
+}
+
+export function updateMockCharacter(
+  projectId: string,
+  characterId: string,
+  request: UpdateCharacterRequest,
+): SaveMockCharacterResult {
+  const workspaceIndex = projectWorkspaces.findIndex(({ project }) => project.id === projectId);
+  const revision = storyBibleRevisions.get(projectId);
+  if (workspaceIndex < 0 || revision === undefined) return { status: "not-found" };
+  if (Object.keys(request).length === 0) {
+    return { status: "invalid", error: emptyCharacterUpdate() };
+  }
+  if (request.name !== undefined && !request.name.trim()) {
+    return { status: "invalid", error: invalidCharacter() };
+  }
+  const workspace = projectWorkspaces[workspaceIndex];
+  const characterIndex = workspace.storyBible.characters.findIndex(({ id }) => id === characterId);
+  if (characterIndex < 0) return { status: "character-not-found" };
+  const current = workspace.storyBible.characters[characterIndex];
+  const character: ApiCharacter = {
+    ...current,
+    ...request,
+    ...(request.name === undefined ? {} : { name: request.name.trim() }),
+  };
+  const characters = [...workspace.storyBible.characters];
+  characters[characterIndex] = character;
+  workspace.storyBible = { ...workspace.storyBible, characters };
+  return characterSnapshot(workspaceIndex, revision, character);
+}
+
 export type SaveMockWorldEntriesResult =
   | { status: "not-found" }
   | { status: "revision-conflict" }
@@ -272,8 +383,14 @@ export function saveMockWorldEntries(
     return {
       status: "invalid",
       error: invalidWorldEntries("수정하거나 추가할 세계관 항목이 필요합니다.", [
-        { path: "updates", message: "수정 또는 추가 항목을 한 개 이상 입력해 주세요." },
-        { path: "additions", message: "수정 또는 추가 항목을 한 개 이상 입력해 주세요." },
+        {
+          path: "updates",
+          message: "수정 또는 추가 항목을 한 개 이상 입력해 주세요.",
+        },
+        {
+          path: "additions",
+          message: "수정 또는 추가 항목을 한 개 이상 입력해 주세요.",
+        },
       ]),
     };
   }
@@ -281,7 +398,10 @@ export function saveMockWorldEntries(
   const blankFieldErrors: ApiError["fieldErrors"] = [];
   request.updates.forEach((entry, index) => {
     if (!entry.title.trim()) {
-      blankFieldErrors.push({ path: `updates[${index}].title`, message: "제목을 입력해 주세요." });
+      blankFieldErrors.push({
+        path: `updates[${index}].title`,
+        message: "제목을 입력해 주세요.",
+      });
     }
     if (!entry.description.trim()) {
       blankFieldErrors.push({
@@ -318,7 +438,10 @@ export function saveMockWorldEntries(
       return {
         status: "invalid",
         error: invalidWorldEntries("같은 세계관 항목을 두 번 수정할 수 없습니다.", [
-          { path: `updates[${index}].id`, message: "수정 항목 식별자가 중복되었습니다." },
+          {
+            path: `updates[${index}].id`,
+            message: "수정 항목 식별자가 중복되었습니다.",
+          },
         ]),
       };
     }
@@ -345,7 +468,11 @@ export function saveMockWorldEntries(
   const updatedEntries = workspace.storyBible.worldEntries.map((entry) => {
     const update = updatesById.get(entry.id);
     return update
-      ? { ...update, title: update.title.trim(), description: update.description.trim() }
+      ? {
+          ...update,
+          title: update.title.trim(),
+          description: update.description.trim(),
+        }
       : entry;
   });
   const allocatedIds = new Set(worldEntryIds);

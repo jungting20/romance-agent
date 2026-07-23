@@ -3,7 +3,7 @@ import { deepEqual } from "@tanstack/react-router";
 export const contextModes = ["manuscript", "characters", "world"] as const;
 
 export type ContextMode = (typeof contextModes)[number];
-export type WorkspacePanel = "world-editor";
+export type WorkspacePanel = "world-editor" | "character-editor";
 
 export interface WritingWorkspaceSearch extends Record<string, unknown> {
   tab?: ContextMode;
@@ -15,7 +15,11 @@ export function parseContextMode(value: unknown): ContextMode | undefined {
 }
 
 export function parseWorkspacePanel(value: unknown): WorkspacePanel | undefined {
-  return value === "world-editor" ? value : undefined;
+  return value === "world-editor" || value === "character-editor" ? value : undefined;
+}
+
+export function parseCharacterId(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 interface WorkspaceNavigationLocation {

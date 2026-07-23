@@ -17,10 +17,18 @@ def _new_world_entry_id(project_id: str) -> str:
     return f"{project_id}-world-{uuid.uuid4().hex}"
 
 
+def _new_character_id(project_id: str) -> str:
+    return f"{project_id}-character-{uuid.uuid4().hex}"
+
+
 def get_story_bible_service() -> StoryBibleService:
     try:
         repository = FileStoryBibleRepository(Path(os.environ["ROMANCE_AGENT_DATA_ROOT"]))
-        return StoryBibleService(repository, _new_world_entry_id)
+        return StoryBibleService(
+            repository,
+            _new_world_entry_id,
+            _new_character_id,
+        )
     except Exception as error:
         logger.exception("Could not compose Story Bible service")
         raise StoryBibleDependencyError from error

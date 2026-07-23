@@ -9,6 +9,7 @@ from apps.story_bible.domain.models import Character, StoryBible, WorldEntry
 from apps.story_bible.repository import story_bible as repository_module
 from apps.story_bible.repository.story_bible import FileStoryBibleRepository
 from apps.story_bible.service.errors import (
+    ProjectNotFoundError,
     StoryBibleNotFoundError,
     StoryBiblePersistenceError,
     StoryBibleRevisionConflictError,
@@ -90,8 +91,66 @@ def test_get_reloads_durable_envelope_in_a_new_repository(tmp_path: Path) -> Non
     assert first.story_bible == story_bible()
 
 
-def test_missing_story_bible_raises_not_found(tmp_path: Path) -> None:
+def test_v1_character_fields_decode_with_empty_defaults_and_migrate_on_write(
+    tmp_path: Path,
+) -> None:
+    path = write_story_bible(tmp_path)
+    repository = FileStoryBibleRepository(tmp_path)
+
+    loaded = repository.get("silver-garden")
+    character = loaded.story_bible.characters[0]
+
+    assert character.gender == ""
+    assert character.age == ""
+    assert character.role == "protagonist"
+    assert character.personality == ""
+    assert character.prose_style == ""
+    assert character.dialogue_style == ""
+    assert character.desire == "선택을 지키고 싶다."
+    assert character.hidden_feeling == "진심을 확인하고 싶다."
+
+    saved = repository.modify("silver-garden", lambda current: current)
+    document = json.loads(path.read_text(encoding="utf-8"))
+
+    assert saved.revision == 2
+    assert document["schemaVersion"] == 2
+    assert document["storyBible"]["characters"][0] == {
+        "id": "silver-garden-character-1",
+        "name": "서윤",
+        "gender": "",
+        "age": "",
+        "role": "protagonist",
+        "personality": "",
+        "proseStyle": "",
+        "dialogueStyle": "",
+        "desire": "선택을 지키고 싶다.",
+        "hiddenFeeling": "진심을 확인하고 싶다.",
+    }
+
+
+def test_missing_project_directory_raises_project_not_found(tmp_path: Path) -> None:
+    with pytest.raises(ProjectNotFoundError):
+        FileStoryBibleRepository(tmp_path).get("silver-garden")
+
+
+def test_existing_project_without_story_bible_raises_story_bible_not_found(
+    tmp_path: Path,
+) -> None:
+    story_bible_path(tmp_path).parent.mkdir(parents=True)
+
     with pytest.raises(StoryBibleNotFoundError):
+        FileStoryBibleRepository(tmp_path).get("silver-garden")
+
+
+def test_v1_character_with_non_protagonist_role_is_a_persistence_error(
+    tmp_path: Path,
+) -> None:
+    path = write_story_bible(tmp_path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["storyBible"]["characters"][0]["role"] = "supporting"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(StoryBiblePersistenceError):
         FileStoryBibleRepository(tmp_path).get("silver-garden")
 
 
@@ -262,7 +321,7 @@ def test_replace_writes_expected_envelope_and_reloads(tmp_path: Path) -> None:
     assert FileStoryBibleRepository(tmp_path).get("silver-garden") == saved
     document = json.loads(story_bible_path(tmp_path).read_text(encoding="utf-8"))
     assert document == {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "storyBibleRevision": 2,
         "storyBible": {
             "projectId": "silver-garden",
@@ -270,7 +329,12 @@ def test_replace_writes_expected_envelope_and_reloads(tmp_path: Path) -> None:
                 {
                     "id": "silver-garden-character-1",
                     "name": "서윤",
+                    "gender": "",
+                    "age": "",
                     "role": "protagonist",
+                    "personality": "",
+                    "proseStyle": "",
+                    "dialogueStyle": "",
                     "desire": "선택을 지키고 싶다.",
                     "hiddenFeeling": "진심을 확인하고 싶다.",
                 }
@@ -363,3 +427,81 @@ def test_project_lock_allows_only_one_concurrent_replace(tmp_path: Path) -> None
 
     assert sorted(outcomes) == ["conflict", "saved"]
     assert FileStoryBibleRepository(tmp_path).get("silver-garden").revision == 2
+
+
+def test_modify_serializes_different_character_updates_without_lost_data(
+    tmp_path: Path,
+) -> None:
+    write_story_bible(tmp_path)
+    repository = FileStoryBibleRepository(tmp_path)
+    repository.modify(
+        "silver-garden",
+        lambda current: current.add_character(
+            Character("silver-garden-character-2", "민서", "조언자", "목표", "감정")
+        ),
+    )
+    barrier = threading.Barrier(2)
+
+    def update(character_id: str, role: str) -> None:
+        barrier.wait()
+
+        def transform(current: StoryBible) -> StoryBible:
+            existing = next(item for item in current.characters if item.id == character_id)
+            return current.update_character(
+                Character(
+                    id=existing.id,
+                    name=existing.name,
+                    role=role,
+                    desire=existing.desire,
+                    hidden_feeling=existing.hidden_feeling,
+                )
+            )
+
+        FileStoryBibleRepository(tmp_path).modify("silver-garden", transform)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(
+            executor.map(
+                lambda values: update(*values),
+                [
+                    ("silver-garden-character-1", "주인공"),
+                    ("silver-garden-character-2", "조력자"),
+                ],
+            )
+        )
+
+    saved = repository.get("silver-garden")
+    assert saved.revision == 4
+    assert [character.role for character in saved.story_bible.characters] == [
+        "주인공",
+        "조력자",
+    ]
+
+
+def test_same_character_sequential_modifications_keep_last_successful_save(
+    tmp_path: Path,
+) -> None:
+    write_story_bible(tmp_path)
+    repository = FileStoryBibleRepository(tmp_path)
+
+    def with_role(role: str):
+        def transform(current: StoryBible) -> StoryBible:
+            character = current.characters[0]
+            return current.update_character(
+                Character(
+                    id=character.id,
+                    name=character.name,
+                    role=role,
+                    desire=character.desire,
+                    hidden_feeling=character.hidden_feeling,
+                )
+            )
+
+        return transform
+
+    repository.modify("silver-garden", with_role("첫 번째"))
+    repository.modify("silver-garden", with_role("두 번째"))
+
+    saved = repository.get("silver-garden")
+    assert saved.revision == 3
+    assert saved.story_bible.characters[0].role == "두 번째"

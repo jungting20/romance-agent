@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RouterProvider } from "@tanstack/react-router";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createBrowserHistory, RouterProvider } from "@tanstack/react-router";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -13,7 +13,7 @@ import type {
   SaveWorldEntriesRequest,
   StoryBibleSnapshot,
 } from "@/app/infrastructure/api/contracts";
-import { createAppMemoryRouter } from "@/app/app";
+import { createAppMemoryRouter, createAppRouter } from "@/app/app";
 import { findMockWorkspace } from "@/mocks/data/project-workspaces";
 import { server } from "@/mocks/server";
 
@@ -136,6 +136,366 @@ describe("WritingWorkspacePage", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "원고 목차" })).toBeInTheDocument();
     expect(router.state.location.search).toEqual({});
+  });
+
+  test("reconstructs initial protagonist editing from the URL with immutable ID and all fields", async () => {
+    setViewportWidth(1024);
+    const { router } = renderWorkspace(
+      "/projects/silver-garden/write?panel=character-editor&characterId=silver-garden-character-1",
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "서윤 수정" });
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({
+        tab: "characters",
+        panel: "character-editor",
+        characterId: "silver-garden-character-1",
+      }),
+    );
+    expect(within(dialog).getByLabelText("인물 ID")).toHaveValue("silver-garden-character-1");
+    expect(within(dialog).getByLabelText("인물 ID")).toHaveAttribute("readonly");
+    expect(within(dialog).getByRole("textbox", { name: "이름 *" })).toHaveValue("서윤");
+    expect(within(dialog).getByRole("textbox", { name: "성별" })).toHaveValue("여성");
+    expect(within(dialog).getByRole("textbox", { name: "나이" })).toHaveAttribute("type", "text");
+    for (const label of ["역할", "성격", "문체", "대사 스타일", "기본 욕망", "숨은 감정"]) {
+      expect(within(dialog).getByRole("textbox", { name: label })).toBeInTheDocument();
+    }
+    expect(dialog).not.toHaveTextContent("이전 기억");
+    expect(dialog).not.toHaveTextContent("현재 욕망");
+  });
+
+  test("creates a character with all mutable fields, trusts the server ID, and preserves existing cards", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?tab=characters");
+    await user.click(await screen.findByRole("button", { name: "새 인물 등록" }));
+    const dialog = screen.getByRole("dialog", { name: "새 인물 등록" });
+    expect(within(dialog).queryByLabelText("인물 ID")).not.toBeInTheDocument();
+
+    const values: Record<string, string> = {
+      "이름 *": "민서",
+      성별: "여성",
+      나이: "스물아홉",
+      역할: "서점 주인",
+      성격: "차분하다.",
+      문체: "짧은 문장",
+      "대사 스타일": "정중한 말투",
+      "기본 욕망": "서점을 지키고 싶다.",
+      "숨은 감정": "다시 상처받을까 두렵다.",
+    };
+    for (const [label, value] of Object.entries(values)) {
+      await user.type(within(dialog).getByRole("textbox", { name: label }), value);
+    }
+    await user.click(within(dialog).getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    expect(screen.getByRole("button", { name: "민서 인물 수정" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "서윤 인물 수정" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "도현 인물 수정" })).toBeInTheDocument();
+    const status = screen.getByText("민서 인물을 저장했어요.");
+    expect(status).toBeVisible();
+    expect(status).toHaveAttribute("aria-live", "polite");
+  });
+
+  test("edits an initial protagonist and renders the authoritative last-save snapshot", async () => {
+    setViewportWidth(1024);
+    const workspace = getWorkspace();
+    let requestBody: unknown;
+    server.use(
+      http.patch(
+        "/api/projects/:projectId/story-bible/characters/:characterId",
+        async ({ params, request }) => {
+          expect(params.characterId).toBe("silver-garden-character-1");
+          requestBody = await request.json();
+          return HttpResponse.json({
+            storyBibleRevision: 11,
+            storyBible: {
+              ...workspace.storyBible,
+              characters: workspace.storyBible.characters.map((character) =>
+                character.id === params.characterId
+                  ? { ...character, name: "서버 서윤", hiddenFeeling: "서버가 확정한 마지막 감정" }
+                  : character,
+              ),
+            },
+          });
+        },
+      ),
+    );
+    const user = userEvent.setup();
+    renderWorkspace(
+      "/projects/silver-garden/write?tab=characters&panel=character-editor&characterId=silver-garden-character-1",
+    );
+    const feeling = await screen.findByRole("textbox", { name: "숨은 감정" });
+    await user.clear(feeling);
+    await user.type(feeling, "로컬 마지막 감정");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByRole("button", { name: "서버 서윤 인물 수정" })).toBeInTheDocument();
+    expect(screen.getByText(/서버가 확정한 마지막 감정/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "도현 인물 수정" })).toBeInTheDocument();
+    expect(requestBody).toEqual({ hiddenFeeling: "로컬 마지막 감정" });
+    expect(requestBody).not.toHaveProperty("id");
+    expect(requestBody).not.toHaveProperty("expectedRevision");
+  });
+
+  test("shows normalized-name validation and focuses the name without submitting", async () => {
+    setViewportWidth(1024);
+    let requests = 0;
+    server.use(
+      http.post("/api/projects/:projectId/story-bible/characters", () => {
+        requests += 1;
+        return HttpResponse.json({});
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=characters&panel=character-editor");
+    const name = await screen.findByRole("textbox", { name: "이름 *" });
+    await user.type(name, "   ");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("이름을 입력해 주세요.");
+    expect(name).toHaveFocus();
+    expect(requests).toBe(0);
+  });
+
+  test("uses product validation for an untouched empty create name", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    renderWorkspace("/projects/silver-garden/write?tab=characters&panel=character-editor");
+    const name = await screen.findByRole("textbox", { name: "이름 *" });
+    const save = screen.getByRole("button", { name: "저장" });
+
+    expect(save).toBeEnabled();
+    await user.click(save);
+    expect(screen.getByRole("alert")).toHaveTextContent("이름을 입력해 주세요.");
+    expect(name).toHaveFocus();
+  });
+
+  test("does not treat whitespace-only changes to an existing name as a PATCH", async () => {
+    setViewportWidth(1024);
+    let requests = 0;
+    server.use(
+      http.patch("/api/projects/:projectId/story-bible/characters/:characterId", () => {
+        requests += 1;
+        return HttpResponse.json({});
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace(
+      "/projects/silver-garden/write?tab=characters&panel=character-editor&characterId=silver-garden-character-1",
+    );
+    const name = await screen.findByRole("textbox", { name: "이름 *" });
+    await user.type(name, "   ");
+
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(requests).toBe(0);
+  });
+
+  test("preserves a failed character draft and allows retry without duplicate submission", async () => {
+    setViewportWidth(1024);
+    let requests = 0;
+    server.use(
+      http.patch("/api/projects/:projectId/story-bible/characters/:characterId", async () => {
+        requests += 1;
+        await delay(20);
+        return HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+          { status: 500 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace(
+      "/projects/silver-garden/write?tab=characters&panel=character-editor&characterId=silver-garden-character-1",
+    );
+    const feeling = await screen.findByRole("textbox", { name: "숨은 감정" });
+    await user.clear(feeling);
+    await user.type(feeling, "실패 뒤에도 남는 초안");
+    const save = screen.getByRole("button", { name: "저장" });
+    await user.dblClick(save);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("입력한 내용은 그대로 유지했어요");
+    expect(feeling).toHaveValue("실패 뒤에도 남는 초안");
+    expect(requests).toBe(1);
+    await user.click(screen.getByRole("button", { name: "다시 저장" }));
+    await waitFor(() => expect(requests).toBe(2));
+  });
+
+  test("guards dirty character close and tab navigation until discard is confirmed", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace(
+      "/projects/silver-garden/write?tab=characters&panel=character-editor&characterId=silver-garden-character-1",
+    );
+    const personality = await screen.findByRole("textbox", { name: "성격" });
+    await user.type(personality, " 지킬 초안");
+    await expectUnloadProtection(router);
+    await user.click(screen.getByRole("button", { name: "인물 편집기 닫기" }));
+    await user.click(screen.getByRole("button", { name: "계속 편집" }));
+    expect(personality).toHaveValue("단호하고 세심하다. 지킬 초안");
+
+    void router.navigate({
+      to: "/projects/$projectId/write",
+      params: { projectId: "silver-garden" },
+      search: { tab: "world" },
+    });
+    expect(
+      await screen.findByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+    expect(router.state.location.search).toMatchObject({ tab: "characters" });
+    await user.click(screen.getByRole("button", { name: "변경사항 버리기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+  });
+
+  test("keeps the character draft open when confirmed navigation is later blocked by manuscript flush", async () => {
+    setViewportWidth(1024);
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", () =>
+        HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "실패", fieldErrors: [] },
+          { status: 500 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    const { container, router } = renderWorkspace(
+      "/projects/silver-garden/write?tab=characters&panel=character-editor&characterId=silver-garden-character-1",
+    );
+    const manuscript = await waitFor(() => {
+      const element = container.querySelector<HTMLTextAreaElement>('[aria-label="원고 본문"]');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    fireEvent.change(manuscript, { target: { value: "탐색 전에 실패할 원고" } });
+    const personality = await screen.findByRole("textbox", { name: "성격" });
+    await user.type(personality, " 탐색 실패 뒤에도 남는 인물 초안");
+
+    void router.navigate({ to: "/" });
+    await user.click(await screen.findByRole("button", { name: "변경사항 버리기" }));
+
+    await waitFor(() => expect(screen.getByText("저장 실패")).toBeInTheDocument());
+    expect(screen.getByRole("textbox", { name: "성격" })).toHaveValue(
+      "단호하고 세심하다. 탐색 실패 뒤에도 남는 인물 초안",
+    );
+    expect(router.state.location.search).toEqual({
+      tab: "characters",
+      panel: "character-editor",
+      characterId: "silver-garden-character-1",
+    });
+  });
+
+  test.each(["button", "escape", "overlay"] as const)(
+    "completes a confirmed dirty %s close without reopening discard",
+    async (closeMethod) => {
+      setViewportWidth(1024);
+      const user = userEvent.setup();
+      const { router } = renderWorkspace(
+        "/projects/silver-garden/write?tab=characters&panel=character-editor&characterId=silver-garden-character-1",
+      );
+      await user.type(await screen.findByRole("textbox", { name: "성격" }), " 폐기");
+      if (closeMethod === "button") {
+        await user.click(screen.getByRole("button", { name: "인물 편집기 닫기" }));
+      } else if (closeMethod === "escape") {
+        await user.keyboard("{Escape}");
+      } else {
+        const overlay = document.querySelector<HTMLElement>('[data-slot="sheet-overlay"]');
+        expect(overlay).not.toBeNull();
+        fireEvent.pointerDown(overlay!);
+        fireEvent.click(overlay!);
+      }
+      await user.click(await screen.findByRole("button", { name: "변경사항 버리기" }));
+
+      await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+      expect(screen.queryByRole("dialog", { name: "서윤 수정" })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  test("replays a clean character editor open through Back and Forward", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace("/projects/silver-garden/write?tab=characters");
+    await user.click(await screen.findByRole("button", { name: "서윤 인물 수정" }));
+    expect(await screen.findByRole("dialog", { name: "서윤 수정" })).toBeInTheDocument();
+
+    router.history.back();
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    expect(screen.queryByRole("dialog", { name: "서윤 수정" })).not.toBeInTheDocument();
+
+    router.history.forward();
+    expect(await screen.findByRole("dialog", { name: "서윤 수정" })).toBeInTheDocument();
+  });
+
+  test("blocks dirty browser Back until character discard is confirmed", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router, unmount } = renderBrowserWorkspace(
+      "/projects/silver-garden/write?tab=characters",
+    );
+    await user.click(await screen.findByRole("button", { name: "서윤 인물 수정" }));
+    await user.type(await screen.findByRole("textbox", { name: "성격" }), " 지킬 초안");
+    await expectUnloadProtection(router);
+
+    router.history.back();
+    expect(
+      await screen.findByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "계속 편집" }));
+    expect(router.state.location.search).toMatchObject({ panel: "character-editor" });
+    expect(screen.getByRole("textbox", { name: "성격" })).toHaveValue(
+      "단호하고 세심하다. 지킬 초안",
+    );
+
+    router.history.back();
+    await user.click(await screen.findByRole("button", { name: "변경사항 버리기" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+
+    unmount();
+    router.history.destroy();
+  });
+
+  test("models a character mutation 404 as unavailable while preserving the draft", async () => {
+    setViewportWidth(1024);
+    server.use(
+      http.patch("/api/projects/:projectId/story-bible/characters/:characterId", () =>
+        HttpResponse.json(
+          { code: "CHARACTER_NOT_FOUND", message: "인물을 찾을 수 없습니다.", fieldErrors: [] },
+          { status: 404 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWorkspace(
+      "/projects/silver-garden/write?tab=characters&panel=character-editor&characterId=silver-garden-character-1",
+    );
+    const feeling = await screen.findByRole("textbox", { name: "숨은 감정" });
+    await user.clear(feeling);
+    await user.type(feeling, "404 뒤에도 남는 초안");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("더 이상 편집할 수 없어요");
+    expect(feeling).toHaveValue("404 뒤에도 남는 초안");
+    expect(feeling).toBeDisabled();
+    expect(screen.getByRole("button", { name: "다시 저장" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "등장인물 목록으로 돌아가기" })).toBeInTheDocument();
+  });
+
+  test("stacks the character editor over mobile Context and restores launch focus", async () => {
+    setViewportWidth(375);
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(await screen.findByRole("tab", { name: "인물 보기" }));
+    expect(screen.getByRole("dialog", { name: "인물 보기" })).toBeInTheDocument();
+    const launch = screen.getByRole("button", { name: "새 인물 등록" });
+    await user.click(launch);
+
+    expect(await screen.findByRole("dialog", { name: "새 인물 등록" })).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="sheet-content"]')).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "인물 편집기 닫기" }));
+    await waitFor(() => expect(launch).toHaveFocus());
+    expect(screen.getByRole("dialog", { name: "인물 보기" })).toBeInTheDocument();
   });
 
   test("keeps document scrolling locked to the manuscript editor region", async () => {
@@ -1680,6 +2040,24 @@ function renderWorkspace(initialUrl = "/projects/silver-garden/write") {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const router = createAppMemoryRouter([initialUrl]);
+  vi.spyOn(router.history, "block");
+
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+    router,
+  };
+}
+
+function renderBrowserWorkspace(initialUrl: string) {
+  window.history.replaceState({}, "", initialUrl);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const router = createAppRouter({ history: createBrowserHistory() });
   vi.spyOn(router.history, "block");
 
   return {

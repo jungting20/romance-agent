@@ -29,6 +29,25 @@ describe("StoryBible", () => {
     expect(context.worldEntries).toHaveLength(1);
   });
 
+  test("trims only the required character name and accepts empty optional strings", async () => {
+    const { emptyCharacterDraft, validateCharacterDraft } = await import("./story-bible");
+    const draft = { ...emptyCharacterDraft, name: "  민서  ", age: "", role: "" };
+
+    expect(validateCharacterDraft(draft)).toEqual({
+      value: { ...emptyCharacterDraft, name: "민서", age: "", role: "" },
+      errors: {},
+    });
+    expect(draft.name).toBe("  민서  ");
+  });
+
+  test("rejects a character name that is blank after trimming", async () => {
+    const { emptyCharacterDraft, validateCharacterDraft } = await import("./story-bible");
+
+    expect(validateCharacterDraft({ ...emptyCharacterDraft, name: " \n " })).toEqual({
+      errors: { name: "이름을 입력해 주세요." },
+    });
+  });
+
   test("trims a valid world-entry draft without mutating the caller value", async () => {
     const { validateWorldEntryDraft } = await import("./story-bible");
     const draft = {
