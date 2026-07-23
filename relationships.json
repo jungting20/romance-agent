@@ -1,277 +1,757 @@
 {
+  "project_id": "project-live-evaluation",
   "scene_id": "scene-reunion-at-haedam",
   "scene_revision": 1,
   "scene_sequence": 7,
-  "schema_version": "scene-relationship-snapshot-v1",
-  "summary": "서윤이 옛 연인 도현과 재회하고, 친구 태경과 사촌 민아가 함께한 자리에서 인물들의 관계가 드러난다.",
-  "entities": [],
-  "places": [],
-  "relationship_events": [
+  "source_snapshot_version": 0,
+  "chunks": [
     {
-      "event_id": "sha256:65b0f0f065d5f2f2c11605b756b1ea3b6d7a3a52133bc9f71ad47b346c4ec21c",
-      "subject_key": "character:han-seoyun",
-      "object_key": "character:cha-mina",
-      "category": "family",
-      "description": "서윤과 민아는 어릴 때부터 가까이 지낸 사촌 사이다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0000",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 98,
-          "end_offset": 136,
-          "text": "두 사람은 어릴 때부터 같은 집을 오가며 자란 가까운 사촌 사이였다."
-        }
-      ]
+      "chunk_id": "scene-reunion-at-haedam:r1:0000",
+      "ordinal": 0,
+      "start_offset": 0,
+      "end_offset": 300,
+      "text": "비가 잦아든 저녁, 한서윤은 약속 시간보다 십 분 일찍 해담서점에 도착했다. 서윤은 창가 테이블에 앉아 있었고, 사촌 언니 차민아가 맞은편에서 출간 계약서를 정리하고 있었다. 두 사람은 어릴 때부터 같은 집을 오가며 자란 가까운 사촌 사이였다. 민아는 서윤의 굳은 손을 보고 말했다. \"강도현이 오늘 편집자로 오는 걸 알고도 이 자리를 잡은 건 나야. 도망치고 싶으면 지금 말해.\" 서윤은 계약서 끝을 눌렀다. \"도현과 나는 대학 때부터 삼 년 동안 연인이었어. 헤어진 지 이 년이 됐지만, 그 사람을 다시 보면 아직 마음이 흔들려.\" ",
+      "extraction": {
+        "document": {
+          "chapter_id": "scene-reunion-at-haedam",
+          "summary": "서윤이 해담서점에 도착해 사촌 민아와 도현과의 재회를 앞두고 대화한다.",
+          "narrative_time": "present"
+        },
+        "entities": {
+          "characters": [
+            {
+              "id": "character_001",
+              "canonical_name": "한서윤",
+              "aliases": [
+                "서윤"
+              ],
+              "description": "도현의 옛 연인이며 민아의 사촌 동생.",
+              "gender": "female",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "한서윤",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_002",
+              "canonical_name": "차민아",
+              "aliases": [
+                "민아"
+              ],
+              "description": "서윤의 사촌 언니.",
+              "gender": "female",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "차민아",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_003",
+              "canonical_name": "강도현",
+              "aliases": [
+                "도현"
+              ],
+              "description": "서윤의 옛 연인.",
+              "gender": "male",
+              "age": null,
+              "occupation": "편집자",
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "강도현",
+              "confidence": 0.99
+            }
+          ],
+          "locations": [
+            {
+              "id": "location_001",
+              "canonical_name": "해담서점",
+              "aliases": [],
+              "location_type": "building",
+              "parent_location_id": null,
+              "description": "장면의 만남과 출간 회의가 이루어지는 서점.",
+              "first_mention": "해담서점",
+              "confidence": 0.99
+            }
+          ],
+          "events": [
+            {
+              "id": "event_001",
+              "event_type": "ARRIVAL",
+              "name": "서윤의 도착",
+              "summary": "서윤이 해담서점에 도착했다.",
+              "participant_ids": [
+                "character_001"
+              ],
+              "location_ids": [
+                "location_001"
+              ],
+              "time_expression": null,
+              "narrative_time": "present",
+              "sequence": 0,
+              "evidence": "한서윤은 약속 시간보다 십 분 일찍 해담서점에 도착했다.",
+              "confidence": 0.99
+            }
+          ]
+        },
+        "relations": [
+          {
+            "id": "relation_001",
+            "source_id": "character_001",
+            "relation_type": "COUSIN",
+            "target_id": "character_002",
+            "state": "active",
+            "directed": false,
+            "start_event_id": null,
+            "end_event_id": null,
+            "time_expression": null,
+            "scene_sequence": 7,
+            "evidence": "두 사람은 어릴 때부터 같은 집을 오가며 자란 가까운 사촌 사이였다.",
+            "inference": false,
+            "confidence": 0.99
+          },
+          {
+            "id": "relation_002",
+            "source_id": "character_001",
+            "relation_type": "FORMER_ROMANTIC_PARTNER",
+            "target_id": "character_003",
+            "state": "ended",
+            "directed": false,
+            "start_event_id": null,
+            "end_event_id": null,
+            "time_expression": "대학 때부터 삼 년 동안",
+            "scene_sequence": 7,
+            "evidence": "도현과 나는 대학 때부터 삼 년 동안 연인이었어.",
+            "inference": false,
+            "confidence": 0.99
+          }
+        ],
+        "movements": [
+          {
+            "character_id": "character_001",
+            "from_location_id": null,
+            "to_location_id": "location_001",
+            "movement_type": "ARRIVED",
+            "event_id": "event_001",
+            "time_expression": null,
+            "sequence": 0,
+            "evidence": "한서윤은 약속 시간보다 십 분 일찍 해담서점에 도착했다.",
+            "confidence": 0.99
+          }
+        ],
+        "coreferences": [],
+        "unresolved_references": [],
+        "contradictions": []
+      }
     },
     {
-      "event_id": "sha256:46d7cb1985f6b910ad247b7813c8bfd6b3ffd1c6972675f71a290af5fb9193a8",
-      "subject_key": "character:han-seoyun",
-      "object_key": "character:kang-dohyeon",
-      "category": "romance",
-      "description": "서윤과 도현은 과거 3년간 연인이었고 이별 후에도 애정이 남아 있다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0000",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 231,
-          "end_offset": 258,
-          "text": "도현과 나는 대학 때부터 삼 년 동안 연인이었어."
-        }
-      ]
+      "chunk_id": "scene-reunion-at-haedam:r1:0001",
+      "ordinal": 1,
+      "start_offset": 250,
+      "end_offset": 550,
+      "text": "안 연인이었어. 헤어진 지 이 년이 됐지만, 그 사람을 다시 보면 아직 마음이 흔들려.\" 그때 강도현이 해담서점 안으로 들어와 두 사람의 테이블에 도착했다. 도현은 민아와 같은 출판사의 편집자였고, 민아는 기획팀장으로서 이번 소설 출간을 도현과 함께 맡고 있었다. 도현은 서윤을 바라보며 말했다. \"우리 관계가 끝났다는 건 알아. 그래도 나는 아직 너를 사랑해. 이번 계약을 핑계로 삼고 싶지는 않지만, 사과할 기회를 줘.\" 서윤은 대답하지 못한 채 빗물이 맺힌 그의 어깨만 바라보았다. 잠시 뒤 윤태경이 서점에 도착해 서윤의 옆자리에 ",
+      "extraction": {
+        "document": {
+          "chapter_id": "scene-reunion-at-haedam",
+          "summary": "도현이 해담서점에 도착해 서윤에게 여전히 사랑한다고 말한다.",
+          "narrative_time": "present"
+        },
+        "entities": {
+          "characters": [
+            {
+              "id": "character_001",
+              "canonical_name": "강도현",
+              "aliases": [
+                "도현"
+              ],
+              "description": "서윤의 옛 연인이자 민아와 함께 출간을 담당하는 편집자.",
+              "gender": "male",
+              "age": null,
+              "occupation": "편집자",
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "강도현",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_002",
+              "canonical_name": "차민아",
+              "aliases": [
+                "민아"
+              ],
+              "description": "출간 프로젝트의 기획팀장.",
+              "gender": "female",
+              "age": null,
+              "occupation": "기획팀장",
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "민아",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_003",
+              "canonical_name": "한서윤",
+              "aliases": [
+                "서윤"
+              ],
+              "description": "도현의 옛 연인.",
+              "gender": "female",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "서윤",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_004",
+              "canonical_name": "윤태경",
+              "aliases": [
+                "태경"
+              ],
+              "description": "서윤의 곁에 도착한 인물.",
+              "gender": "male",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "윤태경",
+              "confidence": 0.99
+            }
+          ],
+          "locations": [
+            {
+              "id": "location_001",
+              "canonical_name": "해담서점",
+              "aliases": [],
+              "location_type": "building",
+              "parent_location_id": null,
+              "description": "장면의 만남과 출간 회의가 이루어지는 서점.",
+              "first_mention": "해담서점",
+              "confidence": 0.99
+            }
+          ],
+          "events": [
+            {
+              "id": "event_001",
+              "event_type": "ARRIVAL",
+              "name": "도현의 도착",
+              "summary": "도현이 해담서점의 테이블에 도착했다.",
+              "participant_ids": [
+                "character_001"
+              ],
+              "location_ids": [
+                "location_001"
+              ],
+              "time_expression": null,
+              "narrative_time": "present",
+              "sequence": 0,
+              "evidence": "강도현이 해담서점 안으로 들어와 두 사람의 테이블에 도착했다.",
+              "confidence": 0.99
+            }
+          ]
+        },
+        "relations": [
+          {
+            "id": "relation_001",
+            "source_id": "character_001",
+            "relation_type": "PROJECT_COLLEAGUE",
+            "target_id": "character_002",
+            "state": "active",
+            "directed": false,
+            "start_event_id": null,
+            "end_event_id": null,
+            "time_expression": null,
+            "scene_sequence": 7,
+            "evidence": "도현은 민아와 같은 출판사의 편집자였고, 민아는 기획팀장으로서 이번 소설 출간을 도현과 함께 맡고 있었다.",
+            "inference": false,
+            "confidence": 0.99
+          },
+          {
+            "id": "relation_002",
+            "source_id": "character_001",
+            "relation_type": "FORMER_ROMANTIC_PARTNER",
+            "target_id": "character_003",
+            "state": "ended",
+            "directed": true,
+            "start_event_id": null,
+            "end_event_id": null,
+            "time_expression": null,
+            "scene_sequence": 7,
+            "evidence": "우리 관계가 끝났다는 건 알아. 그래도 나는 아직 너를 사랑해.",
+            "inference": false,
+            "confidence": 0.99
+          }
+        ],
+        "movements": [
+          {
+            "character_id": "character_001",
+            "from_location_id": null,
+            "to_location_id": "location_001",
+            "movement_type": "ARRIVED",
+            "event_id": "event_001",
+            "time_expression": null,
+            "sequence": 0,
+            "evidence": "강도현이 해담서점 안으로 들어와 두 사람의 테이블에 도착했다.",
+            "confidence": 0.99
+          }
+        ],
+        "coreferences": [],
+        "unresolved_references": [],
+        "contradictions": []
+      }
     },
     {
-      "event_id": "sha256:ae348b9488eb1d634ba85f58cf3f41bb7930e600c4fe10918401b6621a4d24d0",
-      "subject_key": "character:han-seoyun",
-      "object_key": "character:yun-taegyeong",
-      "category": "friendship",
-      "description": "서윤과 태경은 초등학교 때부터 서로의 비밀을 지켜 온 오랜 친구다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0002",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 555,
-          "end_offset": 600,
-          "text": "태경과 서윤은 초등학교 때부터 서로의 비밀을 지켜 온 가장 오래된 친구 사이였다."
-        }
-      ]
+      "chunk_id": "scene-reunion-at-haedam:r1:0002",
+      "ordinal": 2,
+      "start_offset": 500,
+      "end_offset": 800,
+      "text": "채 빗물이 맺힌 그의 어깨만 바라보았다. 잠시 뒤 윤태경이 서점에 도착해 서윤의 옆자리에 앉았다. 태경과 서윤은 초등학교 때부터 서로의 비밀을 지켜 온 가장 오래된 친구 사이였다. 태경은 서윤에게 우산을 건네며 말했다. \"네가 불안할 때 곁에 있어 달라고 했잖아. 친구로서 온 거야.\" 도현은 태경에게 시선을 돌렸다. \"우리 대화에 끼어들지 마.\" 태경은 차갑게 웃었다. \"서윤을 혼자 울게 만든 사람이 할 말은 아니지. 나는 네가 다시 서윤에게 상처 주는 걸 막겠어.\" 도현이 자리에서 일어서자 태경도 맞섰고, 두 사람은 서로를 공개적",
+      "extraction": {
+        "document": {
+          "chapter_id": "scene-reunion-at-haedam",
+          "summary": "태경이 서윤의 곁에 도착하고 오랜 친구로서 도현에게 맞선다.",
+          "narrative_time": "present"
+        },
+        "entities": {
+          "characters": [
+            {
+              "id": "character_001",
+              "canonical_name": "윤태경",
+              "aliases": [
+                "태경"
+              ],
+              "description": "서윤의 오랜 친구.",
+              "gender": "male",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "윤태경",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_002",
+              "canonical_name": "한서윤",
+              "aliases": [
+                "서윤"
+              ],
+              "description": "태경의 오랜 친구.",
+              "gender": "female",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "서윤",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_003",
+              "canonical_name": "강도현",
+              "aliases": [
+                "도현"
+              ],
+              "description": "태경과 대립하는 서윤의 옛 연인.",
+              "gender": "male",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "도현",
+              "confidence": 0.99
+            }
+          ],
+          "locations": [
+            {
+              "id": "location_001",
+              "canonical_name": "해담서점",
+              "aliases": [],
+              "location_type": "building",
+              "parent_location_id": null,
+              "description": "장면의 만남과 출간 회의가 이루어지는 서점.",
+              "first_mention": "서점",
+              "confidence": 0.99
+            }
+          ],
+          "events": [
+            {
+              "id": "event_001",
+              "event_type": "ARRIVAL",
+              "name": "태경의 도착",
+              "summary": "태경이 서점에 도착해 서윤 옆에 앉았다.",
+              "participant_ids": [
+                "character_001",
+                "character_002"
+              ],
+              "location_ids": [
+                "location_001"
+              ],
+              "time_expression": null,
+              "narrative_time": "present",
+              "sequence": 0,
+              "evidence": "윤태경이 서점에 도착해 서윤의 옆자리에 앉았다.",
+              "confidence": 0.99
+            }
+          ]
+        },
+        "relations": [
+          {
+            "id": "relation_001",
+            "source_id": "character_001",
+            "relation_type": "LONGTIME_FRIEND",
+            "target_id": "character_002",
+            "state": "active",
+            "directed": false,
+            "start_event_id": null,
+            "end_event_id": null,
+            "time_expression": "초등학교 때부터",
+            "scene_sequence": 7,
+            "evidence": "태경과 서윤은 초등학교 때부터 서로의 비밀을 지켜 온 가장 오래된 친구 사이였다.",
+            "inference": false,
+            "confidence": 0.99
+          }
+        ],
+        "movements": [
+          {
+            "character_id": "character_001",
+            "from_location_id": null,
+            "to_location_id": "location_001",
+            "movement_type": "ARRIVED",
+            "event_id": "event_001",
+            "time_expression": null,
+            "sequence": 0,
+            "evidence": "윤태경이 서점에 도착해 서윤의 옆자리에 앉았다.",
+            "confidence": 0.99
+          }
+        ],
+        "coreferences": [],
+        "unresolved_references": [],
+        "contradictions": []
+      }
     },
     {
-      "event_id": "sha256:ce5225bbe03866483d5a71198241fe6d27e6c00e954886fe516c0babe663322c",
-      "subject_key": "character:kang-dohyeon",
-      "object_key": "character:cha-mina",
-      "category": "professional",
-      "description": "도현은 편집자이고 민아는 기획팀장으로 같은 출간 프로젝트를 담당한다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.98,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0001",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 338,
-          "end_offset": 359,
-          "text": "도현은 민아와 같은 출판사의 편집자였고"
-        }
-      ]
+      "chunk_id": "scene-reunion-at-haedam:r1:0003",
+      "ordinal": 3,
+      "start_offset": 750,
+      "end_offset": 1050,
+      "text": "상처 주는 걸 막겠어.\" 도현이 자리에서 일어서자 태경도 맞섰고, 두 사람은 서로를 공개적으로 비난하는 적대적인 관계를 드러냈다. 민아가 계약서를 덮으며 단호하게 말했다. \"도현, 나는 네 직장 동료이자 이 프로젝트의 책임자야. 개인 감정으로 회의를 망치면 편집 담당을 바꾸겠어. 태경도 서윤의 친구로 왔다면 싸움을 멈춰.\" 도현은 민아의 업무상 지시를 받아들여 다시 앉았다. 서윤은 숨을 고른 뒤 도현에게 말했다. \"사랑한다는 말만으로 예전으로 돌아갈 수는 없어. 하지만 오늘은 네 사과를 끝까지 듣겠어.\" 도현은 고개를 끄덕였고, 두",
+      "extraction": {
+        "document": {
+          "chapter_id": "scene-reunion-at-haedam",
+          "summary": "도현과 태경이 적대적으로 대립하자 프로젝트 책임자인 민아가 싸움을 중단시킨다.",
+          "narrative_time": "present"
+        },
+        "entities": {
+          "characters": [
+            {
+              "id": "character_001",
+              "canonical_name": "강도현",
+              "aliases": [
+                "도현"
+              ],
+              "description": "태경과 대립하고 민아의 업무상 지시를 받는 편집자.",
+              "gender": "male",
+              "age": null,
+              "occupation": "편집자",
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "도현",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_002",
+              "canonical_name": "윤태경",
+              "aliases": [
+                "태경"
+              ],
+              "description": "서윤을 보호하려 도현과 대립하는 친구.",
+              "gender": "male",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "태경",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_003",
+              "canonical_name": "차민아",
+              "aliases": [
+                "민아"
+              ],
+              "description": "출간 프로젝트 책임자이자 도현의 직장 동료.",
+              "gender": "female",
+              "age": null,
+              "occupation": "프로젝트 책임자",
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "민아",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_004",
+              "canonical_name": "한서윤",
+              "aliases": [
+                "서윤"
+              ],
+              "description": "도현의 사과를 듣기로 한 인물.",
+              "gender": "female",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "서윤",
+              "confidence": 0.99
+            }
+          ],
+          "locations": [],
+          "events": [
+            {
+              "id": "event_001",
+              "event_type": "CONFRONTATION",
+              "name": "도현과 태경의 대립",
+              "summary": "도현과 태경이 서로를 비난하며 맞선다.",
+              "participant_ids": [
+                "character_001",
+                "character_002"
+              ],
+              "location_ids": [],
+              "time_expression": null,
+              "narrative_time": "present",
+              "sequence": 0,
+              "evidence": "두 사람은 서로를 공개적으로 비난하는 적대적인 관계를 드러냈다.",
+              "confidence": 0.99
+            }
+          ]
+        },
+        "relations": [
+          {
+            "id": "relation_001",
+            "source_id": "character_001",
+            "relation_type": "ANTAGONISTIC",
+            "target_id": "character_002",
+            "state": "active",
+            "directed": false,
+            "start_event_id": "event_001",
+            "end_event_id": null,
+            "time_expression": null,
+            "scene_sequence": 7,
+            "evidence": "두 사람은 서로를 공개적으로 비난하는 적대적인 관계를 드러냈다.",
+            "inference": false,
+            "confidence": 0.99
+          },
+          {
+            "id": "relation_002",
+            "source_id": "character_003",
+            "relation_type": "PROJECT_SUPERVISOR",
+            "target_id": "character_001",
+            "state": "active",
+            "directed": true,
+            "start_event_id": null,
+            "end_event_id": null,
+            "time_expression": null,
+            "scene_sequence": 7,
+            "evidence": "도현, 나는 네 직장 동료이자 이 프로젝트의 책임자야.",
+            "inference": false,
+            "confidence": 0.99
+          }
+        ],
+        "movements": [],
+        "coreferences": [],
+        "unresolved_references": [],
+        "contradictions": []
+      }
     },
     {
-      "event_id": "sha256:19cfbb4ecc503f79bc1b1c2f82c39537386623a44d9a2efdf5df557e8a4d729e",
-      "subject_key": "character:kang-dohyeon",
-      "object_key": "character:yun-taegyeong",
-      "category": "antagonistic",
-      "description": "도현과 태경은 서윤을 둘러싸고 서로를 공개적으로 비난하며 대립한다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0003",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 787,
-          "end_offset": 822,
-          "text": "두 사람은 서로를 공개적으로 비난하는 적대적인 관계를 드러냈다."
-        }
-      ]
-    }
-  ],
-  "location_events": [
-    {
-      "event_id": "sha256:f975fccbb0db7fd4795c045ea05db632e67ca18f3e3d9d39ef985cf0fdb1e433",
-      "character_key": "character:cha-mina",
-      "place_key": "place:haedam-bookstore",
-      "event_type": "departed",
-      "description": "민아가 해담서점을 떠났다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0004",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 1093,
-          "end_offset": 1118,
-          "text": "민아는 계약서를 들고 먼저 해담서점을 떠났다."
-        }
-      ]
-    },
-    {
-      "event_id": "sha256:2f5cd7c8b3af3c56d81437f8481d61cd5e4fde9a8e69a533e04a0e10d062ccb1",
-      "character_key": "character:han-seoyun",
-      "place_key": "place:haedam-bookstore",
-      "event_type": "arrived",
-      "description": "서윤이 해담서점에 도착했다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0000",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 11,
-          "end_offset": 42,
-          "text": "한서윤은 약속 시간보다 십 분 일찍 해담서점에 도착했다."
-        }
-      ]
-    },
-    {
-      "event_id": "sha256:19704cf40d7319e86986d74e596130e07c03d92e3e835d9da18c2c44131c3b24",
-      "character_key": "character:han-seoyun",
-      "place_key": "place:haedam-bookstore",
-      "event_type": "present",
-      "description": "서윤이 해담서점에 남아 있다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0004",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 1151,
-          "end_offset": 1167,
-          "text": "도현과 서윤은 해담서점에 남아"
-        }
-      ]
-    },
-    {
-      "event_id": "sha256:ee7daecc89b9e789f9d672ae646b332728f3ce8d7fb21c18e1b227643abcb6e1",
-      "character_key": "character:kang-dohyeon",
-      "place_key": "place:haedam-bookstore",
-      "event_type": "arrived",
-      "description": "도현이 해담서점에 도착했다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0001",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 303,
-          "end_offset": 337,
-          "text": "강도현이 해담서점 안으로 들어와 두 사람의 테이블에 도착했다."
-        }
-      ]
-    },
-    {
-      "event_id": "sha256:73c86682abec2e5a534db5357018909f0de58c217bf5735898faf2ee93519134",
-      "character_key": "character:kang-dohyeon",
-      "place_key": "place:haedam-bookstore",
-      "event_type": "present",
-      "description": "도현이 해담서점에 남아 있다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0004",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 1151,
-          "end_offset": 1167,
-          "text": "도현과 서윤은 해담서점에 남아"
-        }
-      ]
-    },
-    {
-      "event_id": "sha256:1ad387f88e67776b03acc1933b468c4867d39ea78f39ead6d73c592437977625",
-      "character_key": "character:yun-taegyeong",
-      "place_key": "place:haedam-bookstore",
-      "event_type": "arrived",
-      "description": "태경이 해담서점에 도착했다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0002",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 528,
-          "end_offset": 554,
-          "text": "윤태경이 서점에 도착해 서윤의 옆자리에 앉았다."
-        }
-      ]
-    },
-    {
-      "event_id": "sha256:8d6ce7bd955ec507b644ef6a834ebf83753f9543b35de25a66fa91de93cdb7a6",
-      "character_key": "character:yun-taegyeong",
-      "place_key": "place:haedam-bookstore",
-      "event_type": "departed",
-      "description": "태경이 해담서점을 떠났다.",
-      "status": "pending",
-      "scene_id": "scene-reunion-at-haedam",
-      "scene_revision": 1,
-      "scene_sequence": 7,
-      "confidence": 0.99,
-      "evidence": [
-        {
-          "chunk_id": "scene-reunion-at-haedam:r1:0004",
-          "scene_id": "scene-reunion-at-haedam",
-          "scene_revision": 1,
-          "start_offset": 1119,
-          "end_offset": 1150,
-          "text": "태경도 서윤이 괜찮다는 확인을 받은 뒤 서점에서 떠났다."
-        }
-      ]
+      "chunk_id": "scene-reunion-at-haedam:r1:0004",
+      "ordinal": 4,
+      "start_offset": 1000,
+      "end_offset": 1194,
+      "text": "돌아갈 수는 없어. 하지만 오늘은 네 사과를 끝까지 듣겠어.\" 도현은 고개를 끄덕였고, 두 사람 사이에는 끝난 연애와 남아 있는 애정이 동시에 놓였다. 회의가 끝나자 민아는 계약서를 들고 먼저 해담서점을 떠났다. 태경도 서윤이 괜찮다는 확인을 받은 뒤 서점에서 떠났다. 도현과 서윤은 해담서점에 남아 창밖의 비를 바라보며 조용히 대화를 이어 갔다.",
+      "extraction": {
+        "document": {
+          "chapter_id": "scene-reunion-at-haedam",
+          "summary": "민아와 태경이 떠난 뒤 도현과 서윤이 해담서점에 남아 대화를 이어 간다.",
+          "narrative_time": "present"
+        },
+        "entities": {
+          "characters": [
+            {
+              "id": "character_001",
+              "canonical_name": "차민아",
+              "aliases": [
+                "민아"
+              ],
+              "description": "회의 후 먼저 서점을 떠난 프로젝트 책임자.",
+              "gender": "female",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "민아",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_002",
+              "canonical_name": "윤태경",
+              "aliases": [
+                "태경"
+              ],
+              "description": "서윤을 확인한 뒤 서점을 떠난 친구.",
+              "gender": "male",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "태경",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_003",
+              "canonical_name": "강도현",
+              "aliases": [
+                "도현"
+              ],
+              "description": "서윤의 옛 연인이며 서점에 남아 대화를 이어 간다.",
+              "gender": "male",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "도현",
+              "confidence": 0.99
+            },
+            {
+              "id": "character_004",
+              "canonical_name": "한서윤",
+              "aliases": [
+                "서윤"
+              ],
+              "description": "도현과 서점에 남아 대화를 이어 간다.",
+              "gender": "female",
+              "age": null,
+              "occupation": null,
+              "affiliation": null,
+              "status": "alive",
+              "first_mention": "서윤",
+              "confidence": 0.99
+            }
+          ],
+          "locations": [
+            {
+              "id": "location_001",
+              "canonical_name": "해담서점",
+              "aliases": [],
+              "location_type": "building",
+              "parent_location_id": null,
+              "description": "장면의 만남과 출간 회의가 이루어지는 서점.",
+              "first_mention": "해담서점",
+              "confidence": 0.99
+            }
+          ],
+          "events": [
+            {
+              "id": "event_001",
+              "event_type": "DEPARTURE",
+              "name": "민아의 출발",
+              "summary": "민아가 해담서점을 떠났다.",
+              "participant_ids": [
+                "character_001"
+              ],
+              "location_ids": [
+                "location_001"
+              ],
+              "time_expression": null,
+              "narrative_time": "present",
+              "sequence": 0,
+              "evidence": "민아는 계약서를 들고 먼저 해담서점을 떠났다.",
+              "confidence": 0.99
+            },
+            {
+              "id": "event_002",
+              "event_type": "DEPARTURE",
+              "name": "태경의 출발",
+              "summary": "태경이 서점을 떠났다.",
+              "participant_ids": [
+                "character_002"
+              ],
+              "location_ids": [
+                "location_001"
+              ],
+              "time_expression": null,
+              "narrative_time": "present",
+              "sequence": 1,
+              "evidence": "태경도 서윤이 괜찮다는 확인을 받은 뒤 서점에서 떠났다.",
+              "confidence": 0.99
+            },
+            {
+              "id": "event_003",
+              "event_type": "CONTINUED_CONVERSATION",
+              "name": "도현과 서윤의 대화",
+              "summary": "도현과 서윤이 해담서점에 남아 대화를 이어 간다.",
+              "participant_ids": [
+                "character_003",
+                "character_004"
+              ],
+              "location_ids": [
+                "location_001"
+              ],
+              "time_expression": null,
+              "narrative_time": "present",
+              "sequence": 2,
+              "evidence": "도현과 서윤은 해담서점에 남아 창밖의 비를 바라보며 조용히 대화를 이어 갔다.",
+              "confidence": 0.99
+            }
+          ]
+        },
+        "relations": [
+          {
+            "id": "relation_001",
+            "source_id": "character_003",
+            "relation_type": "FORMER_ROMANTIC_PARTNER",
+            "target_id": "character_004",
+            "state": "ended",
+            "directed": false,
+            "start_event_id": null,
+            "end_event_id": null,
+            "time_expression": null,
+            "scene_sequence": 7,
+            "evidence": "두 사람 사이에는 끝난 연애와 남아 있는 애정이 동시에 놓였다.",
+            "inference": false,
+            "confidence": 0.99
+          }
+        ],
+        "movements": [
+          {
+            "character_id": "character_001",
+            "from_location_id": "location_001",
+            "to_location_id": null,
+            "movement_type": "DEPARTED",
+            "event_id": "event_001",
+            "time_expression": null,
+            "sequence": 0,
+            "evidence": "민아는 계약서를 들고 먼저 해담서점을 떠났다.",
+            "confidence": 0.99
+          },
+          {
+            "character_id": "character_002",
+            "from_location_id": "location_001",
+            "to_location_id": null,
+            "movement_type": "DEPARTED",
+            "event_id": "event_002",
+            "time_expression": null,
+            "sequence": 1,
+            "evidence": "태경도 서윤이 괜찮다는 확인을 받은 뒤 서점에서 떠났다.",
+            "confidence": 0.99
+          }
+        ],
+        "coreferences": [],
+        "unresolved_references": [],
+        "contradictions": []
+      }
     }
   ]
 }
