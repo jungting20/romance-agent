@@ -43,6 +43,22 @@ domain contracts, or OpenAPI without assignment.
 - Do not log prompts, provider responses, credentials, or other sensitive
   model-call data from tests.
 
+## Agent entry points
+
+- Keep every public agent execution entry point as a readable high-level
+  workflow composed only of calls to well-named, abstracted step functions.
+  Limit its remaining statements to assignments and a final return that connect
+  those step results.
+- Do not place loops, provider calls, storage access, validation details, error
+  translation, mapping, or result construction directly in an entry point.
+  Move each concern into a focused function that can be understood and tested
+  independently.
+- Add a concise Korean comment immediately above every abstracted step call in
+  an entry point. Each comment must explain the step's purpose in the workflow,
+  not repeat the function name or implementation mechanics.
+- Keep the Korean step comments synchronized whenever the entry-point workflow
+  changes. Missing or stale step comments make the change incomplete.
+
 ## Verification and handoff
 
 Run from `llm-agent/`:
