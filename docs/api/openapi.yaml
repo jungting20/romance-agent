@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Romance Agent API
   version: 0.1.0
-  description: 로맨스 작품 프로젝트 작업공간을 생성하고 불러오며 원고를 저장하는 API입니다.
+  description: 로맨스 작품 프로젝트 작업공간과 Story Bible 기준 정보를 관리하고 원고를 저장하는 API입니다.
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
@@ -15,7 +15,7 @@ tags:
   - name: Projects
     description: 프로젝트 서재와 원자적 작업공간 생성 및 조회
   - name: Story Bible
-    description: 프로젝트의 인물 및 세계관 기준 정보 조회와 세계관 항목 저장
+    description: 프로젝트의 인물 및 세계관 기준 정보 조회와 저장
   - name: Manuscripts
     description: 리비전 충돌을 방지하는 원고 저장과 장면 초안 비교
 paths:
@@ -105,12 +105,22 @@ paths:
                   characters:
                     - id: rain-bookstore-character-1
                       name: 하린
+                      gender: ""
+                      age: ""
                       role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
                       desire: 자신의 선택을 지키고 싶다.
                       hiddenFeeling: 상대의 진심을 확인하고 싶다.
                     - id: rain-bookstore-character-2
                       name: 태오
+                      gender: ""
+                      age: ""
                       role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
                       desire: 과거의 오해를 풀고 싶다.
                       hiddenFeeling: 이번에는 먼저 놓치고 싶지 않다.
                   worldEntries:
@@ -203,12 +213,22 @@ paths:
                   characters:
                     - id: silver-garden-character-1
                       name: 서윤
+                      gender: ""
+                      age: ""
                       role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
                       desire: 상대에게 흔들리지 않고 자신의 선택을 지키고 싶다.
                       hiddenFeeling: 여전히 상대의 진심을 확인하고 싶다.
                     - id: silver-garden-character-2
                       name: 도현
+                      gender: ""
+                      age: ""
                       role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
                       desire: 과거의 오해를 풀고 다시 신뢰받고 싶다.
                       hiddenFeeling: 이번에는 먼저 놓치고 싶지 않다.
                   worldEntries:
@@ -240,8 +260,8 @@ paths:
       operationId: getStoryBible
       summary: 스토리 바이블 조회
       description: >-
-        프로젝트에 속한 현재 Story Bible과 세계관 항목 저장에 사용할 리비전을 함께 반환합니다.
-        리비전은 성공한 세계관 항목 저장마다 정확히 한 번 증가합니다.
+        프로젝트에 속한 현재 Story Bible과 저장 리비전을 함께 반환합니다.
+        리비전은 성공한 인물 등록, 인물 수정, 또는 세계관 항목 저장마다 정확히 한 번 증가합니다.
       parameters:
         - $ref: "#/components/parameters/ProjectIdPath"
       responses:
@@ -257,12 +277,22 @@ paths:
                   characters:
                     - id: silver-garden-character-1
                       name: 서윤
+                      gender: ""
+                      age: ""
                       role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
                       desire: 상대에게 흔들리지 않고 자신의 선택을 지키고 싶다.
                       hiddenFeeling: 여전히 상대의 진심을 확인하고 싶다.
                     - id: silver-garden-character-2
                       name: 도현
+                      gender: ""
+                      age: ""
                       role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
                       desire: 과거의 오해를 풀고 다시 신뢰받고 싶다.
                       hiddenFeeling: 이번에는 먼저 놓치고 싶지 않다.
                   worldEntries:
@@ -273,6 +303,165 @@ paths:
                 storyBibleRevision: 1
         "404":
           $ref: "#/components/responses/StoryBibleNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /projects/{projectId}/story-bible/characters:
+    post:
+      tags: [Story Bible]
+      operationId: createStoryBibleCharacter
+      summary: Story Bible 인물 등록
+      description: >-
+        프로젝트 Story Bible에 새 인물 기준 정보를 등록합니다. 서버는 프로젝트 안에서 고유한 불변
+        인물 식별자를 생성하며, 요청에는 식별자를 받지 않습니다. 이름은 앞뒤 공백을 제거해 비어 있지 않은지
+        검증하고, 나머지 문자열은 빈 값을 허용합니다. 성공하면 기존 인물과 세계관 항목을 보존하고 Story Bible
+        리비전을 정확히 한 번 증가시킨 권위 있는 전체 snapshot을 반환합니다.
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCharacterRequest"
+            example:
+              name: 민서
+              gender: 여성
+              age: 29세
+              role: 서점 주인
+              personality: 차분하지만 결정적인 순간에는 단호하다.
+              proseStyle: 사물을 세밀하게 관찰하는 짧은 문장을 쓴다.
+              dialogueStyle: 정중한 말투 속에 솔직한 한마디를 섞는다.
+              desire: 서점을 지키며 자신의 선택을 증명하고 싶다.
+              hiddenFeeling: 다시 상처받을까 두려워한다.
+      responses:
+        "201":
+          description: 새 인물을 포함한 권위 있는 Story Bible과 한 번 증가한 리비전
+          headers:
+            Location:
+              required: true
+              description: 생성된 인물 자원의 경로
+              schema:
+                type: string
+              example: /api/projects/silver-garden/story-bible/characters/silver-garden-character-3
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoryBibleSnapshot"
+              example:
+                storyBible:
+                  projectId: silver-garden
+                  characters:
+                    - id: silver-garden-character-1
+                      name: 서윤
+                      gender: ""
+                      age: ""
+                      role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
+                      desire: 상대에게 흔들리지 않고 자신의 선택을 지키고 싶다.
+                      hiddenFeeling: 여전히 상대의 진심을 확인하고 싶다.
+                    - id: silver-garden-character-2
+                      name: 도현
+                      gender: ""
+                      age: ""
+                      role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
+                      desire: 과거의 오해를 풀고 다시 신뢰받고 싶다.
+                      hiddenFeeling: 이번에는 먼저 놓치고 싶지 않다.
+                    - id: silver-garden-character-3
+                      name: 민서
+                      gender: 여성
+                      age: 29세
+                      role: 서점 주인
+                      personality: 차분하지만 결정적인 순간에는 단호하다.
+                      proseStyle: 사물을 세밀하게 관찰하는 짧은 문장을 쓴다.
+                      dialogueStyle: 정중한 말투 속에 솔직한 한마디를 섞는다.
+                      desire: 서점을 지키며 자신의 선택을 증명하고 싶다.
+                      hiddenFeeling: 다시 상처받을까 두려워한다.
+                  worldEntries:
+                    - id: silver-garden-world-1
+                      kind: place
+                      title: 비가 그친 온실
+                      description: 두 사람이 과거에 마지막으로 만났던 장소다.
+                storyBibleRevision: 2
+        "400":
+          $ref: "#/components/responses/MalformedRequest"
+        "404":
+          $ref: "#/components/responses/ProjectOrStoryBibleNotFound"
+        "422":
+          $ref: "#/components/responses/InvalidCharacter"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /projects/{projectId}/story-bible/characters/{characterId}:
+    patch:
+      tags: [Story Bible]
+      operationId: updateStoryBibleCharacter
+      summary: Story Bible 인물 수정
+      description: >-
+        경로의 불변 인물 식별자로 한 인물의 기준 정보를 부분 수정합니다. 하나 이상의 변경 가능한 필드를
+        보내야 하며, 생략한 필드는 기존 값을 유지합니다. 이름은 제출한 경우 앞뒤 공백을 제거해 비어 있지 않은지
+        검증하고, 나머지 문자열은 빈 값을 허용합니다. 다른 인물과 세계관 항목은 그대로 보존합니다.
+        기대 리비전이나 충돌 해결은 사용하지 않고, 같은 인물을 연속 저장하면 마지막으로 성공한 저장이 최신 값이 됩니다.
+        성공하면 Story Bible 리비전을 정확히 한 번 증가시킨 권위 있는 전체 snapshot을 반환합니다.
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/CharacterIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCharacterRequest"
+            example:
+              role: 온실 관리자
+              personality: 침착하고 주의 깊지만 서윤 앞에서는 서두른다.
+              hiddenFeeling: 서윤에게 다시 거절당할까 두려워한다.
+      responses:
+        "200":
+          description: 수정한 인물을 포함한 권위 있는 Story Bible과 한 번 증가한 리비전
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoryBibleSnapshot"
+              example:
+                storyBible:
+                  projectId: silver-garden
+                  characters:
+                    - id: silver-garden-character-1
+                      name: 서윤
+                      gender: 여성
+                      age: 31세
+                      role: 주인공
+                      personality: 단호하고 세심하다.
+                      proseStyle: 감각적인 묘사와 짧은 문장을 쓴다.
+                      dialogueStyle: 감정을 숨기며 간결하게 말한다.
+                      desire: 자신의 선택을 지키고 싶다.
+                      hiddenFeeling: 여전히 도현을 믿고 싶다.
+                    - id: silver-garden-character-2
+                      name: 도현
+                      gender: 남성
+                      age: 33세
+                      role: 온실 관리자
+                      personality: 침착하고 주의 깊지만 서윤 앞에서는 서두른다.
+                      proseStyle: 절제된 문장으로 움직임을 묘사한다.
+                      dialogueStyle: 직접적이지만 말끝을 흐린다.
+                      desire: 과거의 오해를 풀고 다시 신뢰받고 싶다.
+                      hiddenFeeling: 서윤에게 다시 거절당할까 두려워한다.
+                  worldEntries:
+                    - id: silver-garden-world-1
+                      kind: place
+                      title: 비가 그친 온실
+                      description: 두 사람이 과거에 마지막으로 만났던 장소다.
+                storyBibleRevision: 2
+        "400":
+          $ref: "#/components/responses/MalformedRequest"
+        "404":
+          $ref: "#/components/responses/ProjectStoryBibleOrCharacterNotFound"
+        "422":
+          $ref: "#/components/responses/InvalidCharacter"
         "500":
           $ref: "#/components/responses/InternalError"
   /projects/{projectId}/story-bible/world-entries:
@@ -321,12 +510,22 @@ paths:
                   characters:
                     - id: silver-garden-character-1
                       name: 서윤
+                      gender: ""
+                      age: ""
                       role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
                       desire: 상대에게 흔들리지 않고 자신의 선택을 지키고 싶다.
                       hiddenFeeling: 여전히 상대의 진심을 확인하고 싶다.
                     - id: silver-garden-character-2
                       name: 도현
+                      gender: ""
+                      age: ""
                       role: protagonist
+                      personality: ""
+                      proseStyle: ""
+                      dialogueStyle: ""
                       desire: 과거의 오해를 풀고 다시 신뢰받고 싶다.
                       hiddenFeeling: 이번에는 먼저 놓치고 싶지 않다.
                   worldEntries:
@@ -499,6 +698,14 @@ components:
       schema:
         $ref: "#/components/schemas/ProjectId"
       example: silver-garden
+    CharacterIdPath:
+      name: characterId
+      in: path
+      required: true
+      description: 수정할 Story Bible 인물의 서버 생성 불변 식별자
+      schema:
+        $ref: "#/components/schemas/CharacterId"
+      example: silver-garden-character-2
     ManuscriptIdPath:
       name: manuscriptId
       in: path
@@ -511,10 +718,11 @@ components:
     MalformedRequest:
       description: >-
         JSON 구문이 잘못되었거나, 필수 필드가 없거나, JSON 값 타입이 스키마와 다르거나,
-        요청 루트 또는 중첩된 Manuscript, Scene, 세계관 수정 및 추가 객체에 선언되지 않은 속성이 있음.
+        요청 루트 또는 중첩된 Manuscript, Scene, 세계관 수정·추가, 인물 등록·수정 객체에 선언되지 않은 속성이 있음.
         빈 식별자, 잘못된 enum 문자열, 잘못된 정수 및 배열 항목 타입을 포함한 그 밖의 요청 스키마 위반도
         400으로 매핑합니다.
         단, POST /projects의 타입이 올바른 미등록 트로프 문자열과 protagonistNames 항목 수 위반은 422로 매핑합니다.
+        인물 요청의 공백 이름과 빈 부분 수정 명령도 타입이 올바른 도메인 규칙 위반으로 422로 매핑합니다.
       content:
         application/json:
           schema:
@@ -553,6 +761,50 @@ components:
             code: STORY_BIBLE_NOT_FOUND
             message: 세계관 정보를 찾을 수 없습니다.
             fieldErrors: []
+    ProjectOrStoryBibleNotFound:
+      description: 경로의 프로젝트 또는 프로젝트에 속한 Story Bible을 찾을 수 없음
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            projectNotFound:
+              summary: 프로젝트를 찾을 수 없음
+              value:
+                code: PROJECT_NOT_FOUND
+                message: 프로젝트를 찾을 수 없습니다.
+                fieldErrors: []
+            storyBibleNotFound:
+              summary: Story Bible을 찾을 수 없음
+              value:
+                code: STORY_BIBLE_NOT_FOUND
+                message: 세계관 정보를 찾을 수 없습니다.
+                fieldErrors: []
+    ProjectStoryBibleOrCharacterNotFound:
+      description: 경로의 프로젝트, 프로젝트의 Story Bible, 또는 수정 대상 인물을 찾을 수 없음
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            projectNotFound:
+              summary: 프로젝트를 찾을 수 없음
+              value:
+                code: PROJECT_NOT_FOUND
+                message: 프로젝트를 찾을 수 없습니다.
+                fieldErrors: []
+            storyBibleNotFound:
+              summary: Story Bible을 찾을 수 없음
+              value:
+                code: STORY_BIBLE_NOT_FOUND
+                message: 세계관 정보를 찾을 수 없습니다.
+                fieldErrors: []
+            characterNotFound:
+              summary: 인물을 찾을 수 없음
+              value:
+                code: CHARACTER_NOT_FOUND
+                message: 인물을 찾을 수 없습니다.
+                fieldErrors: []
     ManuscriptOrSceneNotFound:
       description: 경로의 원고 또는 요청한 장면을 찾을 수 없음
       content:
@@ -651,6 +903,29 @@ components:
                 fieldErrors:
                   - path: updates[0].id
                     message: 현재 세계관에 존재하는 항목을 선택해 주세요.
+    InvalidCharacter:
+      description: >-
+        JSON 타입과 객체 구조는 올바르지만 이름이 앞뒤 공백 제거 후 비어 있거나,
+        인물 수정 요청에 변경 필드가 하나도 없어 인물 기준 정보 규칙을 위반함
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            blankName:
+              summary: 이름이 공백으로만 구성됨
+              value:
+                code: INVALID_CHARACTER
+                message: 인물 정보를 확인해 주세요.
+                fieldErrors:
+                  - path: name
+                    message: 인물 이름을 입력해 주세요.
+            emptyUpdate:
+              summary: 수정할 필드가 없음
+              value:
+                code: INVALID_CHARACTER
+                message: 수정할 인물 정보가 필요합니다.
+                fieldErrors: []
     InvalidManuscript:
       description: >-
         필드는 모두 존재하고 JSON 타입 및 객체 구조도 올바르지만 경로와 본문의 원고 식별자가 다르거나,
@@ -734,10 +1009,6 @@ components:
       type: string
       enum: [place, object, rule]
       description: 세계관 항목의 분류
-    CharacterRole:
-      type: string
-      enum: [protagonist]
-      description: 초기 스토리 바이블 인물의 역할
     Project:
       type: object
       additionalProperties: false
@@ -777,19 +1048,120 @@ components:
     Character:
       type: object
       additionalProperties: false
-      required: [id, name, role, desire, hiddenFeeling]
+      description: >-
+        Story Bible이 소유하는 인물 기준 정보. id는 서버가 생성한 불변 character_id의 소비자 표현이며,
+        장면 현재 욕망·의도·정보 경계나 Narrative Memory를 포함하지 않습니다.
+      required:
+        - id
+        - name
+        - gender
+        - age
+        - role
+        - personality
+        - proseStyle
+        - dialogueStyle
+        - desire
+        - hiddenFeeling
       properties:
         id:
           $ref: "#/components/schemas/CharacterId"
         name:
           type: string
           minLength: 1
+          description: 앞뒤 공백을 제거해 비어 있지 않은 인물 이름
+        gender:
+          type: string
+          description: 인물의 성별 표현. 빈 문자열일 수 있습니다.
+        age:
+          type: string
+          description: 인물의 나이 표현. 숫자로 변환하지 않으며 빈 문자열일 수 있습니다.
         role:
-          $ref: "#/components/schemas/CharacterRole"
+          type: string
+          description: 주인공을 포함한 인물의 역할 표현. 빈 문자열일 수 있습니다.
+        personality:
+          type: string
+          description: 인물의 기준 성격. 빈 문자열일 수 있습니다.
+        proseStyle:
+          type: string
+          description: 인물에 연결된 기준 문체. 빈 문자열일 수 있습니다.
+        dialogueStyle:
+          type: string
+          description: 인물의 기준 대사 스타일. 빈 문자열일 수 있습니다.
         desire:
           type: string
+          description: 인물이 기준으로 가지는 욕망. 장면 현재 욕망이 아니며 빈 문자열일 수 있습니다.
         hiddenFeeling:
           type: string
+          description: 인물의 기준 숨은 감정. 빈 문자열일 수 있습니다.
+    CreateCharacterRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        새 인물의 전체 변경 가능한 기준 정보. 서버 생성 식별자를 포함하지 않으며,
+        이름을 제외한 문자열은 빈 값을 허용합니다.
+      required:
+        - name
+        - gender
+        - age
+        - role
+        - personality
+        - proseStyle
+        - dialogueStyle
+        - desire
+        - hiddenFeeling
+      properties:
+        name:
+          type: string
+          description: 앞뒤 공백을 제거한 결과가 비어 있으면 422로 거부되는 인물 이름
+        gender:
+          type: string
+        age:
+          type: string
+          description: 숫자로 변환하지 않는 나이 문자열
+        role:
+          type: string
+        personality:
+          type: string
+        proseStyle:
+          type: string
+        dialogueStyle:
+          type: string
+        desire:
+          type: string
+          description: 장면 현재 욕망이 아닌 인물의 기준 욕망
+        hiddenFeeling:
+          type: string
+          description: 인물의 기준 숨은 감정
+    UpdateCharacterRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >-
+        한 인물의 변경 필드만 보내는 부분 수정. 식별자를 포함하지 않고, 생략한 필드는 기존 값을 유지하며,
+        이름을 제외한 문자열은 빈 값을 허용합니다. 빈 객체는 422로 거부됩니다.
+      properties:
+        name:
+          type: string
+          description: 앞뒤 공백을 제거한 결과가 비어 있으면 422로 거부되는 인물 이름
+        gender:
+          type: string
+        age:
+          type: string
+          description: 숫자로 변환하지 않는 나이 문자열
+        role:
+          type: string
+        personality:
+          type: string
+        proseStyle:
+          type: string
+        dialogueStyle:
+          type: string
+        desire:
+          type: string
+          description: 장면 현재 욕망이 아닌 인물의 기준 욕망
+        hiddenFeeling:
+          type: string
+          description: 인물의 기준 숨은 감정
     WorldEntry:
       type: object
       additionalProperties: false
@@ -1077,6 +1449,8 @@ components:
         - STORY_BIBLE_NOT_FOUND
         - STORY_BIBLE_REVISION_CONFLICT
         - INVALID_WORLD_ENTRIES
+        - CHARACTER_NOT_FOUND
+        - INVALID_CHARACTER
         - INVALID_TITLE
         - INVALID_TROPE
         - INVALID_PROTAGONISTS

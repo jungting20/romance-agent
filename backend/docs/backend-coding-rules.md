@@ -100,6 +100,9 @@ verification, and handoff workflows. If the documents conflict, follow
 
 ## Durable File Replacement
 
+Story Bible snapshot schema compatibility and migration rules are defined in
+[`story-bible-persistence.md`](story-bible-persistence.md).
+
 - For mutable project files, serialize to an owned temporary file in the same
   directory as the canonical file, flush it, call `fsync`, and publish it with
   an atomic `os.replace` only after serialization succeeds.

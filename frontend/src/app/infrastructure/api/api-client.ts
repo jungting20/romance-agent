@@ -11,7 +11,7 @@ export class ApiRequestError extends Error {
 }
 
 interface JsonRequestOptions {
-  method?: "GET" | "POST" | "PUT";
+  method?: "GET" | "POST" | "PUT" | "PATCH";
   body?: unknown;
 }
 

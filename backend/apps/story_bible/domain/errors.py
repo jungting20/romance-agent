@@ -16,3 +16,9 @@ class WorldEntryChangeError(ValueError):
         super().__init__(reason)
         self.reason = reason
         self.entry_id = entry_id
+
+
+class CharacterNotFoundError(ValueError):
+    def __init__(self, character_id: str) -> None:
+        super().__init__(character_id)
+        self.character_id = character_id

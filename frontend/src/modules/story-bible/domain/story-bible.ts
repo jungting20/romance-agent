@@ -1,10 +1,33 @@
 export interface Character {
   id: string;
   name: string;
-  role: "protagonist";
+  gender: string;
+  age: string;
+  role: string;
+  personality: string;
+  proseStyle: string;
+  dialogueStyle: string;
   desire: string;
   hiddenFeeling: string;
 }
+
+export type CharacterDraftValue = Omit<Character, "id">;
+
+export interface CharacterDraftErrors {
+  name?: string;
+}
+
+export const emptyCharacterDraft: CharacterDraftValue = {
+  name: "",
+  gender: "",
+  age: "",
+  role: "",
+  personality: "",
+  proseStyle: "",
+  dialogueStyle: "",
+  desire: "",
+  hiddenFeeling: "",
+};
 
 export interface WorldEntry {
   id: string;
@@ -49,7 +72,12 @@ export function createInitialStoryBible(
     characters: protagonistNames.map((name, index) => ({
       id: `${projectId}-character-${index + 1}`,
       name,
-      role: "protagonist" as const,
+      gender: "",
+      age: "",
+      role: "protagonist",
+      personality: "",
+      proseStyle: "",
+      dialogueStyle: "",
       desire:
         index === 0
           ? "상대에게 흔들리지 않고 자신의 선택을 지키고 싶다."
@@ -67,6 +95,21 @@ export function createInitialStoryBible(
       },
     ],
   };
+}
+
+export function validateCharacterDraft(value: CharacterDraftValue): {
+  value?: CharacterDraftValue;
+  errors: CharacterDraftErrors;
+} {
+  const normalized = normalizeCharacterDraft(value);
+  if (!normalized.name) {
+    return { errors: { name: "이름을 입력해 주세요." } };
+  }
+  return { value: normalized, errors: {} };
+}
+
+export function normalizeCharacterDraft(value: CharacterDraftValue): CharacterDraftValue {
+  return { ...value, name: value.name.trim() };
 }
 
 export function selectSceneContext(

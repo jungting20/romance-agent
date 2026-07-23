@@ -13,8 +13,10 @@ import { projectKeys } from "@/features/project-persistence";
 
 import {
   storyBibleKeys,
+  useCreateCharacterMutation,
   useSaveWorldEntriesMutation,
   useStoryBibleQuery,
+  useUpdateCharacterMutation,
 } from "./story-bible-queries";
 
 function createWrapper(queryClient: QueryClient) {
@@ -118,6 +120,51 @@ describe("Story Bible persistence queries", () => {
     expect(queryClient.getQueryData(storyBibleKeys.project("silver-garden"))).toMatchObject({
       storyBibleRevision: 2,
     });
+  });
+
+  it("applies authoritative character create and update snapshots to both caches", async () => {
+    const queryClient = createTestQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const workspace = await getProjectWorkspace("silver-garden");
+    queryClient.setQueryData(projectKeys.workspace("silver-garden"), workspace);
+    const create = renderHook(() => useCreateCharacterMutation(), { wrapper });
+    const update = renderHook(() => useUpdateCharacterMutation(), { wrapper });
+
+    await act(async () => {
+      await create.result.current.mutateAsync({
+        projectId: "silver-garden",
+        request: {
+          name: "민서",
+          gender: "여성",
+          age: "29세",
+          role: "서점 주인",
+          personality: "차분하다.",
+          proseStyle: "짧은 문장",
+          dialogueStyle: "정중한 말투",
+          desire: "서점을 지키고 싶다.",
+          hiddenFeeling: "다시 상처받을까 두렵다.",
+        },
+      });
+      await update.result.current.mutateAsync({
+        projectId: "silver-garden",
+        characterId: "silver-garden-character-1",
+        request: { hiddenFeeling: "서버의 최신 감정" },
+      });
+    });
+
+    const snapshot = queryClient.getQueryData<StoryBibleSnapshot>(
+      storyBibleKeys.project("silver-garden"),
+    );
+    const cachedWorkspace = queryClient.getQueryData<ProjectWorkspaceResponse>(
+      projectKeys.workspace("silver-garden"),
+    );
+    expect(snapshot?.storyBibleRevision).toBe(3);
+    expect(snapshot?.storyBible.characters).toHaveLength(3);
+    expect(snapshot?.storyBible.characters[0].hiddenFeeling).toBe("서버의 최신 감정");
+    expect(snapshot?.storyBible.characters[1]).toEqual(workspace.storyBible.characters[1]);
+    expect(snapshot?.storyBible.worldEntries).toEqual(workspace.storyBible.worldEntries);
+    expect(cachedWorkspace?.storyBible).toEqual(snapshot?.storyBible);
+    expect(cachedWorkspace?.manuscript).toBe(workspace.manuscript);
   });
 
   it("leaves both caches unchanged when the real handler rejects a revision conflict", async () => {

@@ -2,6 +2,7 @@ import fcntl
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
@@ -9,13 +10,15 @@ from typing import Any
 from apps.story_bible.domain.errors import InvalidDomainValueError
 from apps.story_bible.domain.models import Character, StoryBible, WorldEntry
 from apps.story_bible.service.errors import (
+    ProjectNotFoundError,
     StoryBibleNotFoundError,
     StoryBiblePersistenceError,
     StoryBibleRevisionConflictError,
 )
 from apps.story_bible.service.models import StoryBibleSnapshot
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
+_LEGACY_SCHEMA_VERSION = 1
 
 
 class FileStoryBibleRepository:
@@ -23,7 +26,9 @@ class FileStoryBibleRepository:
         self._data_root = data_root.resolve()
 
     def get(self, project_id: str) -> StoryBibleSnapshot:
-        return self._read(self._story_bible_path(project_id), project_id)
+        path = self._story_bible_path(project_id)
+        self._require_project_directory(path)
+        return self._read(path, project_id)
 
     def replace(
         self,
@@ -33,16 +38,33 @@ class FileStoryBibleRepository:
     ) -> StoryBibleSnapshot:
         path = self._story_bible_path(project_id)
         if story_bible.project_id != project_id:
-            raise StoryBiblePersistenceError(
-                "Story Bible project does not match its path"
-            )
-        if not path.parent.is_dir():
-            raise StoryBibleNotFoundError
+            raise StoryBiblePersistenceError("Story Bible project does not match its path")
+        self._require_project_directory(path)
 
         with self._project_lock(path):
             current = self._read(path, project_id)
             if current.revision != expected_revision:
                 raise StoryBibleRevisionConflictError
+            replacement = StoryBibleSnapshot(
+                story_bible=story_bible,
+                revision=current.revision + 1,
+            )
+            self._atomic_write(path, replacement)
+            return replacement
+
+    def modify(
+        self,
+        project_id: str,
+        transform: Callable[[StoryBible], StoryBible],
+    ) -> StoryBibleSnapshot:
+        path = self._story_bible_path(project_id)
+        self._require_project_directory(path)
+
+        with self._project_lock(path):
+            current = self._read(path, project_id)
+            story_bible = transform(current.story_bible)
+            if story_bible.project_id != project_id:
+                raise StoryBiblePersistenceError("Story Bible project does not match its path")
             replacement = StoryBibleSnapshot(
                 story_bible=story_bible,
                 revision=current.revision + 1,
@@ -60,10 +82,13 @@ class FileStoryBibleRepository:
             or not candidate.is_relative_to(self._data_root)
             or not candidate.is_relative_to(projects_root)
         ):
-            raise StoryBiblePersistenceError(
-                "Project path escapes the configured data root"
-            )
+            raise StoryBiblePersistenceError("Project path escapes the configured data root")
         return candidate
+
+    @staticmethod
+    def _require_project_directory(story_bible_path: Path) -> None:
+        if not story_bible_path.parent.is_dir():
+            raise ProjectNotFoundError
 
     @contextmanager
     def _project_lock(self, story_bible_path: Path):
@@ -75,7 +100,11 @@ class FileStoryBibleRepository:
                     yield
                 finally:
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-        except (StoryBibleNotFoundError, StoryBibleRevisionConflictError):
+        except (
+            ProjectNotFoundError,
+            StoryBibleNotFoundError,
+            StoryBibleRevisionConflictError,
+        ):
             raise
         except OSError as error:
             raise StoryBiblePersistenceError("Could not lock Story Bible") from error
@@ -142,7 +171,12 @@ def _encode_snapshot(snapshot: StoryBibleSnapshot) -> dict[str, Any]:
                 {
                     "id": character.id,
                     "name": character.name,
+                    "gender": character.gender,
+                    "age": character.age,
                     "role": character.role,
+                    "personality": character.personality,
+                    "proseStyle": character.prose_style,
+                    "dialogueStyle": character.dialogue_style,
                     "desire": character.desire,
                     "hiddenFeeling": character.hidden_feeling,
                 }
@@ -162,25 +196,22 @@ def _encode_snapshot(snapshot: StoryBibleSnapshot) -> dict[str, Any]:
 
 
 def _decode_snapshot(document: object, project_id: str) -> StoryBibleSnapshot:
-    envelope = _object_with_keys(
-        document, {"schemaVersion", "storyBibleRevision", "storyBible"}
-    )
-    if _integer(envelope["schemaVersion"]) != _SCHEMA_VERSION:
+    envelope = _object_with_keys(document, {"schemaVersion", "storyBibleRevision", "storyBible"})
+    schema_version = _integer(envelope["schemaVersion"])
+    if schema_version not in {_LEGACY_SCHEMA_VERSION, _SCHEMA_VERSION}:
         raise StoryBiblePersistenceError("Unsupported Story Bible schema version")
     revision = _integer(envelope["storyBibleRevision"])
     if revision < 1:
         raise StoryBiblePersistenceError("Story Bible revision must be positive")
 
-    payload = _object_with_keys(
-        envelope["storyBible"], {"projectId", "characters", "worldEntries"}
-    )
+    payload = _object_with_keys(envelope["storyBible"], {"projectId", "characters", "worldEntries"})
     stored_project_id = _nonempty_string(payload["projectId"])
     if stored_project_id != project_id:
         raise StoryBiblePersistenceError("Story Bible project does not match its path")
 
     characters_value = _list(payload["characters"])
     entries_value = _list(payload["worldEntries"])
-    characters = tuple(_decode_character(value) for value in characters_value)
+    characters = tuple(_decode_character(value, schema_version) for value in characters_value)
     entries = tuple(_decode_world_entry(value) for value in entries_value)
     return StoryBibleSnapshot(
         story_bible=StoryBible(
@@ -192,15 +223,42 @@ def _decode_snapshot(document: object, project_id: str) -> StoryBibleSnapshot:
     )
 
 
-def _decode_character(value: object) -> Character:
-    item = _object_with_keys(value, {"id", "name", "role", "desire", "hiddenFeeling"})
-    role = _string(item["role"])
-    if role != "protagonist":
-        raise StoryBiblePersistenceError("Invalid character role")
+def _decode_character(value: object, schema_version: int) -> Character:
+    if schema_version == _LEGACY_SCHEMA_VERSION:
+        item = _object_with_keys(value, {"id", "name", "role", "desire", "hiddenFeeling"})
+        if _string(item["role"]) != "protagonist":
+            raise StoryBiblePersistenceError("Invalid legacy character role")
+        gender = age = personality = prose_style = dialogue_style = ""
+    else:
+        item = _object_with_keys(
+            value,
+            {
+                "id",
+                "name",
+                "gender",
+                "age",
+                "role",
+                "personality",
+                "proseStyle",
+                "dialogueStyle",
+                "desire",
+                "hiddenFeeling",
+            },
+        )
+        gender = _string(item["gender"])
+        age = _string(item["age"])
+        personality = _string(item["personality"])
+        prose_style = _string(item["proseStyle"])
+        dialogue_style = _string(item["dialogueStyle"])
     return Character(
         id=_nonempty_string(item["id"]),
         name=_nonempty_string(item["name"]),
-        role="protagonist",
+        gender=gender,
+        age=age,
+        role=_string(item["role"]),
+        personality=personality,
+        prose_style=prose_style,
+        dialogue_style=dialogue_style,
         desire=_string(item["desire"]),
         hidden_feeling=_string(item["hiddenFeeling"]),
     )

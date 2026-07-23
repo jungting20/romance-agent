@@ -30,6 +30,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { applyWritingSuggestion } from "@/features/apply-writing-suggestion";
 import {
+  CharacterCardEditorSheet,
+  CharacterDiscardDialog,
+  useCharacterCardEditor,
+} from "@/features/character-card-editor";
+import {
   useWorldEntryEditor,
   WorldDiscardDialog,
   WorldEditorInitializingSheet,
@@ -49,7 +54,11 @@ import { SceneTree } from "@/modules/manuscript/ui/scene-tree";
 import { StoryContextPanel } from "@/modules/story-bible/ui/story-context-panel";
 import { WritingToolPanel } from "@/modules/writing-assistant/ui/writing-tool-panel";
 
-import { type ContextMode, isTabOnlyWorkspaceNavigation } from "./writing-workspace-tabs";
+import {
+  type ContextMode,
+  isTabOnlyWorkspaceNavigation,
+  parseCharacterId,
+} from "./writing-workspace-tabs";
 
 const contextTools: Array<{
   mode: ContextMode;
@@ -65,6 +74,7 @@ export function WritingWorkspacePage() {
   const { projectId } = useParams({ from: "/projects/$projectId/write" });
   const search = useSearch({ from: "/projects/$projectId/write" });
   const { tab, panel } = search;
+  const characterId = parseCharacterId(search.characterId);
   const navigate = useNavigate({ from: "/projects/$projectId/write" });
   const contextMode: ContextMode = tab ?? "manuscript";
   const workspaceQuery = useProjectWorkspaceQuery(projectId);
@@ -96,14 +106,67 @@ export function WritingWorkspacePage() {
     if (panel !== "world-editor" || tab === "world") return;
     void navigate({
       replace: true,
-      search: (previous) => ({ ...previous, tab: "world", panel: "world-editor" }),
+      search: (previous) => ({
+        ...previous,
+        tab: "world",
+        panel: "world-editor",
+      }),
     });
   }, [navigate, panel, tab]);
+
+  useEffect(() => {
+    if (panel !== "character-editor" || tab === "characters") return;
+    void navigate({
+      replace: true,
+      search: (previous) => ({
+        ...previous,
+        tab: "characters",
+        panel: "character-editor",
+      }),
+    });
+  }, [navigate, panel, tab]);
+
+  useEffect(() => {
+    if (panel === "character-editor" || search.characterId === undefined) return;
+    void navigate({
+      replace: true,
+      search: (previous) => {
+        const { characterId: _characterId, ...rest } = previous;
+        return rest;
+      },
+    });
+  }, [navigate, panel, search.characterId]);
+
+  useEffect(() => {
+    if (
+      panel !== "character-editor" ||
+      search.characterId === undefined ||
+      characterId !== undefined
+    ) {
+      return;
+    }
+    void navigate({
+      replace: true,
+      search: (previous) => {
+        const { characterId: _characterId, ...rest } = previous;
+        return rest;
+      },
+    });
+  }, [characterId, navigate, panel, search.characterId]);
 
   function handleContextModeChange(mode: ContextMode) {
     void navigate({
       search: (previous) => {
-        const { tab: _tab, ...search } = previous;
+        const { tab: _tab, ...searchWithEditor } = previous;
+        let search = searchWithEditor;
+        if (panel === "character-editor") {
+          const {
+            panel: _panel,
+            characterId: _characterId,
+            ...withoutCharacterEditor
+          } = searchWithEditor;
+          search = withoutCharacterEditor;
+        }
         return mode === "manuscript" ? search : { ...search, tab: mode };
       },
     });
@@ -176,19 +239,47 @@ export function WritingWorkspacePage() {
     <LoadedWritingWorkspace
       workspace={workspaceQuery.data}
       contextMode={contextMode}
-      editorOpen={panel === "world-editor" && contextMode === "world"}
+      worldEditorOpen={panel === "world-editor" && contextMode === "world"}
+      characterEditorOpen={panel === "character-editor" && contextMode === "characters"}
+      characterId={characterId}
       onContextModeChange={handleContextModeChange}
-      onEditorOpen={() => {
+      onWorldEditorOpen={() => {
         void navigate({
-          search: (previous) => ({ ...previous, tab: "world", panel: "world-editor" }),
+          search: (previous) => ({
+            ...previous,
+            tab: "world",
+            panel: "world-editor",
+          }),
         });
       }}
-      onEditorClose={(replace = false) => {
+      onWorldEditorClose={(replace = false) => {
         void navigate({
           replace,
           search: (previous) => {
             const { panel: _panel, ...rest } = previous;
             return { ...rest, tab: "world" };
+          },
+        });
+      }}
+      onCharacterEditorOpen={(nextCharacterId) => {
+        void navigate({
+          search: (previous) => {
+            const { characterId: _characterId, ...rest } = previous;
+            return {
+              ...rest,
+              tab: "characters",
+              panel: "character-editor",
+              ...(nextCharacterId ? { characterId: nextCharacterId } : {}),
+            };
+          },
+        });
+      }}
+      onCharacterEditorClose={(replace = false) => {
+        void navigate({
+          replace,
+          search: (previous) => {
+            const { panel: _panel, characterId: _characterId, ...rest } = previous;
+            return { ...rest, tab: "characters" };
           },
         });
       }}
@@ -199,17 +290,25 @@ export function WritingWorkspacePage() {
 function LoadedWritingWorkspace({
   workspace,
   contextMode,
-  editorOpen,
+  worldEditorOpen,
+  characterEditorOpen,
+  characterId,
   onContextModeChange,
-  onEditorOpen,
-  onEditorClose,
+  onWorldEditorOpen,
+  onWorldEditorClose,
+  onCharacterEditorOpen,
+  onCharacterEditorClose,
 }: {
   workspace: ProjectWorkspaceResponse;
   contextMode: ContextMode;
-  editorOpen: boolean;
+  worldEditorOpen: boolean;
+  characterEditorOpen: boolean;
+  characterId?: string;
   onContextModeChange: (mode: ContextMode) => void;
-  onEditorOpen: () => void;
-  onEditorClose: (replace?: boolean) => void;
+  onWorldEditorOpen: () => void;
+  onWorldEditorClose: (replace?: boolean) => void;
+  onCharacterEditorOpen: (characterId?: string) => void;
+  onCharacterEditorClose: (replace?: boolean) => void;
 }) {
   const [contextOpen, setContextOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -251,17 +350,36 @@ function LoadedWritingWorkspace({
   });
   const worldEditor = useWorldEntryEditor({
     projectId: project.id,
-    open: editorOpen,
+    open: worldEditorOpen,
     onSaved: () => {
       setWorldAnnouncement("세계관을 저장했어요.");
-      onEditorClose(true);
+      onWorldEditorClose(true);
     },
-    onClose: () => onEditorClose(false),
+    onClose: () => onWorldEditorClose(false),
   });
-  useWorkspaceNavigationGuard(status, flush, worldEditor);
+  const characterEditor = useCharacterCardEditor({
+    projectId: project.id,
+    bible,
+    open: characterEditorOpen,
+    mode: characterId ? "edit" : "create",
+    characterId,
+    onSaved: () => {
+      onCharacterEditorClose(true);
+    },
+    onClose: () => onCharacterEditorClose(false),
+  });
+  useWorkspaceNavigationGuard(status, flush, worldEditor, characterEditor);
   const handleEditorOpen = () => {
     openedFromLaunchRef.current = true;
-    onEditorOpen();
+    onWorldEditorOpen();
+  };
+  const handleCreateCharacter = (trigger: HTMLButtonElement) => {
+    worldLaunchRef.current = trigger;
+    onCharacterEditorOpen();
+  };
+  const handleEditCharacter = (nextCharacterId: string, trigger: HTMLButtonElement) => {
+    worldLaunchRef.current = trigger;
+    onCharacterEditorOpen(nextCharacterId);
   };
   const restoreWorldEditorFocus = (resetLaunchOrigin = true) => {
     const focusTarget = openedFromLaunchRef.current ? worldLaunchRef.current : worldTabRef.current;
@@ -269,6 +387,12 @@ function LoadedWritingWorkspace({
     if (resetLaunchOrigin) openedFromLaunchRef.current = false;
   };
   const scene = sceneNavigation.activeScene;
+
+  const restoreCharacterEditorFocus = () => {
+    const characterTab = document.querySelector<HTMLElement>('[aria-label="인물 보기"]');
+    (worldLaunchRef.current ?? characterTab)?.focus();
+    worldLaunchRef.current = null;
+  };
 
   if (!scene) {
     return (
@@ -418,6 +542,9 @@ function LoadedWritingWorkspace({
                     addSceneDisabled={status === "conflict"}
                     onEditWorld={handleEditorOpen}
                     editWorldButtonRef={worldLaunchRef}
+                    onCreateCharacter={handleCreateCharacter}
+                    onEditCharacter={handleEditCharacter}
+                    characterStatus={characterEditor.announcement}
                   />
                 </ScrollArea>
               </SheetContent>
@@ -436,6 +563,9 @@ function LoadedWritingWorkspace({
                   addSceneDisabled={status === "conflict"}
                   onEditWorld={handleEditorOpen}
                   editWorldButtonRef={worldLaunchRef}
+                  onCreateCharacter={handleCreateCharacter}
+                  onEditCharacter={handleEditCharacter}
+                  characterStatus={characterEditor.announcement}
                 />
               </ScrollArea>
             </ResizablePanel>
@@ -463,6 +593,9 @@ function LoadedWritingWorkspace({
                 addSceneDisabled={status === "conflict"}
                 onEditWorld={handleEditorOpen}
                 editWorldButtonRef={worldLaunchRef}
+                onCreateCharacter={handleCreateCharacter}
+                onEditCharacter={handleEditCharacter}
+                characterStatus={characterEditor.announcement}
               />
             </aside>
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{editor}</div>
@@ -499,7 +632,7 @@ function LoadedWritingWorkspace({
       {worldEditor.state && (
         <>
           <WorldEditorSheet
-            open={editorOpen}
+            open={worldEditorOpen}
             state={worldEditor.state}
             onFieldChange={worldEditor.changeField}
             onAdd={worldEditor.addRow}
@@ -523,18 +656,36 @@ function LoadedWritingWorkspace({
           />
         </>
       )}
-      {editorOpen && !worldEditor.state && (
+      {worldEditorOpen && !worldEditor.state && (
         <WorldEditorInitializingSheet
           open
           error={worldEditor.loadError}
           onRetry={worldEditor.retryLoad}
-          onClose={() => onEditorClose(false)}
+          onClose={() => onWorldEditorClose(false)}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             restoreWorldEditorFocus();
           }}
         />
       )}
+      {characterEditorOpen && (
+        <CharacterCardEditorSheet
+          open
+          state={characterEditor.state}
+          onFieldChange={characterEditor.changeField}
+          onSave={() => void characterEditor.save()}
+          onRequestClose={characterEditor.requestClose}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            restoreCharacterEditorFocus();
+          }}
+        />
+      )}
+      <CharacterDiscardDialog
+        state={characterEditor.state}
+        onCancel={characterEditor.cancelDiscard}
+        onConfirm={characterEditor.confirmDiscard}
+      />
       <ManuscriptConflictDialog
         open={isConflictDialogOpen}
         kind={conflictKind ?? "scene-content"}
@@ -561,6 +712,9 @@ function ContextPanelContent({
   addSceneDisabled,
   onEditWorld,
   editWorldButtonRef,
+  onCreateCharacter,
+  onEditCharacter,
+  characterStatus,
 }: {
   draft: ProjectWorkspaceResponse["manuscript"];
   bible: ProjectWorkspaceResponse["storyBible"];
@@ -569,6 +723,9 @@ function ContextPanelContent({
   addSceneDisabled: boolean;
   onEditWorld: () => void;
   editWorldButtonRef: Ref<HTMLButtonElement>;
+  onCreateCharacter: (trigger: HTMLButtonElement) => void;
+  onEditCharacter: (characterId: string, trigger: HTMLButtonElement) => void;
+  characterStatus: string;
 }) {
   return (
     <>
@@ -581,7 +738,13 @@ function ContextPanelContent({
         />
       </TabsContent>
       <TabsContent value="characters">
-        <StoryContextPanel bible={bible} mode="characters" />
+        <StoryContextPanel
+          bible={bible}
+          mode="characters"
+          onCreateCharacter={onCreateCharacter}
+          onEditCharacter={onEditCharacter}
+          characterStatus={characterStatus}
+        />
       </TabsContent>
       <TabsContent value="world">
         <StoryContextPanel
@@ -599,15 +762,22 @@ function useWorkspaceNavigationGuard(
   status: ManuscriptAutosaveStatus,
   flush: () => Promise<boolean>,
   worldEditor: ReturnType<typeof useWorldEntryEditor>,
+  characterEditor: ReturnType<typeof useCharacterCardEditor>,
 ) {
-  const shouldBlock = status !== "saved" || worldEditor.requiresDiscardConfirmation;
+  const shouldBlock =
+    status !== "saved" ||
+    worldEditor.requiresDiscardConfirmation ||
+    characterEditor.requiresDiscardConfirmation;
   const isHandlingBlockedNavigationRef = useRef(false);
 
   useBlocker({
     disabled: !shouldBlock,
     enableBeforeUnload: shouldBlock,
     shouldBlockFn: async ({ current, next }) => {
-      if (isTabOnlyWorkspaceNavigation(current, next)) {
+      if (
+        isTabOnlyWorkspaceNavigation(current, next) &&
+        !characterEditor.requiresDiscardConfirmation
+      ) {
         return false;
       }
 
@@ -619,6 +789,10 @@ function useWorkspaceNavigationGuard(
       try {
         if (worldEditor.requiresDiscardConfirmation) {
           const confirmed = await worldEditor.confirmNavigationDiscard();
+          if (!confirmed) return true;
+        }
+        if (characterEditor.requiresDiscardConfirmation) {
+          const confirmed = await characterEditor.confirmNavigationDiscard();
           if (!confirmed) return true;
         }
         return !(await flush());

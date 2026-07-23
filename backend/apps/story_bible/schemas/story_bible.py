@@ -12,9 +12,42 @@ class CharacterResponse(BaseModel):
 
     id: NonemptyString
     name: NonemptyString
-    role: Literal["protagonist"]
+    gender: StrictStr
+    age: StrictStr
+    role: StrictStr
+    personality: StrictStr
+    prose_style: StrictStr = Field(alias="proseStyle")
+    dialogue_style: StrictStr = Field(alias="dialogueStyle")
     desire: StrictStr
     hidden_feeling: StrictStr = Field(alias="hiddenFeeling")
+
+
+class CreateCharacterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: StrictStr
+    gender: StrictStr
+    age: StrictStr
+    role: StrictStr
+    personality: StrictStr
+    prose_style: StrictStr = Field(alias="proseStyle")
+    dialogue_style: StrictStr = Field(alias="dialogueStyle")
+    desire: StrictStr
+    hidden_feeling: StrictStr = Field(alias="hiddenFeeling")
+
+
+class UpdateCharacterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: StrictStr = Field(default_factory=lambda: None)
+    gender: StrictStr = Field(default_factory=lambda: None)
+    age: StrictStr = Field(default_factory=lambda: None)
+    role: StrictStr = Field(default_factory=lambda: None)
+    personality: StrictStr = Field(default_factory=lambda: None)
+    prose_style: StrictStr = Field(default_factory=lambda: None, alias="proseStyle")
+    dialogue_style: StrictStr = Field(default_factory=lambda: None, alias="dialogueStyle")
+    desire: StrictStr = Field(default_factory=lambda: None)
+    hidden_feeling: StrictStr = Field(default_factory=lambda: None, alias="hiddenFeeling")
 
 
 class WorldEntryResponse(BaseModel):
@@ -78,8 +111,11 @@ class ApiErrorResponse(BaseModel):
 
     code: Literal[
         "MALFORMED_REQUEST",
+        "PROJECT_NOT_FOUND",
         "STORY_BIBLE_NOT_FOUND",
+        "CHARACTER_NOT_FOUND",
         "STORY_BIBLE_REVISION_CONFLICT",
+        "INVALID_CHARACTER",
         "INVALID_WORLD_ENTRIES",
         "INTERNAL_ERROR",
     ]

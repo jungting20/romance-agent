@@ -1,6 +1,7 @@
 import pytest
 
 from apps.story_bible.domain.errors import (
+    CharacterNotFoundError,
     InvalidDomainValueError,
     WorldEntryChangeError,
 )
@@ -39,6 +40,39 @@ def test_world_entry_normalizes_owned_text() -> None:
 
     assert result.title == "온실"
     assert result.description == "마지막 만남의 장소"
+
+
+def test_character_normalizes_name_and_allows_empty_optional_strings() -> None:
+    result = Character("character-1", "  서윤  ", "", "", "")
+
+    assert result.name == "서윤"
+    assert result.gender == ""
+    assert result.age == ""
+    assert result.personality == ""
+    assert result.prose_style == ""
+    assert result.dialogue_style == ""
+
+
+def test_add_and_update_character_preserve_identity_order_and_world_entries() -> None:
+    first = character()
+    world_entries = (entry(),)
+    current = StoryBible("project-1", (first,), world_entries)
+    added = Character("character-2", "민서", "조언자", "목표", "감정")
+
+    with_added = current.add_character(added)
+    updated = Character("character-1", "서윤 수정", "주인공", "새 욕망", "새 감정")
+    result = with_added.update_character(updated)
+
+    assert result.characters == (updated, added)
+    assert result.world_entries is world_entries
+    assert first.id == result.characters[0].id
+
+
+def test_update_character_rejects_unknown_identity() -> None:
+    current = StoryBible("project-1", (character(),), ())
+
+    with pytest.raises(CharacterNotFoundError):
+        current.update_character(Character("missing", "민서", "", "", ""))
 
 
 def test_story_bible_rejects_duplicate_character_ids() -> None:

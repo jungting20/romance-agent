@@ -11,15 +11,25 @@ interface StoryContextPanelProps {
   mode: "characters" | "world";
   onEditWorld?: () => void;
   editWorldButtonRef?: Ref<HTMLButtonElement>;
+  onCreateCharacter?: (trigger: HTMLButtonElement) => void;
+  onEditCharacter?: (characterId: string, trigger: HTMLButtonElement) => void;
+  characterStatus?: string;
 }
 
-const worldKindLabels = { place: "장소", object: "사물", rule: "규칙" } as const;
+const worldKindLabels = {
+  place: "장소",
+  object: "사물",
+  rule: "규칙",
+} as const;
 
 export function StoryContextPanel({
   bible,
   mode,
   onEditWorld,
   editWorldButtonRef,
+  onCreateCharacter,
+  onEditCharacter,
+  characterStatus,
 }: StoryContextPanelProps) {
   if (mode === "world") {
     return (
@@ -61,9 +71,31 @@ export function StoryContextPanel({
 
   return (
     <div className="h-full p-4">
-      <h2 className="mb-4 text-sm font-semibold">등장인물</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">등장인물</h2>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={(event) => onCreateCharacter?.(event.currentTarget)}
+        >
+          새 인물 등록
+        </Button>
+      </div>
+      {characterStatus && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="mb-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground"
+        >
+          {characterStatus}
+        </p>
+      )}
       <div className="space-y-3">
-        {bible.characters.map((character, index) => (
+        {bible.characters.length === 0 && (
+          <p className="text-xs text-muted-foreground">아직 등록된 인물이 없어요.</p>
+        )}
+        {bible.characters.map((character) => (
           <Card key={character.id} className="gap-2 border-sidebar-border bg-card py-3 shadow-none">
             <CardContent className="px-3">
               <div className="mb-2 flex items-center justify-between">
@@ -73,14 +105,29 @@ export function StoryContextPanel({
                   </span>
                   <p className="text-xs font-semibold">{character.name}</p>
                 </div>
-                <Badge variant="outline" className="text-[9px]">
-                  {index === 0 ? "주인공" : "상대역"}
-                </Badge>
+                {character.role && (
+                  <Badge variant="outline" className="text-[9px]">
+                    {character.role}
+                  </Badge>
+                )}
               </div>
               <p className="flex gap-1.5 text-[11px] leading-5 text-muted-foreground">
                 <Heart className="mt-1 size-3 shrink-0 text-primary" />
-                {character.hiddenFeeling}
+                <span>
+                  <span className="font-medium text-foreground">숨은 감정</span>{" "}
+                  {character.hiddenFeeling || "—"}
+                </span>
               </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="mt-2 w-full"
+                aria-label={`${character.name} 인물 수정`}
+                onClick={(event) => onEditCharacter?.(character.id, event.currentTarget)}
+              >
+                인물 수정
+              </Button>
             </CardContent>
           </Card>
         ))}

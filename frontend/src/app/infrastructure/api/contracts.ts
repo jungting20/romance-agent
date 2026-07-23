@@ -6,6 +6,8 @@ export type ApiErrorCode =
   | "MALFORMED_REQUEST"
   | "PROJECT_NOT_FOUND"
   | "STORY_BIBLE_NOT_FOUND"
+  | "CHARACTER_NOT_FOUND"
+  | "INVALID_CHARACTER"
   | "STORY_BIBLE_REVISION_CONFLICT"
   | "INVALID_WORLD_ENTRIES"
   | "MANUSCRIPT_NOT_FOUND"
@@ -37,9 +39,31 @@ export interface ApiStoryConcept {
 export interface ApiCharacter {
   id: string;
   name: string;
-  role: "protagonist";
+  gender: string;
+  age: string;
+  role: string;
+  personality: string;
+  proseStyle: string;
+  dialogueStyle: string;
   desire: string;
   hiddenFeeling: string;
+}
+
+export type CharacterMutableFields = Omit<ApiCharacter, "id">;
+
+export type CreateCharacterRequest = CharacterMutableFields;
+
+export type UpdateCharacterRequest = Partial<CharacterMutableFields>;
+
+export interface CreateCharacterMutationVariables {
+  projectId: string;
+  request: CreateCharacterRequest;
+}
+
+export interface UpdateCharacterMutationVariables {
+  projectId: string;
+  characterId: string;
+  request: UpdateCharacterRequest;
 }
 
 export interface ApiWorldEntry {
