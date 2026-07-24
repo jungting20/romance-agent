@@ -54,7 +54,7 @@ export function CharacterCardEditorSheet({
         data-character-card-editor=""
         side="right"
         showCloseButton={false}
-        className="z-[60] w-full gap-0 p-0 sm:max-w-2xl"
+        className="z-[60] gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           nameRef.current?.focus();
