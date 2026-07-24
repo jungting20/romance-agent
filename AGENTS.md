@@ -209,6 +209,88 @@ The main agent reviews the report and every registered ticket before assigning
 implementation. Direct registration does not transfer integration, review, or
 final-verification responsibility away from the main agent.
 
+## Backend Bug-Hunting Subagent
+
+When the user requests defect discovery for a bounded backend operation or use
+case, use the project-scoped `backend-bug-hunter` agent defined in
+`.codex/agents/backend-bug-hunter.toml`. Assign exactly one `operationId` or one
+explicit backend use case. Do not dispatch it as an implementation review, a
+browser audit, an application-wide backend audit, or while another agent is
+modifying the same operation or use-case boundary.
+
+Every assignment must state the target and backend entry point; the exact
+main-approved OpenAPI baseline and matching `operationId` when consumer-facing;
+relevant domain contracts and acceptance criteria; starting fixture and
+authentication state; run-specific temporary database and file paths, approved
+temporary parent, isolation, reset, and cleanup method; allowed commands;
+excluded scope; data-mutation limits; and error, concurrency, and retry
+scenarios. Missing applicable input, multiple targets, an ambiguous boundary,
+or unproven storage isolation stops setup. A non-HTTP use case does not require
+an OpenAPI artifact.
+
+The `backend-bug-hunter` owns bounded execution, applicable normal and failure
+scenario exploration, two independent clean-state reproductions, duplicate
+checks, severity classification, direct ticket registration, and one Korean
+HTML report under `docs/bug-reports/`. It may create bug-specific specs and
+plans only when required by severity. It does not implement fixes, review a
+completed implementation, or approve features.
+
+Use only immutable or deterministically generated fixtures copied into a unique
+temporary directory for each run. Never use actual production data, external
+providers, shared databases, shared files, real credentials, or state left by
+another run. Resolve and validate temporary paths beneath the assignment's
+approved parent before setup. Clean only paths owned by the current run and
+report cleanup failures or leftovers.
+
+Check the normal path and applicable boundary, validation, 404, 409, 422, 500,
+persistence rollback, concurrency, retry, provider-failure, and sensitive-log
+scenarios. Use fake or stub providers. Record a reason for every non-applicable
+scenario instead of forcing an unreachable failure.
+
+Before setup, run `zellij-agent ticket-worker list --json`; run
+`zellij-agent ticket-worker init` once only when the list command explicitly
+reports that the queue is uninitialized. Immediately before registration, query
+fresh JSON again and compare target, trigger, observable failure, impact, and
+repair boundary. Register only authoritative, independently repairable defects
+that reproduced twice from independent clean states and are not duplicates.
+Never edit the ticket database to recover from a duplicate or registration
+failure.
+
+Reserve an HTML `#bug-NNN` anchor for every registrable defect. For `Blocking`,
+`High`, and `Medium`, create and self-review one Korean bug design and one
+implementation-ready plan, link both documents to the exact report anchor, and
+register with `zellij-agent ticket-worker add`. For `Low`, create no design or
+plan and use `zellij-agent ticket-worker fast-add` with the report path and
+anchor as evidence; its prompt must include `FAST 모드로 처리한다`. Every prompt
+requires `feature-development`, skips `brainstorming` and `writing-plans`, and
+prohibits changes outside the defect scope. Query fresh JSON after registration
+and verify the command and every registered value.
+
+The Korean report uses `docs/bug-reports/backend-report-template.html` and
+records the target contract, fixture, authentication, temporary paths and
+isolation, scenario results, tickets, duplicates, exclusions, commands,
+cleanup, and limitations. For each defect include both clean runs' request and
+response, sanitized logs, and storage state before and after. Redact
+authorization, cookies, tokens, credentials, provider secrets, private keys,
+environment secrets, and private manuscript or character content. Do not store
+raw database dumps, journals, complete snapshots, binary payloads, or
+secret-bearing stack traces.
+
+Owned writes are limited to new backend bug reports and evidence, severity-
+required new bug specs and plans, ticket-worker commands, and assigned
+run-specific temporary paths. Product code and tests, OpenAPI, domain contracts,
+package files, lockfiles, `backend/AGENTS.md`, existing agent definitions, and
+pre-existing files are read-only. Commit only newly created bug documents,
+reports, and evidence with exact pathspecs; never commit temporary data.
+
+On failure, stop dependent work and return a partial handoff with the target,
+failed phase, completed and unexecuted phases, commands and exits, sanitized
+error, artifacts and validation state, ticket IDs and verified status,
+temporary paths, cleanup result, preserved files, limitations, and the exact
+resume condition. Never claim work not proven by fresh evidence. The main agent
+reviews the report and every ticket before assigning implementation and retains
+integration, review, and final-verification responsibility.
+
 ## Shared Contracts and Domain Boundaries
 
 - Use the names and meanings defined in `docs/domains/` consistently in code,
