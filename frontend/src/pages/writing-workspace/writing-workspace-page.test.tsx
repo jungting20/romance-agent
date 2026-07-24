@@ -706,14 +706,17 @@ describe("WritingWorkspacePage", () => {
     await user.clear(title);
     await user.type(title, "로컬 온실");
 
-    await user.click(screen.getByRole("button", { name: "세계관 편집기 닫기" }));
+    const closeButton = screen.getByRole("button", { name: "세계관 편집기 닫기" });
+    await user.click(closeButton);
     expect(
       screen.getByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "계속 편집" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "계속 편집" }));
 
     expect(title).toHaveValue("로컬 온실");
     expect(router.state.location.search).toEqual({ tab: "world", panel: "world-editor" });
+    expect(closeButton).toHaveFocus();
   });
 
   test("discards a confirmed close draft and reopens from the authoritative snapshot", async () => {
@@ -748,8 +751,10 @@ describe("WritingWorkspacePage", () => {
     ).toBeInTheDocument();
     expect(document.querySelector('[data-slot="dialog-overlay"]')).toHaveClass("z-[70]");
     expect(document.querySelector('[data-slot="dialog-content"]')).toHaveClass("z-[71]");
-    await user.click(screen.getByRole("button", { name: "계속 편집" }));
+    expect(screen.getByRole("button", { name: "계속 편집" })).toHaveFocus();
+    await user.keyboard("{Enter}");
     expect(title).toHaveValue("비가 그친 온실 지킬 초안");
+    expect(title).toHaveFocus();
 
     const overlay = document.querySelector<HTMLElement>('[data-slot="sheet-overlay"]');
     expect(overlay).not.toBeNull();
@@ -985,11 +990,17 @@ describe("WritingWorkspacePage", () => {
     await user.type(title, "충돌한 로컬 초안");
     await user.click(screen.getByRole("button", { name: "저장" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("다른 곳에서 세계관이 변경되었어요");
-    await user.click(screen.getByRole("button", { name: "최신 세계관 불러오기" }));
+    const reloadButton = screen.getByRole("button", { name: "최신 세계관 불러오기" });
+    await user.click(reloadButton);
     expect(
       screen.getByRole("dialog", { name: "현재 편집 내용을 버리고 최신 세계관을 불러올까요?" }),
     ).toBeInTheDocument();
     expect(title).toHaveValue("충돌한 로컬 초안");
+    await user.click(screen.getByRole("button", { name: "계속 편집" }));
+    expect(title).toHaveValue("충돌한 로컬 초안");
+    expect(reloadButton).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "최신 세계관 불러오기" }));
     await user.click(screen.getByRole("button", { name: "최신 세계관 불러오기" }));
     expect(await screen.findByRole("textbox", { name: "기존 항목 1 제목" })).toHaveValue(
       "서버 최신 온실",
