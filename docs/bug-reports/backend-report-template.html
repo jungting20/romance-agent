@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="backend-bug-hunter-isolation" content="run-specific">
+  <title>__REPORT_TITLE__</title>
+  <style>
+    :root { color-scheme:light; font-family:system-ui,sans-serif; background:#f3f5f7; color:#20262d; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#245ea8; }
+    .page { width:min(1180px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card,.run-evidence { background:#fff; border:1px solid #cfd7df; border-radius:.8rem; padding:1.25rem; }
+    .panel,.bug-card,.run-evidence { margin-top:1rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(12rem,1fr)); gap:.8rem; }
+    .metric { background:#eef3f8; border-radius:.6rem; padding:1rem; } .metric strong { display:block; font-size:1.6rem; }
+    .severity { display:inline-block; border:1px solid currentColor; border-radius:999px; padding:.25rem .6rem; font-weight:800; }
+    .severity-blocking,.severity-high { color:#a22520; } .severity-medium { color:#7a5700; } .severity-low { color:#236246; }
+    code,pre { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; } pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#111820; color:#f7fafc; padding:1rem; border-radius:.55rem; }
+    table { width:100%; border-collapse:collapse; } th,td { padding:.65rem; border:1px solid #cfd7df; text-align:left; vertical-align:top; }
+    dt { margin-top:.75rem; font-weight:800; } dd { margin:.25rem 0 0; } :focus-visible { outline:3px solid #246fca; outline-offset:3px; }
+    @media print { :root { background:#fff; } .page { width:100%; padding:0; } .hero,.panel,.bug-card,.run-evidence { break-inside:avoid; box-shadow:none; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero"><p>Backend 버그 탐색 보고서</p><h1>__REPORT_TITLE__</h1><p>생성 시각: <time datetime="__GENERATED_AT_ISO__">__GENERATED_AT_KO__</time></p></header>
+  <section class="panel"><h2>탐색 범위</h2><p>__SCOPE_DESCRIPTION__</p><h3>제외 범위</h3><p>__EXCLUDED_SCOPE__</p></section>
+  <section class="panel"><h2>실행 계약</h2><dl><dt>대상</dt><dd><code>__TARGET_IDENTIFIER__</code></dd><dt>Entry point</dt><dd><code>__ENTRY_POINT__</code></dd><dt>OpenAPI baseline</dt><dd><code>__OPENAPI_BASELINE_OR_NA__</code></dd><dt>Domain contract</dt><dd><code>__DOMAIN_CONTRACT__</code></dd><dt>Revision</dt><dd><code>__REVISION__</code></dd></dl></section>
+  <section class="panel"><h2>격리 환경</h2><dl><dt>시작 fixture</dt><dd>__STARTING_FIXTURE__</dd><dt>인증 상태</dt><dd>__AUTH_STATE__</dd><dt>임시 DB·파일</dt><dd><code>__SANITIZED_TEMP_PATH__</code></dd><dt>격리·초기화</dt><dd>__ISOLATION_METHOD__</dd><dt>정리 방식</dt><dd>__CLEANUP_METHOD__</dd></dl></section>
+  <section class="panel"><h2>시나리오 결과</h2><table><thead><tr><th>분류</th><th>결과</th><th>근거 또는 비적용 사유</th></tr></thead><tbody>__SCENARIO_ROWS__</tbody></table></section>
+  <section class="panel"><h2>결과 요약</h2><div class="grid"><div class="metric">확정<strong>__CONFIRMED_COUNT__</strong></div><div class="metric">등록<strong>__REGISTERED_COUNT__</strong></div><div class="metric">중복<strong>__DUPLICATE_COUNT__</strong></div><div class="metric">제외<strong>__EXCLUDED_COUNT__</strong></div></div></section>
+  <section class="panel"><h2>등록한 버그</h2>
+    <article class="bug-card" id="bug-001"><p><span class="severity severity-__BUG_SEVERITY_CLASS__">심각도 __BUG_SEVERITY__</span></p><h3>__BUG_TITLE__</h3>
+      <dl><dt>티켓</dt><dd><code>#__TICKET_ID__</code> · <code>__REGISTRATION_COMMAND__</code> · <code>__TICKET_STATUS__</code></dd><dt>기대 결과</dt><dd>__EXPECTED_RESULT__</dd><dt>실제 결과</dt><dd>__ACTUAL_RESULT__</dd><dt>영향</dt><dd>__IMPACT__</dd><dt>근거 계약</dt><dd>__AUTHORITATIVE_REQUIREMENT__</dd></dl>
+      <section class="run-evidence" data-run="1"><h4>Clean run 1</h4><dl><dt>정제된 요청</dt><dd><pre>__SANITIZED_REQUEST__</pre></dd><dt>정제된 응답</dt><dd><pre>__SANITIZED_RESPONSE__</pre></dd><dt>정제 로그</dt><dd><pre>__SANITIZED_LOGS__</pre></dd><dt>저장 전 상태</dt><dd><pre>__STORAGE_BEFORE__</pre></dd><dt>저장 후 상태</dt><dd><pre>__STORAGE_AFTER__</pre></dd></dl></section>
+      <section class="run-evidence" data-run="2"><h4>Clean run 2</h4><dl><dt>정제된 요청</dt><dd><pre>__SANITIZED_REQUEST_RUN_2__</pre></dd><dt>정제된 응답</dt><dd><pre>__SANITIZED_RESPONSE_RUN_2__</pre></dd><dt>정제 로그</dt><dd><pre>__SANITIZED_LOGS_RUN_2__</pre></dd><dt>저장 전 상태</dt><dd><pre>__STORAGE_BEFORE_RUN_2__</pre></dd><dt>저장 후 상태</dt><dd><pre>__STORAGE_AFTER_RUN_2__</pre></dd></dl></section>
+    </article>
+  </section>
+  <section class="panel"><h2>중복된 관찰</h2><p>__DUPLICATE_OBSERVATIONS__</p></section>
+  <section class="panel"><h2>제외한 관찰</h2><p>__EXCLUDED_OBSERVATIONS__</p></section>
+  <section class="panel"><h2>수행한 검사</h2><ul>__CHECK_RESULTS__</ul></section>
+  <section class="panel"><h2>실패 및 부분 완료</h2><p>__PARTIAL_STATE__</p><p>정리 결과: __CLEANUP_RESULT__</p></section>
+  <section class="panel"><h2>제약 및 미확인 항목</h2><p>__LIMITATIONS__</p></section>
+</main>
+</body>
+</html>
