@@ -31,6 +31,12 @@ from dialogue_generation_agent import (
     WithheldInformation,
     packaged_prompt_path,
 )
+from llm_agent_audit import (
+    AuditAttemptFinished,
+    AuditAttemptStarted,
+    AuditEvent,
+    SensitiveAuditPayload,
+)
 
 
 def _request() -> DialogueGenerationRequest:
@@ -196,6 +202,20 @@ class FakeResult:
     output: DialogueGeneration
 
 
+class RecordingSink:
+    capture_sensitive_content = False
+
+    def __init__(self) -> None:
+        self.records: list[tuple[AuditEvent, SensitiveAuditPayload | None]] = []
+
+    async def append(
+        self,
+        event: AuditEvent,
+        sensitive: SensitiveAuditPayload | None = None,
+    ) -> None:
+        self.records.append((event, sensitive))
+
+
 class RecordingRunner:
     def __init__(self, output: DialogueGeneration) -> None:
         self.output = output
@@ -245,6 +265,47 @@ def test_generate_dialogue_sends_complete_json_context_and_returns_structured_ou
     }
     assert runner.calls[0][1] == packaged_prompt_path().read_text(encoding="utf-8")
     assert result.model_dump_json()
+
+
+def test_generate_dialogue_uses_common_audit_run_separate_from_generation_id() -> None:
+    sink = RecordingSink()
+    agent = DialogueGenerationAgent(
+        "test-provider:test-model",
+        runner=RecordingRunner(_output()),
+        generation_id_factory=lambda: "generation-attempt-01",
+        audit_sink=sink,
+        audit_id_factory=iter(("run-fixed", "attempt-fixed")).__next__,
+    )
+
+    result = asyncio.run(agent.generate_dialogue(_request()))
+
+    started = next(event for event, _ in sink.records if isinstance(event, AuditAttemptStarted))
+    assert started.run_id == "run-fixed"
+    assert started.attempt_id == "attempt-fixed"
+    assert started.agent_name == "dialogue-generation"
+    assert started.prompt.prompt_id == "dialogue-generation.system"
+    assert result.scene.generation_id == "generation-attempt-01"
+
+
+def test_generate_dialogue_audits_forbidden_information_validation_failure() -> None:
+    sink = RecordingSink()
+    agent = DialogueGenerationAgent(
+        "test-provider:test-model",
+        runner=RecordingRunner(_output(line="나는 서윤의 기억 소실 진단을 알고 있어.")),
+        generation_id_factory=lambda: "generation-attempt-01",
+        audit_sink=sink,
+        audit_id_factory=iter(("run-fixed", "attempt-fixed")).__next__,
+    )
+
+    with pytest.raises(DialogueGenerationError, match="dialogue generation failed") as captured:
+        asyncio.run(agent.generate_dialogue(_request()))
+
+    terminal = next(event for event, _ in sink.records if isinstance(event, AuditAttemptFinished))
+    assert terminal.status == "failure"
+    assert terminal.error is not None
+    assert terminal.error.code == "output_validation_failed"
+    assert captured.value.__cause__ is None
+    assert "서윤의 기억 소실 진단" not in str(captured.value)
 
 
 @pytest.mark.parametrize(
