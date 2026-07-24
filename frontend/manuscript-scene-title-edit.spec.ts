@@ -524,6 +524,95 @@ test.describe("저장 실패와 재시도", () => {
 });
 
 test.describe("409 충돌 해결", () => {
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 375, height: 800 },
+  ]) {
+    test(`${viewport.width}x${viewport.height} 긴 diff는 내부에서 스크롤되고 해결 버튼은 노출된다`, async ({
+      harness: { page, server },
+    }) => {
+      await page.setViewportSize(viewport);
+      const localLines = Array.from({ length: 45 }, (_, index) => `로컬 원고 ${index + 1}행`);
+      const serverLines = Array.from({ length: 45 }, (_, index) => `서버 원고 ${index + 1}행`);
+      const authoritative = serverLatest(
+        server.workspace,
+        "서버 최신 제목",
+        serverLines.join("\n"),
+      );
+      server.respondToPut = () => ({
+        kind: "error",
+        status: 409,
+        code: "MANUSCRIPT_REVISION_CONFLICT",
+      });
+      server.respondToDiff = (request) => ({
+        sceneId: request.sceneId,
+        serverRevision: 7,
+        localContent: request.localContent,
+        serverContent: serverLines.join("\n"),
+        serverManuscript: authoritative,
+        rows: localLines.flatMap((line, index) => [
+          {
+            kind: "local-only",
+            localLineNumber: index + 1,
+            localText: line,
+            serverLineNumber: null,
+            serverText: null,
+          },
+          {
+            kind: "server-only",
+            localLineNumber: null,
+            localText: null,
+            serverLineNumber: index + 1,
+            serverText: serverLines[index],
+          },
+        ]),
+      });
+
+      await openWorkspace(page, viewport.width >= 768);
+      await page.getByRole("textbox", { name: "원고 본문" }).fill(localLines.join("\n"));
+
+      const dialog = page.getByRole("dialog", { name: "원고 저장 충돌 해결" });
+      const diffViewport = dialog.getByTestId("manuscript-conflict-diff-viewport");
+      const columnHeader = dialog.getByRole("columnheader", { name: "내 편집본" });
+      const applyServer = dialog.getByRole("button", { name: "서버 최신본 적용" });
+      const keepLocal = dialog.getByRole("button", { name: "내 편집본 유지" });
+      await expect(dialog).toBeVisible();
+
+      const before = await diffViewport.evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+      }));
+      expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+      expect(before.scrollTop).toBe(0);
+
+      const dialogBox = await dialog.boundingBox();
+      const applyServerBox = await applyServer.boundingBox();
+      const keepLocalBox = await keepLocal.boundingBox();
+      expect(dialogBox).not.toBeNull();
+      expect(applyServerBox).not.toBeNull();
+      expect(keepLocalBox).not.toBeNull();
+      expect(dialogBox!.y).toBeGreaterThanOrEqual(0);
+      expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(viewport.height);
+      expect(applyServerBox!.y + applyServerBox!.height).toBeLessThanOrEqual(viewport.height);
+      expect(keepLocalBox!.y + keepLocalBox!.height).toBeLessThanOrEqual(viewport.height);
+
+      const headerBefore = await columnHeader.boundingBox();
+      await diffViewport.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      await expect
+        .poll(() => diffViewport.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0);
+      const headerAfter = await columnHeader.boundingBox();
+      expect(headerBefore).not.toBeNull();
+      expect(headerAfter).not.toBeNull();
+      expect(Math.abs(headerAfter!.y - headerBefore!.y)).toBeLessThanOrEqual(1);
+      await expect(applyServer).toBeInViewport();
+      await expect(keepLocal).toBeInViewport();
+    });
+  }
+
   test("내 편집본 유지는 로컬 제목을 서버 revision 위에 보존한다", async ({
     harness: { page, server },
   }) => {
