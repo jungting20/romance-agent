@@ -246,10 +246,11 @@ export function useManuscriptAutosave({
     [setStatus],
   );
 
-  const retry = useCallback(() => {
+  const retry = useCallback((): Promise<boolean> => {
     if (statusRef.current === "error") {
-      void saveCurrentDraft();
+      return saveCurrentDraft();
     }
+    return Promise.resolve(false);
   }, [saveCurrentDraft]);
 
   return {

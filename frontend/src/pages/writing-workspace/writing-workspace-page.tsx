@@ -348,6 +348,11 @@ function LoadedWritingWorkspace({
     contextIsInline,
     onCloseContext: () => setContextOpen(false),
   });
+  const handleRetry = async () => {
+    if (await retry()) {
+      window.requestAnimationFrame(() => sceneNavigation.editorRef.current?.focus());
+    }
+  };
   const worldEditor = useWorldEntryEditor({
     projectId: project.id,
     open: worldEditorOpen,
@@ -471,7 +476,11 @@ function LoadedWritingWorkspace({
             </p>
           </div>
         </div>
-        <AutosaveIndicator status={status} onRetry={retry} onOpenConflict={openConflictDialog} />
+        <AutosaveIndicator
+          status={status}
+          onRetry={() => void handleRetry()}
+          onOpenConflict={openConflictDialog}
+        />
       </header>
 
       <Tabs
