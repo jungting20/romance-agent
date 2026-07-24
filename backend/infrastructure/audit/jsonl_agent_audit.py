@@ -129,6 +129,10 @@ class JsonlAgentAuditSink(AgentAuditSink):
                 self._metadata_handler,
                 _canonical_json(_event_data(event)),
             )
+            self._metadata_handler.delete_expired_rotated_files(
+                now=now,
+                retention_days=self._config.metadata_retention_days,
+            )
             if not self.capture_sensitive_content or sensitive is None:
                 return
             assert self._aesgcm is not None
@@ -158,6 +162,10 @@ class JsonlAgentAuditSink(AgentAuditSink):
                 self.sensitive_logger,
                 self._sensitive_handler,
                 _canonical_json(envelope),
+            )
+            self._sensitive_handler.delete_expired_rotated_files(
+                now=now,
+                retention_days=self._config.sensitive_retention_days,
             )
 
     def close(self) -> None:

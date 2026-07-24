@@ -5,6 +5,7 @@ import logging
 import os
 import stat
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -399,6 +400,36 @@ def test_any_append_deletes_only_rotated_files_older_than_each_retention(
     assert sensitive_retained.exists()
     assert unrelated_rotation.exists()
     assert invalid_suffix.exists()
+
+
+def test_sensitive_rollover_immediately_deletes_expired_active_file(tmp_path: Path) -> None:
+    now = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
+    config = AgentAuditLogConfig(
+        directory=tmp_path / "private",
+        capture_sensitive_content=True,
+        encryption_key=b"k" * 32,
+        encryption_key_id="key-id",
+    )
+    sink = JsonlAgentAuditSink(
+        config,
+        nonce_factory=lambda size: b"n" * size,
+        clock=lambda: now,
+    )
+    sensitive_active = config.directory / "llm-audit-sensitive.jsonl"
+    sensitive_active.write_text("expired active record\n", encoding="utf-8")
+    expired_at = (now - timedelta(days=8)).timestamp()
+    os.utime(sensitive_active, (expired_at, expired_at))
+    sink._sensitive_handler.rolloverAt = int(time.time()) - 1
+
+    try:
+        asyncio.run(sink.append(_finished(), _sensitive()))
+    finally:
+        sink.close()
+
+    assert list(config.directory.glob("llm-audit-sensitive.jsonl.*")) == []
+    active_records = sensitive_active.read_text(encoding="utf-8").splitlines()
+    assert len(active_records) == 1
+    assert json.loads(active_records[0])["attempt_id"] == "attempt-1"
 
 
 def test_audit_handlers_are_not_attached_to_other_loggers(tmp_path: Path) -> None:
