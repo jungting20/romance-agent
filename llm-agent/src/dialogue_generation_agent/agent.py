@@ -15,6 +15,16 @@ from dialogue_generation_agent.models import (
     DialogueGenerationRequest,
     ForbiddenInformation,
 )
+from llm_agent_audit import (
+    AgentAuditSink,
+    AgentAuditWriteError,
+    AuditedAgentRunner,
+    PromptIdentity,
+)
+
+_AGENT_NAME = "dialogue-generation"
+_PROMPT_ID = "dialogue-generation.system"
+_PROMPT_VERSION = 1
 
 
 class DialogueGenerationError(RuntimeError):
@@ -45,9 +55,11 @@ class DialogueGenerationAgent:
         prompt_path: Path | None = None,
         runner: AgentRunner | None = None,
         generation_id_factory: Callable[[], str] | None = None,
+        audit_sink: AgentAuditSink | None = None,
+        audit_id_factory: Callable[[], str] | None = None,
     ) -> None:
         self.prompt_path = prompt_path or packaged_prompt_path()
-        self._runner = runner or cast(
+        raw_runner = runner or cast(
             AgentRunner,
             Agent(
                 model,
@@ -55,6 +67,13 @@ class DialogueGenerationAgent:
                 retries=0,
                 defer_model_check=True,
             ),
+        )
+        self._runner = AuditedAgentRunner(
+            raw_runner,
+            agent_name=_AGENT_NAME,
+            model=model,
+            sink=audit_sink,
+            id_factory=audit_id_factory,
         )
         self._generation_id_factory = generation_id_factory or _new_generation_id
 
@@ -68,11 +87,11 @@ class DialogueGenerationAgent:
         # 이번 모델 호출을 식별하는 생성 시도 ID를 할당한다.
         generation_id = self._create_generation_id()
 
-        # 전체 장면 문맥을 한 번 전달해 구조화된 대화 결과를 생성한다.
-        output = await self._generate(request, generation_id, instructions)
+        # 이번 대화 생성 호출의 감사 실행 ID를 할당한다.
+        audit_run_id = self._runner.new_run_id()
 
-        # 입력 식별자와 정보 공개 규칙을 기준으로 결과를 검증한다.
-        self._validate_output(output, request, generation_id)
+        # 전체 장면 문맥을 한 번 전달하고 검증된 구조화된 대화 결과를 생성한다.
+        output = await self._generate(request, generation_id, instructions, audit_run_id)
 
         return output
 
@@ -100,27 +119,20 @@ class DialogueGenerationAgent:
         request: DialogueGenerationRequest,
         generation_id: str,
         instructions: str,
+        audit_run_id: str,
     ) -> DialogueGeneration:
         try:
             result = await self._runner.run(
                 _render_user_prompt(request, generation_id),
                 instructions=instructions,
+                run_id=audit_run_id,
+                prompt=PromptIdentity.from_text(_PROMPT_ID, _PROMPT_VERSION, instructions),
+                validate=lambda output: _validate_output(output, request, generation_id),
             )
             return result.output
         except asyncio.CancelledError:
             raise
-        except (AgentRunError, ValidationError, ValueError):
-            raise DialogueGenerationError("dialogue generation failed") from None
-
-    def _validate_output(
-        self,
-        output: DialogueGeneration,
-        request: DialogueGenerationRequest,
-        generation_id: str,
-    ) -> None:
-        try:
-            _validate_output(output, request, generation_id)
-        except ValueError:
+        except (AgentAuditWriteError, AgentRunError, ValidationError, ValueError):
             raise DialogueGenerationError("dialogue generation failed") from None
 
 

@@ -15,9 +15,11 @@ backend/
 │       ├── service/        # Application workflows, agent use case, domain coordination
 │       ├── repository/     # Persistence ports and implementations
 │       └── schemas/        # Transport schemas
+├── infrastructure/audit/   # Application-owned LLM audit sink adapter
 ├── tests/                  # API, service, repository, and domain tests
 ├── docs/
-│   └── backend-coding-rules.md
+│   ├── backend-coding-rules.md
+│   └── llm-audit-logging.md
 ├── pyproject.toml
 └── uv.lock
 ```
@@ -25,6 +27,12 @@ backend/
 Keep domain-specific code inside its owning `apps/<domain>/` package. Update
 this map when a structural change alters the responsibilities or major packages
 shown here; individual files do not need to be listed.
+
+LLM audit storage is application-owned infrastructure. The Narrative Memory
+composition builders accept an optional `AgentAuditSink` and pass it unchanged
+to the public agent facade; application startup chooses whether to inject the
+JSONL sink. See [LLM audit logging operations](docs/llm-audit-logging.md) for
+the secure configuration and lifecycle boundary.
 
 The backend composes the public `NarrativeAnalysisAgent` facade and returns its
 chunk-by-chunk scene analysis unchanged after independently merging the result

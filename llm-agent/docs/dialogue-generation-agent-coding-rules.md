@@ -35,7 +35,8 @@
 
 - Do not read or write Manuscript, Story Bible, Narrative Memory, databases, or files other than
   the configured prompt.
-- Do not add retries, audit storage, provider logging, automatic prompt registries, or backend/API
-  integration.
+- Follow the [common agent audit boundary](llm-agent-coding-rules.md) for audit events. Do not add
+  agent-specific concrete audit storage, credential or prompt/provider-response logging, retries,
+  automatic prompt registries, or backend/API integration.
 - Do not decide that a future disclosure condition has been met; callers must create a later
   request with an updated information boundary.

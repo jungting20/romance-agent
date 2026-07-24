@@ -114,6 +114,18 @@ Story Bible snapshot schema compatibility and migration rules are defined in
 - Resolve file paths beneath the configured data root and reject identifiers
   containing traversal or absolute-path components before any file access.
 
+## Application-owned LLM Audit Logging
+
+- The backend application owns concrete audit storage, its private directory,
+  retention, encryption-key acquisition, and lifecycle. Agent packages consume
+  only the public `llm_agent_audit` port/decorator boundary.
+- Compose an application-owned `AgentAuditSink` explicitly and pass that exact
+  object through the Narrative Memory composition builders. Do not construct a
+  sink, read keys, or select audit storage inside a domain use case or agent
+  package.
+- Follow [LLM audit logging operations](llm-audit-logging.md) for the JSONL
+  adapter's secure defaults, raw-capture controls, and failure semantics.
+
 ## Narrative Analysis Agent Consumer Boundary
 
 - Compose and invoke Narrative Memory analysis only through the public

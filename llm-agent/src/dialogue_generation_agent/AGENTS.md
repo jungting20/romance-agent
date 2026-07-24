@@ -28,8 +28,9 @@ Analysis behavior or reuse its package-private modules here.
   references before returning a result.
 - Reject results that reveal current forbidden information or fail to record
   every forbidden information ID as withheld.
-- Do not add persistence, retries, other agent imports, or backend/API
-  integration.
+- Use only the common `llm_agent_audit` port/decorator for audit events; do not
+  add concrete audit storage, normal-log writes, persistence, retries, other
+  agent imports, or backend/API integration.
 
 ## Verification
 

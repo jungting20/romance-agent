@@ -25,9 +25,10 @@ package.
 - Process 300-character chunks with 50-character overlap in numeric order.
 - Call each chunk exactly once. One failure returns no partial analysis.
 - Keep provider selection and prompt loading behind `NarrativeAnalysisAgent`.
-- Do not add audit storage, retries, database writes or schema management,
-  durable IDs, candidate status, scene snapshot assembly, or cross-chunk
-  merging.
+- Use only the common `llm_agent_audit` port/decorator for audit events; do not
+  add concrete audit storage, normal-log writes, retries, database writes or
+  schema management, durable IDs, candidate status, scene snapshot assembly,
+  or cross-chunk merging.
 
 ## Verification
 

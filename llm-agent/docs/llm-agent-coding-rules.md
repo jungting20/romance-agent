@@ -7,6 +7,20 @@
 - Use tuples for public collections and reject unknown model fields.
 - Keep model-provider details behind `NarrativeAnalysisAgent`.
 
+## Common agent audit boundary
+
+- Narrative Analysis and Dialogue Generation use the same `llm_agent_audit`
+  `AuditAttemptStarted`/`AuditAttemptFinished` event model, `AgentAuditSink`
+  port, and `AuditedAgentRunner` recording-runner decorator when an
+  application composes auditing.
+- Keep the wrapped provider runner responsible only for the model call. The
+  separately composed recording decorator is responsible for audit event
+  construction and required append behavior; neither agent package selects a
+  concrete sink or audit storage.
+- Do not send audit events to normal application logs and do not record
+  credentials, prompt text, provider responses, or encryption keys outside the
+  explicitly opt-in sensitive payload path owned by the application sink.
+
 ## Analysis pipeline
 
 - Read the configured Narrative Memory SQLite file once at the start of each
@@ -27,9 +41,11 @@
 - Sanitize graph-read, provider, and structured-output failures. Return no
   partial result after any chunk failure and propagate asynchronous cancellation
   unchanged.
-- Do not add audit storage, provider retries, prompt registries or metadata,
-  database writes, durable IDs, candidate status, scene snapshot assembly, or
-  automatic backend persistence.
+- Do not add concrete audit storage, credentials or prompt/provider-response
+  logging, provider retries, prompt registries or metadata, database writes,
+  durable IDs, candidate status, scene snapshot assembly, or automatic backend
+  persistence. Concrete sinks and normal application logging are outside this
+  package boundary.
 
 ## Tests
 
