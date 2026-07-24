@@ -240,6 +240,35 @@ describe("ManuscriptConflictDialog", () => {
     await waitFor(() => expect(opener).toHaveFocus());
   });
 
+  test("focuses the first resolution action when comparison loading completes", async () => {
+    const props = {
+      open: true,
+      kind: "scene-content" as const,
+      isResolving: false,
+      compareError: false,
+      resolutionError: false,
+      onOpenChange: vi.fn(),
+      onKeepLocal: vi.fn(),
+      onApplyServer: vi.fn(),
+      onRetryCompare: vi.fn(),
+      onRetryKeepLocal: vi.fn(),
+    };
+    const { rerender } = render(
+      <ManuscriptConflictDialog {...props} comparison={null} isComparing />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "원고 저장 충돌 해결" });
+    await waitFor(() => expect(dialog).toHaveFocus());
+
+    rerender(
+      <ManuscriptConflictDialog {...props} comparison={getComparison()} isComparing={false} />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "서버 최신본 적용" })).toHaveFocus(),
+    );
+  });
+
   test("offers a dedicated keep-local retry after a resolution save failure", async () => {
     const onRetryKeepLocal = vi.fn();
     const user = userEvent.setup();
