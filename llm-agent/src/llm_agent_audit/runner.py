@@ -1,6 +1,8 @@
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, TypeVar
 from uuid import uuid4
@@ -24,6 +26,14 @@ from llm_agent_audit.inspection import (
 )
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
+RunResultT = TypeVar("RunResultT")
+
+
+@dataclass(frozen=True, slots=True)
+class _AuditRunContext:
+    run_id: str
+    prompt: PromptIdentity
+    instructions: str
 
 
 class AgentResult(Protocol[OutputT]):
@@ -66,6 +76,8 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         *,
         agent_name: str,
         model: Model | str,
+        prompt_id: str,
+        prompt_version: int,
         sink: AgentAuditSink | None = None,
         id_factory: Callable[[], str] | None = None,
         clock: Callable[[], datetime] | None = None,
@@ -74,26 +86,48 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         self._runner = runner
         self._agent_name = agent_name
         self._model = sanitized_model_configuration(model)
+        self._prompt_id = prompt_id
+        self._prompt_version = prompt_version
         self._sink = sink if sink is not None else NoopAgentAuditSink()
         self._id_factory = id_factory
         self._clock = clock or _utc_now
         self._monotonic = monotonic or time.monotonic
-
-    def new_run_id(self) -> str:
-        if self._id_factory is not None:
-            return self._id_factory()
-        return _new_run_id()
+        self._run_context: ContextVar[_AuditRunContext | None] = ContextVar(
+            f"{agent_name}-audit-run",
+            default=None,
+        )
 
     async def run(
         self,
-        user_prompt: str,
+        operation: Callable[[], Awaitable[RunResultT]],
         *,
         instructions: str,
-        run_id: str,
-        prompt: PromptIdentity,
+    ) -> RunResultT:
+        context = _AuditRunContext(
+            run_id=self._new_id(_new_run_id),
+            prompt=PromptIdentity.from_text(
+                self._prompt_id,
+                self._prompt_version,
+                instructions,
+            ),
+            instructions=instructions,
+        )
+        token = self._run_context.set(context)
+        try:
+            return await operation()
+        finally:
+            self._run_context.reset(token)
+
+    async def run_attempt(
+        self,
+        user_prompt: str,
+        *,
         validate: Callable[[OutputT], None],
     ) -> AgentResult[OutputT]:
-        attempt_id = self._id_factory() if self._id_factory is not None else _new_attempt_id()
+        context = self._run_context.get()
+        if context is None:
+            raise RuntimeError("audited attempt requires an active audit run")
+        attempt_id = self._new_id(_new_attempt_id)
         started_at = self._clock()
         started_monotonic = self._monotonic()
         await self._append_required(
@@ -101,22 +135,22 @@ class AuditedAgentRunner[OutputT: BaseModel]:
                 schema_version="llm-agent-audit-v1",
                 event_type="attempt_started",
                 agent_name=self._agent_name,
-                run_id=run_id,
+                run_id=context.run_id,
                 attempt_id=attempt_id,
                 model=self._model,
-                prompt=prompt,
+                prompt=context.prompt,
                 started_at=started_at,
             )
         )
 
         try:
-            result = await self._runner.run(user_prompt, instructions=instructions)
+            result = await self._runner.run(user_prompt, instructions=context.instructions)
         except asyncio.CancelledError:
             await self._append_cancellation(
                 self._finished_event(
-                    run_id=run_id,
+                    run_id=context.run_id,
                     attempt_id=attempt_id,
-                    prompt=prompt,
+                    prompt=context.prompt,
                     started_at=started_at,
                     started_monotonic=started_monotonic,
                     status="cancelled",
@@ -124,7 +158,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
                     error=SanitizedAuditError(code="cancelled", message="agent run cancelled"),
                 ),
                 sensitive=self._sensitive_payload(
-                    instructions,
+                    context.instructions,
                     user_prompt,
                     None,
                     validated_output_json=None,
@@ -134,9 +168,9 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         except Exception:
             await self._append_best_effort(
                 self._finished_event(
-                    run_id=run_id,
+                    run_id=context.run_id,
                     attempt_id=attempt_id,
-                    prompt=prompt,
+                    prompt=context.prompt,
                     started_at=started_at,
                     started_monotonic=started_monotonic,
                     status="failure",
@@ -147,7 +181,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
                     ),
                 ),
                 sensitive=self._sensitive_payload(
-                    instructions,
+                    context.instructions,
                     user_prompt,
                     None,
                     validated_output_json=None,
@@ -161,9 +195,9 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         except asyncio.CancelledError:
             await self._append_cancellation(
                 self._finished_event(
-                    run_id=run_id,
+                    run_id=context.run_id,
                     attempt_id=attempt_id,
-                    prompt=prompt,
+                    prompt=context.prompt,
                     started_at=started_at,
                     started_monotonic=started_monotonic,
                     status="cancelled",
@@ -171,7 +205,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
                     error=SanitizedAuditError(code="cancelled", message="agent run cancelled"),
                 ),
                 sensitive=self._sensitive_payload(
-                    instructions,
+                    context.instructions,
                     user_prompt,
                     inspected,
                     validated_output_json=None,
@@ -181,9 +215,9 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         except Exception:
             await self._append_best_effort(
                 self._finished_event(
-                    run_id=run_id,
+                    run_id=context.run_id,
                     attempt_id=attempt_id,
-                    prompt=prompt,
+                    prompt=context.prompt,
                     started_at=started_at,
                     started_monotonic=started_monotonic,
                     status="failure",
@@ -194,7 +228,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
                     ),
                 ),
                 sensitive=self._sensitive_payload(
-                    instructions,
+                    context.instructions,
                     user_prompt,
                     inspected,
                     validated_output_json=None,
@@ -204,9 +238,9 @@ class AuditedAgentRunner[OutputT: BaseModel]:
 
         await self._append_required(
             self._finished_event(
-                run_id=run_id,
+                run_id=context.run_id,
                 attempt_id=attempt_id,
-                prompt=prompt,
+                prompt=context.prompt,
                 started_at=started_at,
                 started_monotonic=started_monotonic,
                 status="success",
@@ -214,13 +248,18 @@ class AuditedAgentRunner[OutputT: BaseModel]:
                 error=None,
             ),
             sensitive=self._sensitive_payload(
-                instructions,
+                context.instructions,
                 user_prompt,
                 inspected,
                 validated_output_json=inspected.validated_output_json,
             ),
         )
         return result
+
+    def _new_id(self, default_factory: Callable[[], str]) -> str:
+        if self._id_factory is not None:
+            return self._id_factory()
+        return default_factory()
 
     def _finished_event(
         self,

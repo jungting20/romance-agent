@@ -17,6 +17,9 @@
   separately composed recording decorator is responsible for audit event
   construction and required append behavior; neither agent package selects a
   concrete sink or audit storage.
+- Configure the agent name and prompt identity on the recording decorator.
+  Agent workflows open one decorated audit run and invoke one attempt per model
+  call without constructing or passing audit run IDs or `PromptIdentity`.
 - Do not send audit events to normal application logs and do not record
   credentials, prompt text, provider responses, or encryption keys outside the
   explicitly opt-in sensitive payload path owned by the application sink.

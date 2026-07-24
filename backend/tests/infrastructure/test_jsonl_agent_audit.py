@@ -170,6 +170,8 @@ def test_closed_concrete_sink_fails_runner_start_before_provider_call(tmp_path: 
         wrapped,
         agent_name="dialogue-generation",
         model="provider:model",
+        prompt_id="dialogue-generation.system",
+        prompt_version=1,
         sink=sink,
         id_factory=lambda: "attempt-1",
     )
@@ -177,11 +179,11 @@ def test_closed_concrete_sink_fails_runner_start_before_provider_call(tmp_path: 
     with pytest.raises(AgentAuditWriteError, match="agent audit logging failed"):
         asyncio.run(
             runner.run(
-                "user secret",
                 instructions="system secret",
-                run_id="run-1",
-                prompt=PromptIdentity.from_text("dialogue-generation.system", 1, "system secret"),
-                validate=lambda output: None,
+                operation=lambda: runner.run_attempt(
+                    "user secret",
+                    validate=lambda output: None,
+                ),
             )
         )
 

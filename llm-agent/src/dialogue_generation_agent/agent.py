@@ -19,7 +19,6 @@ from llm_agent_audit import (
     AgentAuditSink,
     AgentAuditWriteError,
     AuditedAgentRunner,
-    PromptIdentity,
 )
 
 _AGENT_NAME = "dialogue-generation"
@@ -72,6 +71,8 @@ class DialogueGenerationAgent:
             raw_runner,
             agent_name=_AGENT_NAME,
             model=model,
+            prompt_id=_PROMPT_ID,
+            prompt_version=_PROMPT_VERSION,
             sink=audit_sink,
             id_factory=audit_id_factory,
         )
@@ -87,11 +88,11 @@ class DialogueGenerationAgent:
         # 이번 모델 호출을 식별하는 생성 시도 ID를 할당한다.
         generation_id = self._create_generation_id()
 
-        # 이번 대화 생성 호출의 감사 실행 ID를 할당한다.
-        audit_run_id = self._runner.new_run_id()
-
-        # 전체 장면 문맥을 한 번 전달하고 검증된 구조화된 대화 결과를 생성한다.
-        output = await self._generate(request, generation_id, instructions, audit_run_id)
+        # 생성 시도와 독립된 감사 실행 안에서 장면 문맥을 한 번 전달해 대화를 생성한다.
+        output = await self._runner.run(
+            lambda: self._generate(request, generation_id),
+            instructions=instructions,
+        )
 
         return output
 
@@ -114,15 +115,10 @@ class DialogueGenerationAgent:
         self,
         request: DialogueGenerationRequest,
         generation_id: str,
-        instructions: str,
-        audit_run_id: str,
     ) -> DialogueGeneration:
         try:
-            result = await self._runner.run(
+            result = await self._runner.run_attempt(
                 _render_user_prompt(request, generation_id),
-                instructions=instructions,
-                run_id=audit_run_id,
-                prompt=PromptIdentity.from_text(_PROMPT_ID, _PROMPT_VERSION, instructions),
                 validate=lambda output: _validate_output(output, request, generation_id),
             )
             return result.output

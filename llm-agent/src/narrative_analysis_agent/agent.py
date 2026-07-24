@@ -13,7 +13,6 @@ from llm_agent_audit import (
     AgentAuditSink,
     AgentAuditWriteError,
     AuditedAgentRunner,
-    PromptIdentity,
 )
 from narrative_analysis_agent.chunking import SceneChunk, chunk_scene
 from narrative_analysis_agent.models import (
@@ -82,6 +81,8 @@ class NarrativeAnalysisAgent:
             raw_runner,
             agent_name=_AGENT_NAME,
             model=model,
+            prompt_id=_PROMPT_ID,
+            prompt_version=_PROMPT_VERSION,
             sink=audit_sink,
             id_factory=audit_id_factory,
         )
@@ -90,14 +91,14 @@ class NarrativeAnalysisAgent:
         # 청크 분석에 적용할 시스템 지침을 불러온다.
         instructions = self._load_instructions()
 
-        # 동일 장면의 모든 청크 감사를 하나의 실행으로 묶는다.
-        run_id = self._runner.new_run_id()
-
         # 모든 청크가 공유할 현재 프로젝트 지식 그래프를 한 번만 조회한다.
         existing = self._read_project_graph(request.project_id)
 
-        # 장면을 청크 순서대로 분석하며 중간 결과는 서로에게 누적하지 않는다.
-        chunks = await self._analyze_chunks(request, existing, instructions, run_id)
+        # 장면의 모든 청크 호출을 하나의 감사 실행으로 묶어 순서대로 분석한다.
+        chunks = await self._runner.run(
+            lambda: self._analyze_chunks(request, existing),
+            instructions=instructions,
+        )
 
         # 분석에 사용한 프로젝트 버전과 청크 결과를 최종 응답으로 조립한다.
         return _build_scene_analysis(request, existing, chunks)
@@ -118,8 +119,6 @@ class NarrativeAnalysisAgent:
         self,
         request: SceneAnalysisRequest,
         existing: ProjectKnowledgeGraphSnapshot,
-        instructions: str,
-        run_id: str,
     ) -> tuple[AnalyzedChunk, ...]:
         analyzed: list[AnalyzedChunk] = []
         for chunk in chunk_scene(request.scene_id, request.scene_revision, request.text):
@@ -128,8 +127,6 @@ class NarrativeAnalysisAgent:
                     request=request,
                     chunk=chunk,
                     existing=existing,
-                    instructions=instructions,
-                    run_id=run_id,
                 )
             )
         return tuple(analyzed)
@@ -140,15 +137,10 @@ class NarrativeAnalysisAgent:
         request: SceneAnalysisRequest,
         chunk: SceneChunk,
         existing: ProjectKnowledgeGraphSnapshot,
-        instructions: str,
-        run_id: str,
     ) -> AnalyzedChunk:
         try:
-            result = await self._runner.run(
+            result = await self._runner.run_attempt(
                 _render_user_prompt(request, existing, chunk),
-                instructions=instructions,
-                run_id=run_id,
-                prompt=PromptIdentity.from_text(_PROMPT_ID, _PROMPT_VERSION, instructions),
                 validate=lambda output: _validate_output(output, request, chunk, existing),
             )
         except asyncio.CancelledError:

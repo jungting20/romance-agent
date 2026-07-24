@@ -109,8 +109,10 @@ def _audited_runner(
         RecordingRunner(result),
         agent_name="dialogue-generation",
         model=TestModel(),
+        prompt_id="dialogue-generation.system",
+        prompt_version=1,
         sink=sink,
-        id_factory=lambda: "attempt-1",
+        id_factory=iter(("run-1", "attempt-1")).__next__,
         clock=lambda: next(times),
         monotonic=lambda: next(monotonic_times),
     )
@@ -119,15 +121,11 @@ def _audited_runner(
 def _run(
     runner: AuditedAgentRunner[FakeOutput],
     validate: Callable[[FakeOutput], None] = lambda output: None,
-    run_id: str = "run-1",
 ) -> FakeResult:
     return asyncio.run(
         runner.run(
-            "user secret",
             instructions="system secret",
-            run_id=run_id,
-            prompt=PromptIdentity.from_text("dialogue-generation.system", 1, "system secret"),
-            validate=validate,
+            operation=lambda: runner.run_attempt("user secret", validate=validate),
         )
     )
 
@@ -158,15 +156,15 @@ def test_audited_runner_uses_injected_id_factory_for_run_and_attempt_ids() -> No
         RecordingRunner(_result()),
         agent_name="dialogue-generation",
         model=TestModel(),
+        prompt_id="dialogue-generation.system",
+        prompt_version=1,
         sink=sink,
         id_factory=ids.__next__,
     )
 
-    run_id = runner.new_run_id()
-    _run(runner, run_id=run_id)
+    _run(runner)
 
     started = cast(AuditAttemptStarted, sink.records[0][0])
-    assert run_id == "run-fixed"
     assert started.run_id == "run-fixed"
     assert started.attempt_id == "attempt-fixed"
 
@@ -289,6 +287,8 @@ def test_audited_runner_fails_closed_when_start_append_fails() -> None:
         wrapped,
         agent_name="dialogue-generation",
         model=TestModel(),
+        prompt_id="dialogue-generation.system",
+        prompt_version=1,
         sink=sink,
         id_factory=lambda: "attempt-1",
     )
