@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ContextPanelContent 재시도 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui,sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-medium { color:#855c00; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } li + li { margin-top:.4rem; } code { overflow-wrap:anywhere; }
+    :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero"><p>브라우저 버그 탐색 보고서</p><h1>ContextPanelContent 재시도</h1><p>생성 시각: <time datetime="2026-07-24T15:24:00+09:00">2026년 7월 24일 15:24 KST</time></p></header>
+  <section class="panel"><h2>탐색 범위</h2><p><code>ContextPanelContent</code>에 한정해 원고·인물·세계관 content, inactive hidden 비노출, keyboard tab, URL direct/canonical/history, focus·scroll과 desktop inline 구성을 clean MSW 상태에서 점검했다.</p><h3>제외 범위</h3><p>제품·테스트·설정·기존 문서 수정, 새 서버, 외부망, 실제 데이터 변경, 자식 편집기의 상세 기능과 application-wide audit은 제외했다. 기존 <code>2026-07-24-1409-context-panel-content.html</code>은 수정하지 않았다.</p></section>
+  <section class="panel"><h2>실행 환경</h2><dl><dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write</code></dd><dt>시작 상태</dt><dd>인증 없음, 공유 Vite preview, browser MSW <code>silver-garden</code>, 각 확정 run 전 기본 URL 새 navigation</dd><dt>뷰포트</dt><dd>배정 <code>375x800</code>, <code>768x800</code>, <code>1440x800</code>. Playwright-test 세션 실제 viewport는 <code>1280x720</code>이며 resize tool이 없어 배정값은 미확인이다.</dd><dt>실행 기준</dt><dd><code>8eb2a2b4cc1292e57b00d1734e1e91be60eafd64</code></dd></dl></section>
+  <section class="panel"><h2>결과 요약</h2><div class="grid"><div class="metric">확정<strong>1</strong></div><div class="metric">등록<strong>1</strong></div><div class="metric">중복<strong>0</strong></div><div class="metric">제외<strong>1</strong></div></div></section>
+  <section class="panel"><h2>등록한 버그</h2>
+    <article class="bug-card" id="bug-001"><p><span class="severity severity-medium">심각도 Medium</span></p><h3>세로 문맥 탭에서 위아래 방향키가 동작하지 않음</h3>
+      <dl><dt>티켓</dt><dd><code>#23</code> · <code>ready</code></dd><dt>재현 절차</dt><dd><ol><li>clean 기본 집필 URL을 연다.</li><li>세로 navigation의 <code>원고 보기</code> 탭에 focus한다.</li><li><code>ArrowDown</code>을 누르고 focus, selected tab, URL을 확인한다.</li><li>같은 시작 URL을 새로 열어 반복한다.</li></ol></dd><dt>기대 결과</dt><dd>vertical Tabs semantics에 따라 <code>ArrowDown</code>이 다음 <code>인물 보기</code> 탭으로 이동·활성화하고 URL을 <code>?tab=characters</code>로 갱신한다.</dd><dt>실제 결과</dt><dd>두 clean run 모두 tablist가 <code>aria-orientation="horizontal"</code>이었고 <code>ArrowDown</code> 뒤 focus·selection·URL이 원고 상태에 머물렀다. <code>ArrowRight</code>만 인물 탭을 활성화했다.</dd><dt>사용자 영향</dt><dd>키보드와 보조기술 사용자가 시각적으로 세로인 navigation의 방향과 조작법을 잘못 전달받고 예상되는 위·아래 키로 문맥을 전환할 수 없다.</dd><dt>관련 위치</dt><dd><code>frontend/src/components/ui/tabs.tsx:7</code>, <code>frontend/src/pages/writing-workspace/writing-workspace-page.tsx:477</code></dd><dt>문서</dt><dd><a href="../superpowers/specs/2026-07-24-context-tabs-vertical-keyboard-design.md">설계</a> · <a href="../superpowers/plans/2026-07-24-context-tabs-vertical-keyboard.md">구현 계획</a></dd></dl>
+      <figure><img class="evidence" src="assets/2026-07-24-1524-context-panel-content-retry/arrowdown-run1.png" alt="ArrowDown 뒤에도 원고 보기에 focus와 선택이 남은 첫 번째 clean 재현"><figcaption>첫 번째 clean evidence run: ArrowDown 뒤에도 원고 보기 tab과 기본 URL이 유지됐다.</figcaption></figure>
+      <figure><img class="evidence" src="assets/2026-07-24-1524-context-panel-content-retry/arrowdown-run2.png" alt="두 번째 clean 실행에서도 ArrowDown이 인물 보기로 이동하지 않은 문맥 탭"><figcaption>두 번째 clean run: tablist는 horizontal orientation을 노출했고 원고 탭에 머물렀다.</figcaption></figure>
+    </article>
+  </section>
+  <section class="panel"><h2>중복된 관찰</h2><p>없음. 기존 <code>2026-07-24-1409-context-panel-content.html</code>은 planner 초기화 실패로 브라우저 검사를 시작하지 못한 부분 보고서이며 이 결함을 확정하거나 등록하지 않았다.</p></section>
+  <section class="panel"><h2>제외한 관찰</h2><p><code>/favicon.ico</code> 404는 ContextPanelContent 흐름과 무관해 제외했다.</p></section>
+  <section class="panel"><h2>수행한 검사</h2><ul>
+    <li>이 bounded task에서 <code>planner_setup_page</code>를 project 인자 없이 1회 실행했다.</li>
+    <li>원고·인물·세계관 pointer 전환, selected tab, visible content와 canonical URL 일치를 확인했다.</li>
+    <li>inactive tabpanel은 <code>hidden</code>, <code>display:none</code>, 빈 text로 비노출임을 확인했다.</li>
+    <li>Characters → World → Back/Forward에서 URL·selection·content 복원을 확인했다.</li>
+    <li>explicit manuscript와 invalid <code>tab=true</code>가 unrelated <code>view=dense</code>를 보존하며 기본 URL로 replacement canonicalize됨을 확인했다.</li>
+    <li>두 clean run의 <code>ArrowDown</code> 무동작과 <code>ArrowRight</code> 대조 동작을 확인했다.</li>
+    <li>workspace GET은 200이었고 console의 유일한 오류는 제외한 favicon 404였다.</li>
+    <li>Medium 결함을 <code>zellij-agent ticket-worker add</code>로 등록하고 fresh JSON에서 <code>#23 ready</code>, command·title·summary·spec·plan·branch·prompt 값을 확인했다.</li>
+    <li><code>bash .codex/agents/tests/validate-bug-hunter.sh</code>는 새 HTML 검사 전에 기존 수정 상태인 <code>.codex/agents/bug-hunter.toml</code>에서 필수 문자열 <code>zellij-agent ticket-worker list --json</code>을 찾지 못해 종료 코드 1로 중단됐다. 새 보고서 독립 구조 검증은 통과했다.</li>
+  </ul></section>
+  <section class="panel"><h2>제약 및 미확인 항목</h2><p>Playwright-test allowlist에 viewport resize가 없어 정확한 <code>375x800</code>, <code>768x800</code>, <code>1440x800</code> mobile Sheet/fixed inline/resizable inline과 각 focus return·scroll은 확인하지 못했다. 결함은 실제 1280px inline layout에서 두 clean run으로 확정했다. 공식 validator는 기존 agent 설정 assertion 때문에 보고서를 직접 검사하지 못했다. 제품 코드는 수정하지 않았다.</p></section>
+</main>
+</body>
+</html>
