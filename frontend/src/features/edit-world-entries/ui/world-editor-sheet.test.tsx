@@ -18,6 +18,15 @@ const snapshot: StoryBibleSnapshot = {
 };
 
 describe("WorldEditorSheet", () => {
+  test("overrides the right Sheet defaults with the approved responsive width", () => {
+    renderEditor();
+
+    const dialog = screen.getByRole("dialog", { name: "세계관 수정 및 추가" });
+    expect(dialog).toHaveClass("data-[side=right]:w-full", "data-[side=right]:sm:max-w-2xl");
+    expect(dialog).not.toHaveClass("data-[side=right]:w-3/4");
+    expect(dialog).not.toHaveClass("data-[side=right]:sm:max-w-sm");
+  });
+
   test("renders labeled existing fields and emits controlled edits", async () => {
     const user = userEvent.setup();
     const onFieldChange = vi.fn();
