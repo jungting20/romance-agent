@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CharacterCardEditorSheet 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    code { overflow-wrap:anywhere; } li + li { margin-top:.45rem; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero"><p>브라우저 버그 탐색 보고서</p><h1>CharacterCardEditorSheet</h1><p>생성 시각: <time datetime="2026-07-24T15:16:00+09:00">2026년 7월 24일 15:16 KST</time></p></header>
+  <section class="panel"><h2>탐색 범위</h2><p><code>CharacterCardEditorSheet</code> 컴포넌트에 한정해 신규/기존 인물의 9개 필드, validation, 정상 저장, unavailable, close·keyboard·focus·scroll, desktop 반응형을 clean MSW 상태에서 점검했다.</p><h3>제외 범위</h3><p>다른 화면·Sheet 소비자, 제품·테스트·설정·기존 문서 수정, 외부망, 실제 backend 데이터 변경, 삭제·정렬·일괄 편집·conflict UI는 제외했다.</p></section>
+  <section class="panel"><h2>실행 환경</h2><dl><dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write?tab=characters</code></dd><dt>시작 상태</dt><dd>인증 없음, 공유 Vite preview와 브라우저 MSW seed <code>silver-garden</code>, 각 확정 run 전 대상 URL 새 navigation</dd><dt>뷰포트</dt><dd>배정값 <code>375x800</code>, <code>1280x800</code>. 내장 Playwright-test 세션의 실제 viewport는 <code>1280x720</code>이었으며 resize 도구가 allowlist에 없어 정확한 배정값 전환은 미확인이다.</dd><dt>실행 기준</dt><dd><code>8eb2a2b4cc1292e57b00d1734e1e91be60eafd64</code></dd></dl></section>
+  <section class="panel"><h2>결과 요약</h2><div class="grid"><div class="metric">확정<strong>1</strong></div><div class="metric">등록<strong>1</strong></div><div class="metric">중복<strong>1</strong></div><div class="metric">제외<strong>1</strong></div></div></section>
+  <section class="panel"><h2>등록한 버그</h2>
+    <article class="bug-card" id="bug-001"><p><span class="severity severity-medium">심각도 Medium</span></p><h3>인물 카드 편집기 데스크톱 폭이 384px로 축소됨</h3>
+      <dl><dt>티켓</dt><dd><code>#18</code> · 등록 응답 <code>ready</code>, fresh JSON <code>in_progress</code></dd><dt>재현 절차</dt><dd><ol><li>1280px 너비의 clean 브라우저에서 대상 characters URL을 연다.</li><li><code>새 인물 등록</code>을 눌러 오른쪽 Sheet를 연다.</li><li><code>[role=dialog]</code>의 bounding box를 측정한다.</li><li>대상 URL을 새로 열어 같은 절차를 반복한다.</li></ol></dd><dt>기대 결과</dt><dd>UI 계획의 desktop 기준대로 신규·수정 인물 Sheet가 <code>sm:max-w-2xl</code> 수준의 bounded 편집 폭을 제공한다.</dd><dt>실제 결과</dt><dd>두 clean run 모두 viewport 너비 1280px에서 Sheet 너비가 384px였다. 수정 Sheet도 384px이며 긴 5개 textarea가 351px 입력 폭으로 축소됐다.</dd><dt>사용자 영향</dt><dd>긴 인물 기준 정보를 반복 편집할 때 불필요한 줄바꿈과 세로 이동이 증가해 desktop 정보 밀도와 편집 효율이 낮아진다. 저장과 데이터 무결성은 유지된다.</dd><dt>관련 위치</dt><dd><code>frontend/src/features/character-card-editor/character-card-editor-sheet.tsx:53</code>, <code>frontend/src/components/ui/sheet.tsx:55</code></dd><dt>문서</dt><dd><a href="../superpowers/specs/2026-07-24-character-card-editor-desktop-width-design.md">설계</a> · <a href="../superpowers/plans/2026-07-24-character-card-editor-desktop-width.md">구현 계획</a></dd></dl>
+      <figure><img class="evidence" src="assets/2026-07-24-1516-character-card-editor-sheet/desktop-width-run1.png" alt="1280px 너비 화면 오른쪽에서 384px로 축소된 새 인물 등록 Sheet 첫 번째 재현"><figcaption>첫 번째 clean run: 1280px desktop 너비에서 새 인물 등록 Sheet가 오른쪽 384px만 차지한다.</figcaption></figure>
+      <figure><img class="evidence" src="assets/2026-07-24-1516-character-card-editor-sheet/desktop-width-run2.png" alt="동일한 1280px 화면에서 384px로 다시 축소된 새 인물 등록 Sheet 두 번째 재현"><figcaption>두 번째 clean run: 새 navigation 뒤에도 Sheet bounding width가 다시 384px로 측정됐다.</figcaption></figure>
+    </article>
+  </section>
+  <section class="panel"><h2>중복된 관찰</h2><p>dirty discard에서 <code>계속 편집</code> 후 focus가 <code>document.body</code>로 이탈하는 현상을 공유 서버에서 관찰했으나, 동일 결함은 티켓 <code>#14</code>가 이미 <code>done</code>이므로 신규 등록하지 않았다. 공유 preview가 해당 완료 변경을 반영했는지는 확인하지 않았다.</p></section>
+  <section class="panel"><h2>제외한 관찰</h2><p><code>/favicon.ico</code> 404 console 오류는 이 컴포넌트의 사용자 흐름과 무관해 제외했다.</p></section>
+  <section class="panel"><h2>수행한 검사</h2><ul>
+    <li><code>planner_setup_page</code>를 project 인자 없이 정확히 1회 실행했다.</li>
+    <li>신규 9개 mutable 문자열 저장: POST 201, 정확한 9필드 body, 성공 status와 URL 정규화, <code>새 인물 등록</code> focus 복원을 확인했다.</li>
+    <li>기존 서윤 수정: 불변 ID <code>readOnly</code>, 9필드 초기값, 이름 최초 focus, 독립 ScrollArea를 확인했다.</li>
+    <li>빈 이름 제출: summary/inline error, <code>aria-invalid</code>, 이름 focus를 확인했고 유효 이름 입력 즉시 오류가 제거됐다.</li>
+    <li>저장 버튼 double-click에서 POST가 정확히 1회 발생했다.</li>
+    <li>없는 <code>characterId</code> direct link에서 unavailable alert와 disabled 9필드를 확인했다.</li>
+    <li>clean Escape, dirty overlay discard, URL과 launch focus 복원을 확인했다.</li>
+    <li>두 clean width run 모두 <code>viewport=[1280,720]</code>, <code>sheet=[384,720]</code>를 기록했다.</li>
+    <li><code>zellij-agent ticket-worker add</code>로 Medium 결함을 등록했고 응답은 <code>#18 ready</code>였다. 직후 <code>zellij-agent ticket-worker list --json</code>에서는 자동 claim으로 <code>in_progress</code>가 되어, DB를 수정하지 않고 이 상태를 기록했다.</li>
+    <li><code>bash .codex/agents/tests/validate-bug-hunter.sh</code>는 새 HTML 검사 전에 기존 수정 상태인 <code>.codex/agents/bug-hunter.toml</code>에서 필수 문자열 <code>zellij-agent ticket-worker list --json</code>을 찾지 못해 종료 코드 1로 중단됐다.</li>
+  </ul></section>
+  <section class="panel"><h2>제약 및 미확인 항목</h2><p>Playwright-test allowlist에 viewport resize와 request interception 도구가 없어 정확한 <code>1280x800</code>/<code>375x800</code>, 강제 지연 loading/saving, PATCH 500 failure/retry, PATCH 404 mutation-unavailable는 확인하지 못했다. 너비 결함은 실제 1280px desktop width에서 두 번 확정했으며 높이 800px 동작은 추론하지 않았다. 공식 validator는 기존 agent 설정 assertion 때문에 보고서를 직접 검사하지 못했다. 티켓은 생성 직후 자동 claim되어 fresh JSON의 <code>ready</code> 확인 조건을 유지하지 못했다. 제품 코드는 검사 후에도 수정하지 않았다.</p></section>
+</main>
+</body>
+</html>
