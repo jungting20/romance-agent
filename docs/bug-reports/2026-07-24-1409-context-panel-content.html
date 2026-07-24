@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ContextPanelContent 브라우저 탐색 부분 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    a { color:#7a3f2d; }
+    code { overflow-wrap:anywhere; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel { margin-top:1.25rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; }
+    .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; }
+    .severity-blocking,.severity-high { color:#9c241d; }
+    .severity-medium { color:#855c00; }
+    .severity-low { color:#256048; }
+    :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print {
+      :root { background:white; }
+      .page { width:100%; padding:0; }
+      .hero,.panel { box-shadow:none; break-inside:avoid; }
+    }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <p>브라우저 버그 탐색 보고서</p>
+    <h1>ContextPanelContent 브라우저 탐색 부분 보고서</h1>
+    <p>생성 시각: <time datetime="2026-07-24T14:09:21+09:00">2026년 07월 24일 14:09 KST</time></p>
+  </header>
+
+  <section class="panel">
+    <h2>탐색 범위</h2>
+    <p><code>ContextPanelContent</code>에 한정해 원고·인물·세계관 탭의 콘텐츠 일치와 숨김 상태, URL <code>tab</code> 연동, 키보드 탭 전환과 accessible name, 모바일 Sheet 열기·닫기와 포커스·스크롤, 768px 및 1440px inline 패널을 검사할 예정이었다. 브라우저 계획 초기화 실패로 실제 화면 검사는 시작하지 못했다.</p>
+    <h3>제외 범위</h3>
+    <p>애플리케이션 전체 감사, 다른 집필 화면 컴포넌트, 앱·테스트·도메인·OpenAPI 수정, 외부 네트워크, 기존 티켓 변경, 영구 데이터 변경은 제외했다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>실행 환경</h2>
+    <dl>
+      <dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write</code></dd>
+      <dt>시작 상태</dt><dd>새 browser context, MSW <code>silver-garden</code>, 인증 없음. 실제 browser context 생성 전 초기화가 중단되었다.</dd>
+      <dt>뷰포트</dt><dd><code>375×800</code>, <code>768×800</code>, <code>1440×800</code> 예정. 모두 미검증이다.</dd>
+      <dt>실행 기준</dt><dd><code>7eff1ea</code></dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>결과 요약</h2>
+    <div class="grid">
+      <div class="metric">확정<strong>0</strong></div>
+      <div class="metric">등록<strong>0</strong></div>
+      <div class="metric">중복<strong>0</strong></div>
+      <div class="metric">제외<strong>0</strong></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>등록한 버그</h2>
+    <p>브라우저 준비가 완료되지 않아 확정된 버그가 없습니다. 등록 티켓, 버그 설계 문서, 구현 계획 문서, 스크린샷 증거도 생성하지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>중복된 관찰</h2>
+    <p><code>zellij-agent ticket-worker list --json</code>으로 기존 티켓 11건을 확인했으나 실제 결함 관찰이 없어 중복 판정 대상도 없었다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>제외한 관찰</h2>
+    <p>실제 브라우저 관찰을 수행하지 못했으므로 주관적 선호, 기능 아이디어, 미재현 동작을 버그로 분류하거나 제외하지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>수행한 검사</h2>
+    <ul>
+      <li><code>git status --short --branch</code>: <code>main</code>에서 기존 미추적 <code>docs/bug-reports/writing-workspace-component-checklist.md</code> 1개를 확인하고 보존했다.</li>
+      <li><code>zellij-agent ticket-worker list --json</code>: 성공. 기존 티켓 11건을 중복 검사 기준으로 확인했다.</li>
+      <li>CodeGraph의 <code>ContextPanelContent</code> 연결 구조 조회: 성공. 코드 변경은 수행하지 않았다.</li>
+      <li><code>planner_setup_page({ project: "chromium" })</code>: 실패. 구성에 <code>chromium</code> 프로젝트가 없어 브라우저 종속 단계를 중단했다.</li>
+      <li>브라우저 정상·경계·빈 상태·실패/복구·키보드·포커스·반응형·console·network 검사: 미실행.</li>
+      <li>깨끗한 상태의 2회 재현: 미실행.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>제약 및 미확인 항목</h2>
+    <p>한 번만 호출하도록 지정된 <code>planner_setup_page</code>가 실패해 재호출하지 않았다. 따라서 세 탭의 실제 표시와 숨김, URL history 및 reload 복원, 모바일 Sheet의 열기·닫기와 포커스 반환, inline 패널 스크롤, accessible name, 키보드 방향키 전환, console 오류와 network 요청을 모두 확인하지 못했다. 이 문서는 무결함 판정이 아니라 초기화 실패 시점의 부분 상태만 기록한다.</p>
+  </section>
+</main>
+</body>
+</html>

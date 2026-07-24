@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WritingToolPanel 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme:light; font-family:system-ui,sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    code { overflow-wrap:anywhere; } li + li { margin-top:.45rem; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr)); gap:1rem; margin-top:1rem; }
+    figure { margin:0; } figcaption { margin-top:.5rem; color:#5c5049; }
+    .evidence { width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; }
+    :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <p>브라우저 버그 탐색 보고서 · 컴포넌트 9/17</p>
+    <h1><code>WritingToolPanel</code> AI 제안과 모바일 패널</h1>
+    <p>생성 시각: <time datetime="2026-07-24T14:36:34+09:00">2026년 7월 24일 14:36 (KST)</time></p>
+  </header>
+
+  <section class="panel">
+    <h2>탐색 범위</h2>
+    <p><code>http://127.0.0.1:4173/projects/silver-garden/write</code>의
+      <code>WritingToolPanel</code>에 한정해 AI 도구 열기, 선택 전/후 문장 다듬기,
+      이어 쓰기, 대사 제안, 일관성 검사, 제안 닫기·원고 적용, 패널 닫기,
+      키보드·포커스·세로 스크롤과 데스크톱·모바일 레이아웃을 검사했다.</p>
+    <h3>제외 범위</h3>
+    <p>다른 라우트·컴포넌트 감사, 실제 LLM·backend, 인증, 외부 네트워크, 공용
+      <code>Sheet</code>의 다른 소비자, 원고 자동 저장 자체, 제품 코드·테스트·설정·기존 문서
+      수정과 새 서버 실행은 제외했다. 데이터 변경은 개발 MSW 원고 상태에만 제한하고
+      각 확정 재현 전 session seed를 초기화했다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>실행 환경</h2>
+    <dl>
+      <dt>대상 및 서버</dt><dd>공유 Vite/MSW <code>127.0.0.1:4173</code>, query 없음, 인증 없음</dd>
+      <dt>시작 데이터</dt><dd>clean <code>silver-garden</code> seed, 활성 장면 <code>silver-garden-scene-1</code>, 기본 원고와 서윤·도현 인물 데이터</dd>
+      <dt>뷰포트</dt><dd><code>375x800</code>, <code>1280x800</code>, <code>1440x800</code></dd>
+      <dt>브라우저 준비</dt><dd><code>planner_setup_page</code>를 <code>project</code> 인자 없이 정확히 1회 호출했다.</dd>
+      <dt>실행 기준</dt><dd><code>7eff1ea85ea67fb4233b1797f65496dc30274797</code> · <code>main</code></dd>
+      <dt>기존 변경</dt><dd>시작 시 다른 작업의 삭제 표시 1개와 미추적 보고서·문서·증거를 확인했으며 수정·복원·삭제하지 않았다.</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>결과 요약</h2>
+    <div class="grid">
+      <div class="metric">확정<strong>1</strong></div>
+      <div class="metric">등록<strong>1</strong></div>
+      <div class="metric">중복<strong>0</strong></div>
+      <div class="metric">제외<strong>2</strong></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>등록한 버그</h2>
+    <article class="bug-card" id="bug-001">
+      <p><span class="severity severity-medium">심각도 Medium</span></p>
+      <h3>375px 모바일 시트에서 AI 도구 닫기 버튼과 패널 오른쪽이 화면 밖으로 이탈한다</h3>
+      <dl>
+        <dt>티켓</dt><dd><code>#13</code> · <code>ready</code></dd>
+        <dt>최소 재현 절차</dt>
+        <dd><ol>
+          <li>MSW <code>silver-garden</code> seed를 초기화하고 <code>375x800</code>에서 지정 라우트를 연다.</li>
+          <li>왼쪽 하단의 <code>AI 도구 열기</code> 버튼을 실행한다.</li>
+          <li>모바일 <code>AI 집필 도구</code> dialog와 내부 <code>aside</code>, <code>AI 도구 닫기</code> 버튼의 경계를 확인한다.</li>
+        </ol></dd>
+        <dt>기대 결과</dt><dd>패널 헤더, 닫기 버튼, 네 도구 카드와 제안 영역이 모바일 Sheet 폭 안에 들어가고 모든 컨트롤이 화면에서 보이며 포인터와 키보드로 실행되어야 한다.</dd>
+        <dt>실제 결과</dt><dd>viewport는 <code>375px</code>, dialog는 <code>94..375px</code>인데 내부 패널은 <code>95..431px</code>이다. 닫기 버튼도 <code>387..415px</code>에 있어 전체가 viewport 밖이고 카드 오른쪽이 잘린다.</dd>
+        <dt>2회 clean-state 증거</dt><dd>각 실행 전에 <code>romance-agent:msw:manuscripts:v1</code> session 저장소를 지우고 라우트를 다시 열었다. 두 실행 모두 동일한 잘림을 보였고 2차 기하 측정에서 <code>closeInViewport=false</code>를 기록했다.</dd>
+        <dt>사용자 영향</dt><dd>모바일 사용자는 패널의 명시적인 닫기 버튼을 보거나 포인터로 누를 수 없고 도구 카드의 오른쪽 정보를 온전히 읽을 수 없다. <code>Escape</code>는 동작하지만 포인터·터치 사용자의 기본 닫기 경로를 대체하지 못한다.</dd>
+        <dt>요구사항</dt><dd><code>frontend/docs/frontend-coding-rules.md</code>의 반응형 상태, 키보드 호환, 접근 가능한 이름과 보이는 포커스 요구 및 지정된 모바일 패널 닫기 흐름을 충족하지 못한다.</dd>
+        <dt>확인 위치와 가설</dt><dd><code>frontend/src/components/ui/sheet.tsx</code>의 모바일 오른쪽 Sheet는 <code>w-3/4</code>이고 <code>frontend/src/modules/writing-assistant/ui/writing-tool-panel.tsx</code>의 <code>aside</code>는 <code>w-[21rem]</code>이다. 고정 자식 폭이 Sheet보다 큰 것이 원인이라는 설명은 소스 기반 가설이며 구현 테스트로 확정해야 한다.</dd>
+        <dt>문서</dt><dd><a href="../superpowers/specs/2026-07-24-writing-tool-panel-mobile-overflow-design.md">설계</a> · <a href="../superpowers/plans/2026-07-24-writing-tool-panel-mobile-overflow.md">구현 계획</a></dd>
+      </dl>
+      <div class="evidence-grid">
+        <figure>
+          <img class="evidence" src="assets/2026-07-24-1431-writing-tool-panel/mobile-overflow-run1.png" alt="375픽셀 모바일 시트에서 AI 집필 도구 오른쪽과 닫기 버튼이 화면 밖으로 잘린 첫 번째 재현 화면">
+          <figcaption>1차 clean-state: 시트 오른쪽 가장자리에서 패널 카드와 헤더가 잘리고 닫기 버튼이 보이지 않는다.</figcaption>
+        </figure>
+        <figure>
+          <img class="evidence" src="assets/2026-07-24-1431-writing-tool-panel/mobile-overflow-run2.png" alt="동일한 clean seed에서 AI 집필 도구의 오른쪽 닫기 버튼과 카드가 다시 화면 밖으로 이탈한 두 번째 재현 화면">
+          <figcaption>2차 clean-state: 동일 시각 결과와 함께 panel right <code>431px</code>, close left <code>387px</code>를 측정했다.</figcaption>
+        </figure>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel">
+    <h2>중복된 관찰</h2>
+    <p>확정된 중복은 없다. 등록 직전 fresh <code>ticket-worker list --json</code>의 #1–#12와
+      기존 버그 보고서·설계·계획을 확인했으며 모바일 <code>WritingToolPanel</code> 고정 폭 또는
+      닫기 버튼 viewport 이탈을 다루는 항목이 없었다. #1의 집필 에디터 세로 스크롤 경계는
+      별도 결함이다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>제외한 관찰</h2>
+    <p><code>/favicon.ico</code> 404는 WritingToolPanel 흐름과 무관한 정적 자산 요청이라 제외했다.
+      제안 닫기·적용 및 패널 닫기 뒤 활성 요소가 <code>BODY</code>가 되는 현상은 각 변형을 clean
+      상태에서 두 번 재현하지 못했으므로 확정·등록하지 않았고 미확인 항목으로 남겼다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>수행한 검사</h2>
+    <ul>
+      <li>정상 경로: 이어 쓰기와 대사 제안이 삽입 제안을 표시하고 <code>원고에 적용</code> 뒤 본문에 반영되는 것을 확인했다.</li>
+      <li>문장 다듬기: 선택 전 disabled, 원고 범위 선택 후 enabled, 교체 제안 내용을 확인했다.</li>
+      <li>일관성 검사: 진단 제안을 표시하고 <code>원고에 적용</code> 없이 <code>닫기</code>만 제공하는 것을 확인했다.</li>
+      <li>제안 닫기·스크롤: 제안 카드 닫기와 패널 내부 <code>overflow-y-auto</code> 경계를 확인했다.</li>
+      <li>반응형: <code>1280x800</code>과 <code>1440x800</code>에서는 패널 및 닫기 버튼이 viewport 안에 있었고, <code>375x800</code>에서 결함을 두 번 재현했다.</li>
+      <li>키보드·회복: 모바일 dialog의 focus trap과 <code>Escape</code> 닫기가 동작하는 것을 확인했다.</li>
+      <li>콘솔·네트워크: 제품 콘솔 오류 없이 favicon 404만 기록했고 workspace와 story-bible GET은 MSW 200이었다. AI 제안 생성은 외부 요청을 만들지 않았다.</li>
+      <li><code>zellij-agent ticket-worker list --json</code>: 등록 전 중복 검사 및 등록 후 #13의 <code>ready</code>와 모든 등록 필드 일치를 fresh JSON으로 확인했다.</li>
+      <li><code>.codex/agents/tests/validate-bug-hunter.sh</code>: 보고서 구조와 모든 생성 HTML을 검증했다.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>제약 및 미확인 항목</h2>
+    <p>실제 모바일 OS의 터치·소프트 키보드와 보조기술 음성 출력은 확인하지 않았다.
+      실패 응답과 복구는 로컬 동기 제안 생성이라 도달 가능한 네트워크 실패 상태가 없었고,
+      실제 LLM·backend·외부 네트워크는 범위에서 제외했다. 제안 닫기·적용과 패널 닫기 후
+      포커스 복원은 1회 관찰만 있어 미확정이다. 제품 코드와 테스트는 수정하지 않았으며
+      기존 작업 트리 변경은 모두 보존했다.</p>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StoryContextPanel 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero"><p>브라우저 버그 탐색 보고서</p><h1>StoryContextPanel 브라우저 버그 탐색 보고서</h1><p>생성 시각: <time datetime="2026-07-24T14:35:00+09:00">2026년 7월 24일 14:35 KST</time></p></header>
+  <section class="panel"><h2>탐색 범위</h2><p><code>StoryContextPanel</code> 컴포넌트에 한정해 <code>?tab=characters</code>의 인물 목록·새 인물 등록·인물 수정 진입과 <code>?tab=world</code>의 세계관 목록·편집 진입을 확인했다. 카드 내용, Badge, 키보드, 포커스, 목록 및 편집기 스크롤, 성공 상태 announcement, 콘솔과 Story Bible 네트워크 요청을 두 번의 clean MSW 시작 상태에서 점검했다.</p><h3>제외 범위</h3><p>다른 집필 워크스페이스 컴포넌트, 실제 backend와 외부 네트워크, 제품·테스트·설정·기존 문서 수정, 인물 삭제·세계관 삭제·원고·AI 도구·자동 저장 동작, 애플리케이션 전체 감사는 제외했다.</p></section>
+  <section class="panel"><h2>실행 환경</h2><dl><dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write?tab=characters</code><br><code>http://127.0.0.1:4173/projects/silver-garden/write?tab=world</code></dd><dt>시작 상태</dt><dd>인증 없음. 공유 Vite 서버의 clean MSW <code>silver-garden</code> 데이터: 인물 <code>서윤</code>·<code>도현</code> 2명, 세계관 장소 <code>비가 그친 온실</code> 1개. 경계 탐색에서만 MSW에 임시 인물 3명을 추가했고 다음 문서 탐색에서 초기 2명으로 복원됨을 확인했다.</dd><dt>뷰포트</dt><dd>실제 자동화 환경 <code>1280×720</code>. 요청된 <code>1280×800</code> 및 <code>375×800</code>은 제공된 MCP에 viewport 변경 도구가 없고 <code>window.resizeTo</code>도 크기를 바꾸지 못해 미검증이다.</dd><dt>실행 기준</dt><dd><code>7eff1ea85ea67fb4233b1797f65496dc30274797</code> · 브랜치 <code>main</code></dd></dl></section>
+  <section class="panel"><h2>결과 요약</h2><div class="grid"><div class="metric">확정<strong>0</strong></div><div class="metric">등록<strong>0</strong></div><div class="metric">중복<strong>0</strong></div><div class="metric">제외<strong>2</strong></div></div></section>
+  <section class="panel"><h2>등록한 버그</h2><p>이 범위와 실제 검증 환경에서 확정된 버그가 없습니다. 따라서 신규 티켓, 버그별 설계 문서, 구현 계획, 스크린샷 증거는 생성하지 않았습니다.</p></section>
+  <section class="panel"><h2>중복된 관찰</h2><p>티켓 큐를 fresh JSON으로 확인했으며 이 범위에서 중복으로 분류할 확정 결함은 없었다. 기존 <code>#1 집필 에디터 스크롤 경계 수정</code>은 완료 상태이며, 이번 카드 경계 관찰은 실제 조상 <code>ScrollArea</code>가 스크롤을 제공해 결함이 아니므로 중복 티켓으로 세지 않았다.</p></section>
+  <section class="panel"><h2>제외한 관찰</h2><p>첫째, 인물 5카드 경계에서 active tabpanel 자체는 높이가 늘어났지만 조상 <code>ScrollArea</code>가 <code>overflow-y: scroll</code>과 <code>scrollTop</code>을 소유하고 Tab 이동으로 마지막 수정 버튼까지 노출되어 결함에서 제외했다. 둘째, <code>favicon.ico</code> 404는 StoryContextPanel 사용자 흐름 밖의 정적 자원 문제라 제외했다.</p></section>
+  <section class="panel"><h2>수행한 검사</h2><ul><li>정상 경로 2회: 인물 2카드와 역할 Badge, 숨은 감정, 대상명을 포함한 수정 버튼, 세계관 장소 Badge·제목·설명을 확인했다.</li><li>편집 진입 2회: 신규 인물 이름 포커스, 기존 인물 이름·읽기 전용 ID, 세계관 첫 분류 포커스와 내부 스크롤을 확인했다.</li><li>키보드·포커스: Enter로 신규 편집기 열기, Escape clean close, 실행 버튼으로 포커스 복귀, 경계 카드 Tab 순서와 조상 스크롤 회복을 확인했다.</li><li>상태 announcement: MSW 인물 등록 <code>201 Created</code> 뒤 목록 상단 <code>role="status"</code>의 저장 성공 문구와 포커스 복귀를 확인했다.</li><li>실패·회복: 존재하지 않는 <code>characterId</code> deep link에서 alert, disabled form, 목록으로 돌아가기와 URL 회복을 확인했다.</li><li>네트워크·콘솔: Story Bible GET <code>200 OK</code>, 인물 POST <code>201 Created</code> 3회. 앱 오류는 없었고 범위 밖 <code>favicon.ico</code> 404만 관찰했다.</li><li>중복 검사: <code>zellij-agent ticket-worker list --json</code>으로 <code>#1</code>부터 <code>#12</code>까지 확인했다.</li></ul></section>
+  <section class="panel"><h2>제약 및 미확인 항목</h2><p>요청된 <code>375×800</code> 모바일과 정확한 <code>1280×800</code> 데스크톱은 viewport 전환 제한으로 확인하지 못했다. clean <code>silver-garden</code> fixture에는 인물 2명과 세계관 1개가 있어 두 목록의 진짜 빈 상태를 만들 수 없었고, 제공 도구에는 MSW handler override나 network failure 주입 기능이 없어 읽기 실패·저장 실패·재시도는 미확인이다. 경계 스크롤은 인물 카드에서만 확인했으며 세계관 다중 카드 목록은 초기 fixture와 데이터 변경 최소화 제한 때문에 미확인이다. 이 문서는 위 범위와 실제 <code>1280×720</code> 환경의 0건 결과만 주장한다.</p></section>
+</main>
+</body>
+</html>

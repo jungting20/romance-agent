@@ -1623,6 +1623,29 @@ describe("WritingWorkspacePage", () => {
     expect(screen.getAllByRole("separator")).toHaveLength(1);
   });
 
+  test.each(["pointer", "keyboard"] as const)(
+    "restores the desktop AI tool opener focus after a %s close",
+    async (interaction) => {
+      setViewportWidth(1280);
+      const user = userEvent.setup();
+      renderWorkspace();
+
+      const opener = await screen.findByRole("button", { name: "AI 도구 열기" });
+      await user.click(opener);
+      const closeButton = screen.getByRole("button", { name: "AI 도구 닫기" });
+
+      if (interaction === "pointer") {
+        await user.click(closeButton);
+      } else {
+        closeButton.focus();
+        await user.keyboard("{Enter}");
+      }
+
+      expect(screen.queryByRole("button", { name: "AI 도구 닫기" })).not.toBeInTheDocument();
+      expect(opener).toHaveFocus();
+    },
+  );
+
   test("distributes every visible desktop panel across the resizable layout", async () => {
     setViewportWidth(1280);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(500);

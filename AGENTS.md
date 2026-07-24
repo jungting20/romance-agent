@@ -168,9 +168,10 @@ acceptance criteria, allowed server and verification commands, excluded
 actions, and data-mutation limits.
 
 The `bug-hunter` owns browser exploration, two clean-state reproductions,
-duplicate checks, bug-specific spec and plan creation, direct `ticket-worker`
-registration, and one Korean HTML report under `docs/bug-reports/`. It may
-commit only newly created bug documents, report, and evidence assets.
+duplicate checks, severity classification, direct `ticket-worker` registration,
+bug-specific spec and plan creation when required by severity, and one Korean
+HTML report under `docs/bug-reports/`. It may commit only newly created bug
+documents, report, and evidence assets.
 
 Before browser setup, run `zellij-agent ticket-worker list --json`; run
 `zellij-agent ticket-worker init` once only when the list command reports that
@@ -182,17 +183,27 @@ repairable. Do not register subjective preferences, feature ideas, invisible
 style concerns, unreproduced behavior, or unresolved product decisions. Use
 `Blocking`, `High`, `Medium`, or `Low` severity.
 
-For every registrable defect, reserve its HTML report anchor and create one
-Korean bug-specific design document and one implementation-ready plan with
-evidence and exact verification commands. Both documents must link to the
-reserved report path and exact `#bug-NNN` anchor. Self-review the documents,
-then register the defect with the `zellij-agent ticket-worker add` JSON command.
-The Korean title and summary must describe the defect. The execution prompt
-must name both documents, require the `feature-development` skill, skip
-`brainstorming` and `writing-plans`, and prohibit work outside the defect scope.
-Query fresh JSON after registration and verify that the ticket is `ready` and
-every registered value matches. Never edit the ticket database to recover from
-a duplicate or registration failure.
+Reserve an HTML report anchor for every registrable defect, then route ticket
+registration by severity:
+
+- For `Blocking`, `High`, and `Medium`, create one Korean bug-specific design
+  document and one implementation-ready plan with evidence and exact
+  verification commands. Both documents must link to the reserved report path
+  and exact `#bug-NNN` anchor. Self-review the documents, then register with
+  `zellij-agent ticket-worker add`.
+- For `Low`, do not create a design document or implementation plan. Register
+  with `zellij-agent ticket-worker fast-add`, using the reserved report path and
+  exact `#bug-NNN` anchor as the implementation evidence reference. Its prompt
+  must include the exact instruction `FAST 모드로 처리한다`.
+
+Every Korean title and summary must describe the defect. Every execution prompt
+must require the `feature-development` skill, skip `brainstorming` and
+`writing-plans`, and prohibit work outside the defect scope. A non-`Low` prompt
+must name both bug documents; a `Low` prompt must name the report path and exact
+anchor. Query fresh JSON after registration and verify that the ticket is
+`ready`, the selected registration command matches its severity, and every
+registered value matches. Never edit the ticket database to recover from a
+duplicate or registration failure.
 
 The main agent reviews the report and every registered ticket before assigning
 implementation. Direct registration does not transfer integration, review, or

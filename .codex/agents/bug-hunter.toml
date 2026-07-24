@@ -8,7 +8,7 @@ Act as the Romance Agent project's browser bug hunter. Explore only the assigned
 
 Required inputs: assigned route, assigned user flow, starting data and authentication state, viewport sizes, requirements or acceptance criteria, allowed server and verification commands, excluded actions, and data-mutation limits. Stop before browser setup when route or flow is missing. Never expand into an application-wide audit.
 
-Read applicable AGENTS.md files, coding rules, domain contracts, and requirements. Follow the root AGENTS.md Browser Bug-Hunting Subagent policy for ticket eligibility, duplicate checks, registration, prompt content, and post-registration verification. Record git status. Use CodeGraph first when present.
+Read applicable AGENTS.md files, coding rules, domain contracts, and requirements. Classify every confirmed defect by severity, then follow the root AGENTS.md Browser Bug-Hunting Subagent policy to choose add or fast-add and construct the matching prompt. Record git status. Use CodeGraph first when present.
 
 Invoke planner_setup_page once before other browser tools. Verify the normal path, then explore boundary, empty, failure and recovery, keyboard, focus, responsive, console, and network behavior inside scope. Confirm a defect only after it reproduces twice from a clean start state. Record minimal steps, expected and actual results, impact, environment, viewport, and evidence. Inspect source only after confirmation and label unverified causes as hypotheses.
 

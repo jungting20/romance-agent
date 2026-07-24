@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WorldEditorInitializingSheet 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    a { color:#7a3f2d; }
+    code { overflow-wrap:anywhere; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel { margin-top:1.25rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; }
+    .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; }
+    .severity-blocking,.severity-high { color:#9c241d; }
+    .severity-medium { color:#855c00; }
+    .severity-low { color:#256048; }
+    dt { margin-top:1rem; font-weight:800; }
+    dd { margin:.35rem 0 0; }
+    li + li { margin-top:.65rem; }
+    :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <p>브라우저 버그 탐색 보고서</p>
+    <h1>WorldEditorInitializingSheet 초기화 흐름</h1>
+    <p>생성 시각: <time datetime="2026-07-24T14:47:10+09:00">2026년 7월 24일 14:47 KST</time></p>
+  </header>
+
+  <section class="panel">
+    <h2>탐색 범위</h2>
+    <p><code>WorldEditorInitializingSheet</code>가 직접 URL에서 세계관 데이터를 처음 불러오는 흐름만 점검했다. MSW로 지연·성공·<code>500 INTERNAL_ERROR</code>·수동 재시도 성공·<code>404 STORY_BIBLE_NOT_FOUND</code>·빈 목록을 구성하고, Skeleton/status, clean close, Escape, Tab/Enter, 포커스 복원, 콘솔과 네트워크를 확인했다.</p>
+    <h3>제외 범위</h3>
+    <p>세계관 편집·추가·저장·dirty discard, 다른 Sheet 및 작업공간 컴포넌트, 제품 코드·테스트·설정 수정, 새 서버, 외부 네트워크, 실제 데이터 변경은 제외했다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>실행 환경</h2>
+    <dl>
+      <dt>대상 라우트</dt>
+      <dd><code>http://127.0.0.1:4173/projects/silver-garden/write?tab=world&amp;panel=world-editor</code></dd>
+      <dt>시작 상태</dt>
+      <dd>인증 없음, 공유 Vite 서버, clean MSW <code>silver-garden</code>, Story Bible revision 1. 예외 응답은 브라우저의 MSW <code>worker.use</code>로만 구성했고 저장 요청은 보내지 않았다.</dd>
+      <dt>요청된 뷰포트</dt>
+      <dd><code>375x800</code>, <code>1280x800</code></dd>
+      <dt>실제 브라우저 뷰포트</dt>
+      <dd>Playwright Test MCP가 고정한 <code>1280x720</code>. 제공 도구에 viewport 변경 명령이 없고 <code>window.resizeTo(1280, 800)</code>도 실제 viewport를 바꾸지 못했다.</dd>
+      <dt>실행 기준</dt>
+      <dd><code>db203c227ff68d319687c8761dd5a789f2d376cc</code> · <code>main</code> · 2026-07-24</dd>
+      <dt>적용 요구사항</dt>
+      <dd><code>frontend/docs/ui-plans/worldbuilding-edit-add.md</code>의 Editor initializing, load error/retry, unavailable, empty, keyboard/focus, responsive 기준과 <code>REQ-WORLD-005</code>, <code>REQ-WORLD-007</code>, <code>REQ-WORLD-010</code>.</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>결과 요약</h2>
+    <div class="grid">
+      <div class="metric">확정<strong>1</strong></div>
+      <div class="metric">등록<strong>0</strong></div>
+      <div class="metric">중복<strong>1</strong></div>
+      <div class="metric">제외<strong>1</strong></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>등록한 버그</h2>
+    <p>신규 등록 가능한 확정 버그가 없습니다. 확인된 폭 결함은 같은 화면을 병행 탐색한 보고서의 동일 수리 단위와 중복되어 티켓, 버그별 설계 문서, 구현 계획 및 증거 자산을 새로 만들지 않았습니다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>중복된 관찰</h2>
+    <p><code>1280x720</code>에서 초기화·retryable error·unavailable 상태의 오른쪽 Sheet가 모두 실제 폭 <code>384px</code>로 렌더링됐다. UI 계획은 desktop Sheet를 약 <code>40rem</code>으로 규정한다. loading 상태와 별도 error clean 상태에서 두 번 이상 같은 폭을 확인했지만, 병행 <a href="2026-07-24-1439-world-editor-sheet.html#bug-002">WorldEditorSheet 보고서의 <code>#bug-002</code></a>, <code>world-editor-desktop-width</code> 설계·계획, Medium ready 티켓 <code>#16 세계관 편집기 데스크톱 폭이 384px로 축소됨</code>과 동일한 공용 Sheet class 충돌·동일 수리 범위이므로 중복으로 분류했다. 탐색 전에는 기존 티켓 #1–#13, 종료 전에는 #16을 포함한 fresh JSON을 확인했다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>제외한 관찰</h2>
+    <p>초기 페이지의 <code>/favicon.ico</code> 404 콘솔 오류 1건은 <code>WorldEditorInitializingSheet</code> 및 지정 사용자 흐름과 무관해 제외했습니다. 의도적으로 구성한 Story Bible <code>500</code> 2회와 <code>404</code> 1회는 오류 UI 검증용 MSW 응답이므로 결함으로 세지 않았습니다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>수행한 검사</h2>
+    <ul>
+      <li>정상 경로 1회차: 직접 URL 성공 후 dialog 제목·설명·기존 항목과 하단 액션을 확인했고 첫 <code>분류</code> combobox에 포커스가 이동했다.</li>
+      <li>초기화 지연: MSW <code>delay('infinite')</code>에서 polite <code>status</code>의 “세계관을 불러오는 중이에요.”와 두 Skeleton 영역, 편집 컨트롤 부재, close 버튼 포커스, Escape clean close 및 URL의 <code>panel</code> 제거를 확인했다.</li>
+      <li>지연 회복: pending query를 취소하고 기본 MSW 성공 응답으로 복구한 뒤 첫 기존 항목 <code>분류</code> 포커스를 확인했다.</li>
+      <li>retryable 오류: MSW가 <code>500 INTERNAL_ERROR</code>를 두 번 반환한 뒤 alert와 “다시 불러오기”를 확인했고, 수동 retry의 세 번째 <code>200</code>에서 편집기와 첫 필드 포커스가 복구됐다.</li>
+      <li>unavailable 오류: MSW <code>404 STORY_BIBLE_NOT_FOUND</code>에서 전용 alert와 “세계관 보기로 돌아가기”를 확인했다. close에서 Tab으로 액션에 이동하고 Enter로 실행했을 때 <code>?tab=world</code>로 닫히며 “세계관 보기” tab에 포커스가 돌아갔다.</li>
+      <li>빈 경계: MSW의 빈 <code>worldEntries</code> 성공 응답에서 빈 안내, 추가 액션, disabled 저장, Sheet 제목 초기 포커스를 확인했다.</li>
+      <li>정상 경로 2회차: clean MSW 기본 응답과 query cache 재생성 후 같은 직접 URL을 다시 열어 dialog, 기존 항목, 첫 <code>분류</code> 포커스, footer 도달성을 재확인했다.</li>
+      <li>네트워크: Story Bible GET의 <code>200</code>, 의도한 <code>500</code> 2회, retry <code>200</code>, 의도한 <code>404</code>, 회복 <code>200</code>을 Playwright 네트워크 로그에서 확인했다.</li>
+      <li>서버 확인: <code>curl</code>로 대상 route가 HTTP <code>200</code>을 반환함을 확인했다.</li>
+      <li>공식 문서 검증: <code>.codex/agents/tests/validate-bug-hunter.sh</code>를 실행했으나, 보고서 검사 이전에 현재 <code>.codex/agents/bug-hunter.toml</code>의 필수 문구 누락으로 실패했다. 타인 소유 변경을 보존하기 위해 해당 파일은 수정하지 않았다.</li>
+      <li>보고서 한정 정적 검사: UTF-8, <code>lang="ko"</code>, viewport metadata, 필수 <code>h2</code>, zero-result 문구, 미해결 token 부재, script 부재를 별도 read-only Python 검사로 확인했다.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>제약 및 미확인 항목</h2>
+    <p>Playwright Test MCP의 현재 allowlist에는 viewport resize 도구가 없어 요청된 <code>375x800</code> 모바일과 정확한 <code>1280x800</code>을 실행하지 못했다. 따라서 모바일 full-width Sheet, 800px 높이, breakpoint별 focus/keyboard 동등성은 미확인이다. 지연·오류 시나리오는 공유 서버의 브라우저 MSW 런타임에서만 구성했으며 외부 네트워크와 실제 backend는 확인하지 않았다. 공식 validator는 저장소 agent 설정의 선행 실패로 보고서까지 도달하지 못했다. 이 보고서는 지정된 초기화 Sheet 흐름 밖의 애플리케이션 품질을 주장하지 않는다.</p>
+  </section>
+</main>
+</body>
+</html>
