@@ -51,6 +51,7 @@ export function CharacterCardEditorSheet({
   return (
     <Sheet open={open} onOpenChange={(next) => !next && !state.isSaving && onRequestClose()}>
       <SheetContent
+        data-character-card-editor=""
         side="right"
         showCloseButton={false}
         className="z-[60] w-full gap-0 p-0 sm:max-w-2xl"
@@ -275,9 +276,36 @@ export function CharacterDiscardDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const focusTargetRef = useRef<HTMLElement | null>(null);
+  const restoreFocusRef = useRef(false);
+
   return (
     <Dialog open={state.discardIntent !== undefined} onOpenChange={(next) => !next && onCancel()}>
-      <DialogContent showCloseButton={false} overlayClassName="z-[70]" className="z-[71]">
+      <DialogContent
+        showCloseButton={false}
+        overlayClassName="z-[70]"
+        className="z-[71]"
+        onOpenAutoFocus={() => {
+          const editor = getCharacterEditor();
+          const activeElement = document.activeElement;
+          focusTargetRef.current =
+            editor && activeElement instanceof HTMLElement && editor.contains(activeElement)
+              ? activeElement
+              : getCharacterEditorFallback(editor);
+          restoreFocusRef.current = true;
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!restoreFocusRef.current) return;
+          event.preventDefault();
+          const editor = getCharacterEditor();
+          const focusTarget = isValidEditorFocusTarget(focusTargetRef.current, editor)
+            ? focusTargetRef.current
+            : getCharacterEditorFallback(editor);
+          focusTarget?.focus();
+          focusTargetRef.current = null;
+          restoreFocusRef.current = false;
+        }}
+      >
         <DialogHeader>
           <DialogTitle>저장하지 않은 변경사항을 버릴까요?</DialogTitle>
           <DialogDescription>이 작업은 되돌릴 수 없어요.</DialogDescription>
@@ -286,11 +314,43 @@ export function CharacterDiscardDialog({
           <Button type="button" variant="outline" onClick={onCancel} autoFocus>
             계속 편집
           </Button>
-          <Button type="button" variant="destructive" onClick={onConfirm}>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => {
+              restoreFocusRef.current = false;
+              onConfirm();
+            }}
+          >
             변경사항 버리기
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function getCharacterEditor(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-character-card-editor]");
+}
+
+function getCharacterEditorFallback(editor: HTMLElement | null): HTMLElement | null {
+  return (
+    editor?.querySelector<HTMLElement>(
+      '#character-name:not(:disabled), button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ?? null
+  );
+}
+
+function isValidEditorFocusTarget(
+  target: HTMLElement | null,
+  editor: HTMLElement | null,
+): target is HTMLElement {
+  return Boolean(
+    target &&
+    editor?.contains(target) &&
+    target.isConnected &&
+    !target.matches(":disabled") &&
+    target.getAttribute("aria-disabled") !== "true",
   );
 }

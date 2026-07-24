@@ -331,8 +331,12 @@ describe("WritingWorkspacePage", () => {
     await user.type(personality, " 지킬 초안");
     await expectUnloadProtection(router);
     await user.click(screen.getByRole("button", { name: "인물 편집기 닫기" }));
+    expect(screen.getByRole("button", { name: "계속 편집" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "계속 편집" }));
     expect(personality).toHaveValue("단호하고 세심하다. 지킬 초안");
+    expect(screen.getByRole("dialog", { name: "서윤 수정" })).toContainElement(
+      document.activeElement as HTMLElement,
+    );
 
     void router.navigate({
       to: "/projects/$projectId/write",
@@ -447,6 +451,9 @@ describe("WritingWorkspacePage", () => {
     expect(screen.getByRole("textbox", { name: "성격" })).toHaveValue(
       "단호하고 세심하다. 지킬 초안",
     );
+    expect(screen.getByRole("dialog", { name: "서윤 수정" })).toContainElement(
+      document.activeElement as HTMLElement,
+    );
 
     router.history.back();
     await user.click(await screen.findByRole("button", { name: "변경사항 버리기" }));
@@ -454,6 +461,29 @@ describe("WritingWorkspacePage", () => {
 
     unmount();
     router.history.destroy();
+  });
+
+  test("restores focus inside a dirty create editor after cancelling discard", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace(
+      "/projects/silver-garden/write?tab=characters&panel=character-editor",
+    );
+    const name = await screen.findByRole("textbox", { name: "이름 *" });
+    await user.type(name, "지킬 신규 인물");
+
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "계속 편집" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "계속 편집" }));
+
+    expect(name).toHaveValue("지킬 신규 인물");
+    expect(router.state.location.search).toEqual({
+      tab: "characters",
+      panel: "character-editor",
+    });
+    expect(screen.getByRole("dialog", { name: "새 인물 등록" })).toContainElement(
+      document.activeElement as HTMLElement,
+    );
   });
 
   test("models a character mutation 404 as unavailable while preserving the draft", async () => {

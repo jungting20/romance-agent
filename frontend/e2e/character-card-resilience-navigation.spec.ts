@@ -263,6 +263,7 @@ test.describe("저장 실패·이탈·history 복원력", () => {
       await expect(dialog).toBeVisible();
       await expect(page).toHaveURL(EDITOR_URL);
       await expect(personality).toHaveValue(draft);
+      await expect(dialog.locator(":focus")).toHaveCount(1);
 
       // 3. 같은 method 뒤 변경사항 버리기를 한 번 선택해 두 dialog와 stale draft를 제거한다.
       await close();
@@ -301,6 +302,7 @@ test.describe("저장 실패·이탈·history 복원력", () => {
       .click();
     await expect(page).toHaveURL(EDITOR_URL);
     await expect(personality).toHaveValue(draft);
+    await expect(dialog.locator(":focus")).toHaveCount(1);
 
     // 3. 다시 Back하고 discard를 확정해 목록으로 한 번만 이동한다.
     await page.goBack();
@@ -396,6 +398,7 @@ test.describe("모바일 중첩 Sheet와 focus", () => {
     await expect(discard.getByRole("button", { name: "계속 편집" })).toBeFocused();
     await discard.getByRole("button", { name: "계속 편집" }).click();
     await expect(name).toHaveValue("모바일 민서");
+    await expect(createDialog.locator(":focus")).toHaveCount(1);
     await page.keyboard.press("Escape");
     discard = page.getByRole("dialog", { name: "저장하지 않은 변경사항을 버릴까요?" });
     await discard.getByRole("button", { name: "변경사항 버리기" }).click();
