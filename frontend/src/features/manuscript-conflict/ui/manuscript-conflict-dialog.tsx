@@ -52,6 +52,8 @@ export function ManuscriptConflictDialog({
 }: ManuscriptConflictDialogProps) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const retryKeepLocalRef = useRef<HTMLButtonElement | null>(null);
+  const applyServerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const hasFocusedInitialResolutionRef = useRef(false);
   const wasOpenRef = useRef(false);
 
   useEffect(() => {
@@ -69,8 +71,32 @@ export function ManuscriptConflictDialog({
   if (open && !wasOpenRef.current && typeof document !== "undefined") {
     returnFocusRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    hasFocusedInitialResolutionRef.current = false;
   }
   wasOpenRef.current = open;
+
+  const canFocusInitialResolution =
+    open &&
+    kind === "scene-content" &&
+    Boolean(comparison) &&
+    !isComparing &&
+    !isResolving &&
+    !compareError &&
+    !resolutionError;
+
+  useEffect(() => {
+    if (!canFocusInitialResolution || hasFocusedInitialResolutionRef.current) {
+      return;
+    }
+
+    const applyServerButton = applyServerButtonRef.current;
+    if (!applyServerButton) {
+      return;
+    }
+
+    applyServerButton.focus();
+    hasFocusedInitialResolutionRef.current = true;
+  }, [canFocusInitialResolution]);
 
   return (
     <Dialog
@@ -219,6 +245,7 @@ export function ManuscriptConflictDialog({
 
           <DialogFooter className="mx-0 mb-0 px-5">
             <Button
+              ref={applyServerButtonRef}
               type="button"
               variant="outline"
               disabled={
