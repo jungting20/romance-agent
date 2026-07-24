@@ -101,19 +101,50 @@ export function worldEditorReducer(
   }
 
   switch (action.type) {
-    case "change-field":
+    case "change-field": {
+      const rows = state.draft.rows.map((row) =>
+        row.key === action.key
+          ? ({ ...row, [action.field]: action.value } as WorldEditorDraftRow)
+          : row,
+      );
+      const fieldErrors = state.errors[action.key];
+      if (action.field === "kind" || !fieldErrors?.[action.field]) {
+        return {
+          ...state,
+          draft: { ...state.draft, rows },
+          phase: { status: "ready" },
+        };
+      }
+
+      const changedRow = rows.find((row) => row.key === action.key);
+      if (!changedRow || validateWorldEntryDraft(changedRow).errors[action.field]) {
+        return {
+          ...state,
+          draft: { ...state.draft, rows },
+          phase: { status: "ready" },
+        };
+      }
+
+      const { [action.field]: _resolvedError, ...remainingFieldErrors } = fieldErrors;
+      const errors = { ...state.errors };
+      if (Object.keys(remainingFieldErrors).length > 0) {
+        errors[action.key] = remainingFieldErrors;
+      } else {
+        delete errors[action.key];
+      }
+
       return {
         ...state,
-        draft: {
-          ...state.draft,
-          rows: state.draft.rows.map((row) =>
-            row.key === action.key
-              ? ({ ...row, [action.field]: action.value } as WorldEditorDraftRow)
-              : row,
-          ),
-        },
+        draft: { ...state.draft, rows },
         phase: { status: "ready" },
+        errors,
+        firstInvalidField:
+          state.firstInvalidField?.key === action.key &&
+          state.firstInvalidField.field === action.field
+            ? undefined
+            : state.firstInvalidField,
       };
+    }
     case "add-row":
       return {
         ...state,
