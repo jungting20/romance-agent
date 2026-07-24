@@ -401,9 +401,12 @@ describe("useManuscriptAutosave", () => {
     expect(result.current.status).toBe("error");
     expect(result.current.draft.scenes[0].content).toBe("실패해도 남는 초안");
 
-    act(() => result.current.retry());
-    await flushPromises();
+    let retrySucceeded = false;
+    await act(async () => {
+      retrySucceeded = await result.current.retry();
+    });
     expect(requestCount).toBe(2);
+    expect(retrySucceeded).toBe(true);
     expect(result.current.status).toBe("saved");
   });
 

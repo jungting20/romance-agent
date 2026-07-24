@@ -1715,27 +1715,72 @@ describe("WritingWorkspacePage", () => {
     expect(editor.value).toMatch(/^\n\n/);
   });
 
-  test("shows editing and failed save states, then retries without losing the draft", async () => {
+  test.each(["mouse", "keyboard"] as const)(
+    "restores editor focus and selection after a successful %s retry",
+    async (activation) => {
+      let saveCount = 0;
+      server.use(
+        http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+          saveCount += 1;
+          const body = (await request.json()) as SaveManuscriptRequest;
+          if (saveCount === 1) {
+            return HttpResponse.json(
+              { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+              { status: 500 },
+            );
+          }
+
+          return HttpResponse.json({
+            manuscript: body.manuscript,
+            manuscriptRevision: 2,
+            projectActivity: {
+              projectId: body.manuscript.projectId,
+              updatedAt: "2026-07-14T03:00:00.000Z",
+            },
+          });
+        }),
+      );
+      const user = userEvent.setup();
+      renderWorkspace();
+      const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+        name: "원고 본문",
+      });
+      expect(screen.getByRole("status")).toHaveAccessibleName("자동 저장됨");
+
+      fireEvent.change(editor, { target: { value: "저장에 실패해도 남는 원고" } });
+      expect(screen.getByRole("status")).toHaveAccessibleName("편집 중");
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
+      expect(editor.value).toBe("저장에 실패해도 남는 원고");
+      editor.setSelectionRange(3, 8);
+      const retryButton = screen.getByRole("button", { name: "원고 저장 다시 시도" });
+      if (activation === "mouse") {
+        await user.click(retryButton);
+      } else {
+        screen.getByRole("link", { name: "작품 서재로 돌아가기" }).focus();
+        await user.tab();
+        expect(retryButton).toHaveFocus();
+        await user.keyboard("{Enter}");
+      }
+
+      expect(await screen.findByRole("status")).toHaveAccessibleName("자동 저장됨");
+      await waitFor(() => expect(editor).toHaveFocus());
+      expect(editor.value).toBe("저장에 실패해도 남는 원고");
+      expect(editor.selectionStart).toBe(3);
+      expect(editor.selectionEnd).toBe(8);
+      expect(saveCount).toBe(2);
+    },
+  );
+
+  test("keeps the retry alert and focus when a retry fails again", async () => {
     let saveCount = 0;
     server.use(
-      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+      http.put("/api/manuscripts/:manuscriptId", () => {
         saveCount += 1;
-        const body = (await request.json()) as SaveManuscriptRequest;
-        if (saveCount === 1) {
-          return HttpResponse.json(
-            { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
-            { status: 500 },
-          );
-        }
-
-        return HttpResponse.json({
-          manuscript: body.manuscript,
-          manuscriptRevision: 2,
-          projectActivity: {
-            projectId: body.manuscript.projectId,
-            updatedAt: "2026-07-14T03:00:00.000Z",
-          },
-        });
+        return HttpResponse.json(
+          { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+          { status: 500 },
+        );
       }),
     );
     const user = userEvent.setup();
@@ -1743,18 +1788,17 @@ describe("WritingWorkspacePage", () => {
     const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
       name: "원고 본문",
     });
-    expect(screen.getByRole("status")).toHaveAccessibleName("자동 저장됨");
-
-    fireEvent.change(editor, { target: { value: "저장에 실패해도 남는 원고" } });
-    expect(screen.getByRole("status")).toHaveAccessibleName("편집 중");
-
+    fireEvent.change(editor, { target: { value: "재시도도 실패하는 원고" } });
     expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
-    expect(editor.value).toBe("저장에 실패해도 남는 원고");
-    await user.click(screen.getByRole("button", { name: "원고 저장 다시 시도" }));
+    const retryButton = screen.getByRole("button", { name: "원고 저장 다시 시도" });
 
-    expect(await screen.findByRole("status")).toHaveTextContent("자동 저장됨");
-    expect(editor.value).toBe("저장에 실패해도 남는 원고");
-    expect(saveCount).toBe(2);
+    await user.click(retryButton);
+
+    await waitFor(() => expect(saveCount).toBe(2));
+    expect(screen.getByRole("alert")).toHaveTextContent("저장 실패");
+    expect(screen.getByRole("button", { name: "원고 저장 다시 시도" })).toBeInTheDocument();
+    expect(editor).not.toHaveFocus();
+    expect(editor.value).toBe("재시도도 실패하는 원고");
   });
 
   test("saves an edit immediately before internal navigation and proceeds only after success", async () => {
