@@ -145,6 +145,8 @@ describe("WritingWorkspacePage", () => {
     );
 
     const dialog = await screen.findByRole("dialog", { name: "서윤 수정" });
+    expect(dialog).toHaveClass("data-[side=right]:w-full", "data-[side=right]:sm:max-w-2xl");
+    expect(dialog).not.toHaveClass("data-[side=right]:w-3/4", "data-[side=right]:sm:max-w-sm");
     await waitFor(() =>
       expect(router.state.location.search).toEqual({
         tab: "characters",
@@ -170,6 +172,7 @@ describe("WritingWorkspacePage", () => {
     const { router } = renderWorkspace("/projects/silver-garden/write?tab=characters");
     await user.click(await screen.findByRole("button", { name: "새 인물 등록" }));
     const dialog = screen.getByRole("dialog", { name: "새 인물 등록" });
+    expect(dialog).toHaveClass("data-[side=right]:w-full", "data-[side=right]:sm:max-w-2xl");
     expect(within(dialog).queryByLabelText("인물 ID")).not.toBeInTheDocument();
 
     const values: Record<string, string> = {
