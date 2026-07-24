@@ -69,7 +69,7 @@ export function ManuscriptConflictDialog({
       }}
     >
       <DialogContent
-        className="max-h-[calc(100svh-2rem)] max-w-5xl overflow-hidden p-0"
+        className="max-h-[calc(100svh-2rem)] overflow-hidden p-0 sm:max-w-5xl"
         showCloseButton={false}
         onEscapeKeyDown={(event) => {
           if (isResolving) {

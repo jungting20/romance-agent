@@ -47,6 +47,25 @@ function getComparison(): CompareManuscriptSceneResponse {
 }
 
 describe("ManuscriptConflictDialog", () => {
+  test("overrides the shared desktop max width for side-by-side comparison", () => {
+    render(
+      <ManuscriptConflictDialog
+        open
+        kind="scene-content"
+        comparison={getComparison()}
+        isComparing={false}
+        isResolving={false}
+        compareError={false}
+        onOpenChange={vi.fn()}
+        onKeepLocal={vi.fn()}
+        onApplyServer={vi.fn()}
+        onRetryCompare={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "원고 저장 충돌 해결" })).toHaveClass("sm:max-w-5xl");
+  });
+
   test("labels aligned local and server rows with line numbers and textual change states", () => {
     render(
       <ManuscriptConflictDialog
