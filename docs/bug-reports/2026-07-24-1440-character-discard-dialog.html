@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CharacterDiscardDialog 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } code { overflow-wrap:anywhere; } :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero"><p>브라우저 버그 탐색 보고서</p><h1>CharacterDiscardDialog 한정 탐색</h1><p>생성 시각: <time datetime="2026-07-24T14:47:00+09:00">2026년 7월 24일 14:47 KST</time></p></header>
+  <section class="panel"><h2>탐색 범위</h2><p><code>CharacterDiscardDialog</code>에 한정해 인물 신규·수정 Sheet의 dirty 닫기, <code>Escape</code>, 브라우저 <code>Back</code>, <code>계속 편집</code>, <code>변경사항 버리기</code>, keyboard focus trap, launch/navigation focus, 저장 중 차단을 확인했다. 정상 경로를 먼저 확인하고 각 결함 후보는 clean MSW 시작에서 반복했다.</p><h3>제외 범위</h3><p>제품 코드·테스트·설정·기존 문서 수정, 새 서버 실행, 외부 네트워크, 실제 backend 데이터 변경, 인물 저장 의미와 다른 집필 화면 컴포넌트 감사는 제외했다.</p></section>
+  <section class="panel"><h2>실행 환경</h2><dl><dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write?tab=characters</code></dd><dt>시작 상태</dt><dd>인증 없음, 공유 Vite 서버와 clean MSW <code>silver-garden</code> seed, 서윤·도현 인물 카드. 저장 중 상태는 페이지의 character POST 전달만 지연하고 최종 요청은 MSW가 처리하게 했다.</dd><dt>뷰포트</dt><dd>할당: <code>375×800</code>, <code>1280×800</code>. 실제 브라우저 도구 viewport: <code>1280×720</code>. 도구가 viewport 변경을 제공하지 않아 할당 크기의 responsive 분기는 미확인이다.</dd><dt>실행 기준</dt><dd><code>db203c227ff68d319687c8761dd5a789f2d376cc</code></dd></dl></section>
+  <section class="panel"><h2>결과 요약</h2><div class="grid"><div class="metric">확정<strong>1</strong></div><div class="metric">등록<strong>1</strong></div><div class="metric">중복<strong>0</strong></div><div class="metric">제외<strong>1</strong></div></div></section>
+  <section class="panel"><h2>등록한 버그</h2>
+    <article class="bug-card" id="bug-001"><p><span class="severity severity-medium">심각도 Medium</span></p><h3>계속 편집을 선택하면 인물 Sheet 포커스가 문서 본문으로 이탈한다</h3>
+      <dl><dt>티켓</dt><dd><code>#14</code> · <code>ready</code></dd><dt>재현 절차</dt><dd><ol><li>clean MSW 등장인물 목록에서 <code>서윤 인물 수정</code> 또는 <code>새 인물 등록</code>을 연다.</li><li>성격 또는 이름을 변경해 Sheet를 dirty 상태로 만든다.</li><li><code>Escape</code>, <code>인물 편집기 닫기</code> 또는 브라우저 <code>Back</code>으로 폐기 확인을 연다.</li><li>초기 포커스가 있는 <code>계속 편집</code>을 선택하고 draft, URL, <code>document.activeElement</code>를 확인한다.</li></ol></dd><dt>기대 결과</dt><dd>dialog만 닫히고 exact draft와 editor URL을 유지한 채, 방금 작업하던 control 또는 안정적인 fallback을 포함한 인물 Sheet 내부로 포커스가 돌아가야 한다.</dd><dt>실제 결과</dt><dd>draft와 URL은 유지되지만 <code>document.activeElement</code>는 두 clean 재현과 추가 명시적 닫기 재현에서 모두 <code>BODY</code>였고 <code>inDialog=false</code>였다.</dd><dt>사용자 영향</dt><dd>작업을 계속하기로 명시한 사용자가 편집 위치를 잃는다. 특히 키보드 사용자는 Sheet의 control을 다시 찾아 탐색해야 하므로 REQ-08과 명시된 focus 복원 기준을 충족하지 못한다. 데이터 손실은 확인되지 않았다.</dd><dt>관련 위치</dt><dd><code>frontend/src/features/character-card-editor/character-card-editor-sheet.tsx:269</code>, <code>frontend/src/features/character-card-editor/use-character-card-editor.ts:192</code>. controlled dialog에 명시적 close autofocus 대상이 보이지 않는 점은 원인 가설이며 아직 검증되지 않았다.</dd><dt>문서</dt><dd><a href="../superpowers/specs/2026-07-24-character-discard-continue-focus-design.md">설계</a> · <a href="../superpowers/plans/2026-07-24-character-discard-continue-focus.md">구현 계획</a></dd></dl>
+      <figure><img class="evidence" src="assets/2026-07-24-1440-character-discard-dialog/continue-editing-focus-run2.png" alt="신규 인물 등록 폐기 확인에서 계속 편집을 선택한 뒤 Sheet가 유지됐지만 포커스 표시가 사라진 화면"><figcaption>두 번째 clean 재현: 이름 초안과 신규 등록 Sheet는 유지되지만 같은 시점의 측정에서 포커스가 <code>BODY</code>로 이탈했다.</figcaption></figure>
+      <figure><img class="evidence" src="assets/2026-07-24-1440-character-discard-dialog/continue-editing-focus-run3.png" alt="서윤 수정 Sheet에서 명시적 닫기 후 계속 편집을 선택했지만 편집 control에 포커스가 없는 화면"><figcaption>추가 확인: 명시적 닫기 경로에서도 성격 초안과 editor URL은 유지됐으나 Sheet 내부 포커스가 복원되지 않았다.</figcaption></figure>
+      <h4>두 번의 clean 재현</h4><ol><li>수정 run: 서윤 성격을 <code>단호하고 세심하다. discard-normal</code>로 변경하고 <code>Escape</code> 뒤 계속 편집. 성격 값과 수정 URL 유지, active element는 <code>BODY</code>.</li><li>신규 run: 이름을 <code>포커스 재현</code>으로 입력하고 <code>Escape</code> 뒤 계속 편집. 이름 값과 신규 URL 유지, active element는 <code>BODY</code>, Sheet dialog 내부가 아님.</li></ol>
+    </article>
+  </section>
+  <section class="panel"><h2>중복된 관찰</h2><p>등록 전과 등록 직전에 <code>zellij-agent ticket-worker list --json</code>을 조회했다. 기존 <code>#12 원고 저장 재시도 성공 뒤 편집기 포커스 복원</code>은 원고 자동 저장 retry 성공 뒤 사라지는 버튼의 포커스 문제로, 인물 discard 취소·발생 조건·수정 경계가 달라 중복이 아니다. 동일 결함 티켓은 없었다.</p></section>
+  <section class="panel"><h2>제외한 관찰</h2><p><code>/favicon.ico</code>의 404 console error 1건은 이 컴포넌트·사용자 흐름과 무관하고 기능 영향이 없어 등록하지 않았다.</p></section>
+  <section class="panel"><h2>수행한 검사</h2><ul><li><code>curl</code> 대상 route: HTTP <code>200</code>.</li><li>정상 수정 discard: dialog 초기 focus는 <code>계속 편집</code>, <code>Shift+Tab</code>/<code>Tab</code> focus trap 정상.</li><li>discard 확정: Sheet와 dialog가 한 번만 닫히고 목록 URL 및 <code>서윤 인물 수정</code> launch focus 복원 정상.</li><li>dirty browser <code>Back</code>: 확인 전 editor state 유지, 계속 편집 뒤 editor URL 복원, 확정 뒤 목록으로 한 번 이동 정상.</li><li>저장 중 차단: 10초 지연한 MSW POST에서 fieldset, 닫기, 취소, <code>저장 중…</code>이 disabled이고 진행 status가 노출됨을 확인.</li><li>network: 초기 <code>GET /api/projects/silver-garden/workspace</code>와 <code>GET /api/projects/silver-garden/story-bible</code>가 <code>200</code>.</li><li>티켓 <code>#14</code>: 등록 뒤 fresh JSON에서 <code>ready</code>, 제목·요약·spec·plan·branch·prompt 일치.</li><li><code>git status --short --branch</code>: 시작 시 기존 삭제 1개와 다른 에이전트의 미추적 보고서·문서를 확인하고 그대로 보존.</li></ul></section>
+  <section class="panel"><h2>제약 및 미확인 항목</h2><p>브라우저 MCP allowlist에 viewport resize가 없어 <code>375×800</code> 모바일 중첩 Sheet와 정확한 <code>1280×800</code>을 확인하지 못했다. clean seed가 항상 서윤·도현을 제공하고 할당 범위에서 MSW source를 바꾸지 않았으므로 빈 인물 목록의 discard 연계는 해당 없음으로 두었다. 저장 실패·retry용 route override 도구가 없어 실패 뒤 discard 취소는 미확인이다. 제품 소스의 원인 설명은 확인된 DOM 결과 뒤 살펴본 제한적 가설이며 구현 시 검증이 필요하다.</p></section>
+</main>
+</body>
+</html>
