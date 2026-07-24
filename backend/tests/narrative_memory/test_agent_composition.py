@@ -3,6 +3,7 @@ from pathlib import Path
 
 import narrative_analysis_agent
 import pytest
+from llm_agent_audit import NoopAgentAuditSink
 from narrative_analysis_agent import (
     NarrativeAnalysisAgent,
     SceneAnalysisRequest,
@@ -36,6 +37,23 @@ def test_backend_builds_only_the_public_agent_facade(tmp_path: Path) -> None:
     assert result.source_snapshot_version == 0
 
 
+def test_backend_passes_application_owned_audit_sink_to_public_agent(
+    tmp_path: Path,
+) -> None:
+    project_graph_path = tmp_path / "narrative-memory.sqlite3"
+    SQLiteSnapshotRepository(project_graph_path).initialize()
+    sink = NoopAgentAuditSink()
+
+    agent = composition.build_narrative_analysis_agent(
+        model_name="test",
+        prompt_path=tmp_path / "system.md",
+        project_graph_path=project_graph_path,
+        audit_sink=sink,
+    )
+
+    assert agent._runner._sink is sink
+
+
 def test_use_case_composition_initializes_repository_before_agent_with_same_path(
     tmp_path: Path,
     monkeypatch,
@@ -45,6 +63,7 @@ def test_use_case_composition_initializes_repository_before_agent_with_same_path
     calls: list[tuple[str, Path]] = []
     repositories = []
     agent = object()
+    sink = NoopAgentAuditSink()
 
     class RecordingRepository:
         def __init__(self, path: Path) -> None:
@@ -60,9 +79,11 @@ def test_use_case_composition_initializes_repository_before_agent_with_same_path
         model_name: str,
         prompt_path: Path,
         project_graph_path: Path,
+        audit_sink: NoopAgentAuditSink | None = None,
     ) -> object:
         assert model_name == "test"
         assert prompt_path == tmp_path / "system.md"
+        assert audit_sink is sink
         calls.append(("agent", project_graph_path))
         return agent
 
@@ -77,6 +98,7 @@ def test_use_case_composition_initializes_repository_before_agent_with_same_path
         model_name="test",
         prompt_path=prompt_path,
         project_graph_path=project_graph_path,
+        audit_sink=sink,
     )
 
     assert calls == [
