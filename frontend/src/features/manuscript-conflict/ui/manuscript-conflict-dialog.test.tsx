@@ -343,6 +343,65 @@ describe("ManuscriptConflictDialog", () => {
     expect(onRetryKeepLocal).toHaveBeenCalledOnce();
   });
 
+  test.each([
+    [
+      "mouse",
+      async (user: ReturnType<typeof userEvent.setup>, button: HTMLElement) => user.click(button),
+    ],
+    ["Enter", async (user: ReturnType<typeof userEvent.setup>) => user.keyboard("{Enter}")],
+    ["Space", async (user: ReturnType<typeof userEvent.setup>) => user.keyboard(" ")],
+  ])(
+    "restores dialog focus to the keep-local retry after a %s resolution failure",
+    async (_, activate) => {
+      const user = userEvent.setup();
+
+      function ResolutionFailureHarness() {
+        const [isResolving, setIsResolving] = useState(false);
+        const [resolutionError, setResolutionError] = useState(false);
+
+        return (
+          <ManuscriptConflictDialog
+            open
+            kind="scene-content"
+            comparison={getComparison()}
+            isComparing={false}
+            isResolving={isResolving}
+            compareError={false}
+            resolutionError={resolutionError}
+            onOpenChange={vi.fn()}
+            onKeepLocal={() => {
+              setIsResolving(true);
+              window.setTimeout(() => {
+                if (document.activeElement instanceof HTMLElement) {
+                  document.activeElement.blur();
+                }
+                setIsResolving(false);
+                setResolutionError(true);
+              }, 0);
+            }}
+            onApplyServer={vi.fn()}
+            onRetryCompare={vi.fn()}
+            onRetryKeepLocal={vi.fn()}
+          />
+        );
+      }
+
+      render(<ResolutionFailureHarness />);
+      const keepLocal = screen.getByRole("button", { name: "내 편집본 유지" });
+      keepLocal.focus();
+      await activate(user, keepLocal);
+
+      const retry = await screen.findByRole("button", { name: "내 편집본 저장 다시 시도" });
+      await waitFor(() => expect(retry).toHaveFocus());
+      await user.tab();
+      expect(screen.getByRole("button", { name: "서버 최신본 적용" })).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(screen.getByRole("dialog", { name: "원고 저장 충돌 해결" })).toContainElement(
+        document.activeElement as HTMLElement,
+      );
+    },
+  );
+
   test("offers structural conflict actions without a scene diff table", () => {
     render(
       <ManuscriptConflictDialog

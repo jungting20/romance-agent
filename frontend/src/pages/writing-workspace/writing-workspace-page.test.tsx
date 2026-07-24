@@ -2130,6 +2130,78 @@ describe("WritingWorkspacePage", () => {
     expect(screen.queryByRole("dialog", { name: "원고 저장 충돌 해결" })).not.toBeInTheDocument();
     expect(saveCount).toBe(2);
   });
+
+  test("restores conflict retry focus after a failed resolution and returns focus to the draft after retry", async () => {
+    const workspace = getWorkspace();
+    const savedRequests: SaveManuscriptRequest[] = [];
+    server.use(
+      http.put("/api/manuscripts/:manuscriptId", async ({ request }) => {
+        const body = (await request.json()) as SaveManuscriptRequest;
+        savedRequests.push(body);
+        if (savedRequests.length === 1) {
+          return HttpResponse.json(
+            { code: "MANUSCRIPT_REVISION_CONFLICT", message: "충돌", fieldErrors: [] },
+            { status: 409 },
+          );
+        }
+        if (savedRequests.length === 2) {
+          return HttpResponse.json(
+            { code: "INTERNAL_ERROR", message: "잠시 후 다시 시도해 주세요.", fieldErrors: [] },
+            { status: 500 },
+          );
+        }
+        return HttpResponse.json({
+          manuscript: body.manuscript,
+          manuscriptRevision: 3,
+          projectActivity: {
+            projectId: workspace.project.id,
+            updatedAt: "2026-07-14T06:00:00Z",
+          },
+        });
+      }),
+      http.post("/api/manuscripts/:manuscriptId/scene-diffs", async ({ request }) => {
+        const body = (await request.json()) as { sceneId: string; localContent: string };
+        return HttpResponse.json({
+          sceneId: body.sceneId,
+          serverRevision: 2,
+          localContent: body.localContent,
+          serverContent: "서버 최신 장면",
+          serverManuscript: {
+            ...workspace.manuscript,
+            scenes: workspace.manuscript.scenes.map((scene) =>
+              scene.id === body.sceneId ? { ...scene, content: "서버 최신 장면" } : scene,
+            ),
+          },
+          rows: [],
+        } satisfies CompareManuscriptSceneResponse);
+      }),
+    );
+    const user = userEvent.setup();
+    renderWorkspace();
+    const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "원고 본문" });
+    const localDraft = "포커스와 선택 범위를 지킬 로컬 장면";
+    editor.focus();
+    fireEvent.change(editor, { target: { value: localDraft } });
+    editor.setSelectionRange(4, 10);
+    await screen.findByRole("dialog", { name: "원고 저장 충돌 해결" });
+
+    await user.click(screen.getByRole("button", { name: "내 편집본 유지" }));
+    const retry = await screen.findByRole("button", { name: "내 편집본 저장 다시 시도" });
+    await waitFor(() => expect(retry).toHaveFocus());
+    expect(screen.getByRole("alert")).toHaveTextContent("내 편집본을 서버에 저장하지 못했어요");
+
+    await user.click(retry);
+    const restoredEditor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "원고 본문",
+    });
+    await waitFor(() => expect(restoredEditor).toHaveFocus());
+    expect(restoredEditor.value).toBe(localDraft);
+    expect(restoredEditor.selectionStart).toBe(4);
+    expect(restoredEditor.selectionEnd).toBe(10);
+    expect(savedRequests).toHaveLength(3);
+    expect(savedRequests[1].expectedRevision).toBe(2);
+    expect(savedRequests[2].expectedRevision).toBe(2);
+  });
 });
 
 function renderWorkspace(initialUrl = "/projects/silver-garden/write") {
