@@ -97,6 +97,61 @@ describe("worldEditorReducer", () => {
     expect(toSaveWorldEntriesRequest(state)).toBeUndefined();
   });
 
+  test("clears only the resolved field error as the draft is corrected", () => {
+    let state = createWorldEditorState({
+      ...snapshot,
+      storyBible: {
+        ...snapshot.storyBible,
+        worldEntries: [{ id: "world-1", kind: "place", title: "", description: "" }],
+      },
+    });
+    state = worldEditorReducer(state, { type: "validate" });
+
+    state = worldEditorReducer(state, {
+      type: "change-field",
+      key: "world-1",
+      field: "title",
+      value: "온실",
+    });
+
+    expect(state.errors).toEqual({
+      "world-1": { description: "설명을 입력해 주세요." },
+    });
+    expect(state.firstInvalidField).toBeUndefined();
+
+    state = worldEditorReducer(state, {
+      type: "change-field",
+      key: "world-1",
+      field: "description",
+      value: "두 사람의 장소",
+    });
+
+    expect(state.errors).toEqual({});
+    expect(state.firstInvalidField).toBeUndefined();
+  });
+
+  test("preserves validation errors on unchanged fields and rows", () => {
+    let state = createWorldEditorState({
+      ...snapshot,
+      storyBible: { ...snapshot.storyBible, worldEntries: [] },
+    });
+    state = worldEditorReducer(state, { type: "add-row", key: "new-a" });
+    state = worldEditorReducer(state, { type: "add-row", key: "new-b" });
+    state = worldEditorReducer(state, { type: "validate" });
+
+    state = worldEditorReducer(state, {
+      type: "change-field",
+      key: "new-a",
+      field: "title",
+      value: "온실",
+    });
+
+    expect(state.errors).toEqual({
+      "new-a": { description: "설명을 입력해 주세요." },
+      "new-b": { title: "제목을 입력해 주세요.", description: "설명을 입력해 주세요." },
+    });
+  });
+
   test("freezes the submitted draft and ignores edits while saving", () => {
     let state = createWorldEditorState(snapshot);
     state = worldEditorReducer(state, {
