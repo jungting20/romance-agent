@@ -75,12 +75,14 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         self._agent_name = agent_name
         self._model = sanitized_model_configuration(model)
         self._sink = sink if sink is not None else NoopAgentAuditSink()
-        self._id_factory = id_factory or _new_attempt_id
+        self._id_factory = id_factory
         self._clock = clock or _utc_now
         self._monotonic = monotonic or time.monotonic
 
     def new_run_id(self) -> str:
-        return f"run-{uuid4()}"
+        if self._id_factory is not None:
+            return self._id_factory()
+        return _new_run_id()
 
     async def run(
         self,
@@ -91,7 +93,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         prompt: PromptIdentity,
         validate: Callable[[OutputT], None],
     ) -> AgentResult[OutputT]:
-        attempt_id = self._id_factory()
+        attempt_id = self._id_factory() if self._id_factory is not None else _new_attempt_id()
         started_at = self._clock()
         started_monotonic = self._monotonic()
         await self._append_required(
@@ -277,6 +279,10 @@ class AuditedAgentRunner[OutputT: BaseModel]:
 
 def _new_attempt_id() -> str:
     return f"attempt-{uuid4()}"
+
+
+def _new_run_id() -> str:
+    return f"run-{uuid4()}"
 
 
 def _utc_now() -> datetime:

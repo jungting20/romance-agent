@@ -119,12 +119,13 @@ def _audited_runner(
 def _run(
     runner: AuditedAgentRunner[FakeOutput],
     validate: Callable[[FakeOutput], None] = lambda output: None,
+    run_id: str = "run-1",
 ) -> FakeResult:
     return asyncio.run(
         runner.run(
             "user secret",
             instructions="system secret",
-            run_id="run-1",
+            run_id=run_id,
             prompt=PromptIdentity.from_text("dialogue-generation.system", 1, "system secret"),
             validate=validate,
         )
@@ -148,6 +149,26 @@ def test_audited_runner_records_success_without_sensitive_content_by_default() -
     assert terminal.status == "success"
     assert terminal.usage == TokenUsage(input_tokens=11, output_tokens=7)
     assert terminal.duration_ms == 250.0
+
+
+def test_audited_runner_uses_injected_id_factory_for_run_and_attempt_ids() -> None:
+    sink = RecordingSink()
+    ids = iter(("run-fixed", "attempt-fixed"))
+    runner = AuditedAgentRunner(
+        RecordingRunner(_result()),
+        agent_name="dialogue-generation",
+        model=TestModel(),
+        sink=sink,
+        id_factory=ids.__next__,
+    )
+
+    run_id = runner.new_run_id()
+    _run(runner, run_id=run_id)
+
+    started = cast(AuditAttemptStarted, sink.records[0][0])
+    assert run_id == "run-fixed"
+    assert started.run_id == "run-fixed"
+    assert started.attempt_id == "attempt-fixed"
 
 
 def test_audited_runner_passes_sensitive_payload_only_when_sink_requests_it() -> None:
