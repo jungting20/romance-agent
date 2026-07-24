@@ -55,4 +55,3 @@ Playwright에서 `1280x800`과 `375x800`으로 다음을 확인한다.
 ## 금지 범위
 
 공용 `Sheet` 폭, 다른 Sheet 소비자, API/OpenAPI, Story Bible 의미, 저장·validation·failure·discard 상태, package/lockfile을 수정하지 않는다.
-

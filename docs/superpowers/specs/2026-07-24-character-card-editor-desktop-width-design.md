@@ -38,4 +38,3 @@
 3. 공용 `Sheet`와 다른 소비자의 width는 바뀌지 않는다.
 4. 이름·성별·나이·역할·성격·문체·대사 스타일·기본 욕망·숨은 감정, 수정 ID와 footer action이 scroll을 통해 모두 도달 가능하다.
 5. 기존 create/edit, validation, 중복 저장 차단, failure/retry, unavailable, close/discard, keyboard focus 동작이 회귀하지 않는다.
-
