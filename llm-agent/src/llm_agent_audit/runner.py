@@ -122,7 +122,13 @@ class AuditedAgentRunner[OutputT: BaseModel]:
                     status="cancelled",
                     inspected=None,
                     error=SanitizedAuditError(code="cancelled", message="agent run cancelled"),
-                )
+                ),
+                sensitive=self._sensitive_payload(
+                    instructions,
+                    user_prompt,
+                    None,
+                    validated_output_json=None,
+                ),
             )
             raise
         except Exception:
@@ -139,7 +145,13 @@ class AuditedAgentRunner[OutputT: BaseModel]:
                         code="model_call_failed",
                         message="model call failed",
                     ),
-                )
+                ),
+                sensitive=self._sensitive_payload(
+                    instructions,
+                    user_prompt,
+                    None,
+                    validated_output_json=None,
+                ),
             )
             raise
 
@@ -157,7 +169,13 @@ class AuditedAgentRunner[OutputT: BaseModel]:
                     status="cancelled",
                     inspected=inspected,
                     error=SanitizedAuditError(code="cancelled", message="agent run cancelled"),
-                )
+                ),
+                sensitive=self._sensitive_payload(
+                    instructions,
+                    user_prompt,
+                    inspected,
+                    validated_output_json=None,
+                ),
             )
             raise
         except Exception:
@@ -240,7 +258,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         self,
         instructions: str,
         user_prompt: str,
-        inspected: InspectedResult,
+        inspected: InspectedResult | None,
         *,
         validated_output_json: bytes | None,
     ) -> SensitiveAuditPayload | None:
@@ -249,7 +267,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         return SensitiveAuditPayload(
             system_prompt=instructions,
             user_prompt=user_prompt,
-            raw_response_json=inspected.raw_response_json,
+            raw_response_json=inspected.raw_response_json if inspected else None,
             validated_output_json=validated_output_json,
         )
 
@@ -273,8 +291,12 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         except Exception:
             pass
 
-    async def _append_cancellation(self, event: AuditEvent) -> None:
-        await self._append_best_effort(event)
+    async def _append_cancellation(
+        self,
+        event: AuditEvent,
+        sensitive: SensitiveAuditPayload | None = None,
+    ) -> None:
+        await self._append_best_effort(event, sensitive)
 
 
 def _new_attempt_id() -> str:

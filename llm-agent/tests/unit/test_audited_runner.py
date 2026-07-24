@@ -197,6 +197,23 @@ def test_audited_runner_records_provider_failure_and_reraises_original_exception
     assert terminal.error is not None
     assert terminal.error.code == "model_call_failed"
     assert "private" not in terminal.error.message
+    assert sink.records[-1][1] is None
+
+
+def test_audited_runner_includes_prompts_only_for_raw_enabled_provider_failure() -> None:
+    provider_error = RuntimeError("private provider detail")
+    sink = RecordingSink(capture_sensitive_content=True)
+
+    with pytest.raises(RuntimeError, match="private provider detail"):
+        _run(_audited_runner(sink=sink, result=provider_error))
+
+    sensitive = sink.records[-1][1]
+    assert sensitive == SensitiveAuditPayload(
+        system_prompt="system secret",
+        user_prompt="user secret",
+        raw_response_json=None,
+        validated_output_json=None,
+    )
 
 
 def test_audited_runner_records_validation_failure_without_validated_output() -> None:
@@ -227,6 +244,42 @@ def test_audited_runner_records_cancellation_and_reraises_it() -> None:
     assert terminal.status == "cancelled"
     assert terminal.error is not None
     assert terminal.error.code == "cancelled"
+    assert sink.records[-1][1] is None
+
+
+def test_audited_runner_includes_prompts_only_for_raw_enabled_provider_cancellation() -> None:
+    sink = RecordingSink(capture_sensitive_content=True)
+
+    with pytest.raises(asyncio.CancelledError):
+        _run(_audited_runner(sink=sink, result=asyncio.CancelledError()))
+
+    sensitive = sink.records[-1][1]
+    assert sensitive == SensitiveAuditPayload(
+        system_prompt="system secret",
+        user_prompt="user secret",
+        raw_response_json=None,
+        validated_output_json=None,
+    )
+
+
+def test_audited_runner_cancellation_after_inspection_never_records_unvalidated_output() -> None:
+    sink = RecordingSink(capture_sensitive_content=True)
+
+    def cancel_validation(output: FakeOutput) -> None:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        _run(
+            _audited_runner(sink=sink, result=_result()),
+            validate=cancel_validation,
+        )
+
+    sensitive = sink.records[-1][1]
+    assert sensitive is not None
+    assert sensitive.system_prompt == "system secret"
+    assert sensitive.user_prompt == "user secret"
+    assert sensitive.raw_response_json is not None
+    assert sensitive.validated_output_json is None
 
 
 def test_audited_runner_fails_closed_when_start_append_fails() -> None:

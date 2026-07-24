@@ -5,9 +5,10 @@ import base64
 import json
 import logging
 import os
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from uuid import uuid4
@@ -53,6 +54,27 @@ class _OwnerOnlyTimedRotatingFileHandler(TimedRotatingFileHandler):
     def handleError(self, record: logging.LogRecord) -> None:
         raise
 
+    def delete_expired_rotated_files(self, *, now: datetime, retention_days: int) -> None:
+        active_path = Path(self.baseFilename)
+        rotated_prefix = f"{active_path.name}."
+        cutoff_timestamp = now.timestamp() - retention_days * 24 * 60 * 60
+        for candidate in active_path.parent.iterdir():
+            if not candidate.name.startswith(rotated_prefix):
+                continue
+            suffix = candidate.name.removeprefix(rotated_prefix)
+            if self.extMatch.fullmatch(suffix) is None:
+                continue
+            try:
+                modified_at = candidate.stat().st_mtime
+            except FileNotFoundError:
+                continue
+            if modified_at >= cutoff_timestamp:
+                continue
+            try:
+                candidate.unlink()
+            except FileNotFoundError:
+                continue
+
 
 class JsonlAgentAuditSink(AgentAuditSink):
     """Stores sanitized metadata and opt-in encrypted raw audit content."""
@@ -62,9 +84,13 @@ class JsonlAgentAuditSink(AgentAuditSink):
         config: AgentAuditLogConfig,
         *,
         nonce_factory: Callable[[int], bytes] = os.urandom,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._config = config
         self._nonce_factory = nonce_factory
+        self._clock = clock or _utc_now
+        self._lifecycle_lock = threading.Lock()
+        self._closed = False
         self.capture_sensitive_content = config.capture_sensitive_content
         self._config.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self._config.directory, 0o700)
@@ -86,41 +112,65 @@ class JsonlAgentAuditSink(AgentAuditSink):
         await asyncio.to_thread(self._append, event, sensitive)
 
     def _append(self, event: AuditEvent, sensitive: SensitiveAuditPayload | None) -> None:
-        self.metadata_logger.info(_canonical_json(_event_data(event)))
-        if not self.capture_sensitive_content or sensitive is None:
-            return
-        assert self._aesgcm is not None
-        aad = json.dumps(
-            {
+        with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError("agent audit sink is closed")
+            now = self._clock()
+            self._metadata_handler.delete_expired_rotated_files(
+                now=now,
+                retention_days=self._config.metadata_retention_days,
+            )
+            self._sensitive_handler.delete_expired_rotated_files(
+                now=now,
+                retention_days=self._config.sensitive_retention_days,
+            )
+            _emit_owned(
+                self.metadata_logger,
+                self._metadata_handler,
+                _canonical_json(_event_data(event)),
+            )
+            if not self.capture_sensitive_content or sensitive is None:
+                return
+            assert self._aesgcm is not None
+            aad = json.dumps(
+                {
+                    "schema_version": event.schema_version,
+                    "agent_name": event.agent_name,
+                    "run_id": event.run_id,
+                    "attempt_id": event.attempt_id,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            nonce = self._nonce_factory(12)
+            ciphertext = self._aesgcm.encrypt(nonce, _sensitive_json(sensitive), aad)
+            envelope = {
                 "schema_version": event.schema_version,
                 "agent_name": event.agent_name,
                 "run_id": event.run_id,
                 "attempt_id": event.attempt_id,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        nonce = self._nonce_factory(12)
-        ciphertext = self._aesgcm.encrypt(nonce, _sensitive_json(sensitive), aad)
-        envelope = {
-            "schema_version": event.schema_version,
-            "agent_name": event.agent_name,
-            "run_id": event.run_id,
-            "attempt_id": event.attempt_id,
-            "algorithm": "AES-256-GCM",
-            "key_id": self._config.encryption_key_id,
-            "nonce": base64.b64encode(nonce).decode("ascii"),
-            "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
-        }
-        self.sensitive_logger.info(_canonical_json(envelope))
+                "algorithm": "AES-256-GCM",
+                "key_id": self._config.encryption_key_id,
+                "nonce": base64.b64encode(nonce).decode("ascii"),
+                "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
+            }
+            _emit_owned(
+                self.sensitive_logger,
+                self._sensitive_handler,
+                _canonical_json(envelope),
+            )
 
     def close(self) -> None:
-        for logger, handler in (
-            (self.metadata_logger, self._metadata_handler),
-            (self.sensitive_logger, self._sensitive_handler),
-        ):
-            logger.removeHandler(handler)
-            handler.close()
+        with self._lifecycle_lock:
+            if self._closed:
+                return
+            self._closed = True
+            for logger, handler in (
+                (self.metadata_logger, self._metadata_handler),
+                (self.sensitive_logger, self._sensitive_handler),
+            ):
+                logger.removeHandler(handler)
+                handler.close()
 
 
 def _build_logger(
@@ -141,6 +191,23 @@ def _build_logger(
     handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(handler)
     return logger, handler
+
+
+def _emit_owned(
+    logger: logging.Logger,
+    handler: _OwnerOnlyTimedRotatingFileHandler,
+    message: str,
+) -> None:
+    record = logger.makeRecord(
+        logger.name,
+        logging.INFO,
+        __file__,
+        0,
+        message,
+        (),
+        None,
+    )
+    handler.handle(record)
 
 
 def _event_data(event: AuditEvent) -> dict[str, object]:
@@ -224,3 +291,7 @@ def _datetime_text(value: datetime) -> str:
 
 def _is_allowed_model_setting(name: str) -> bool:
     return name in {"temperature", "max_tokens", "top_p", "seed", "timeout"}
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
