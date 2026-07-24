@@ -74,7 +74,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         self._runner = runner
         self._agent_name = agent_name
         self._model = sanitized_model_configuration(model)
-        self._sink = sink or NoopAgentAuditSink()
+        self._sink = sink if sink is not None else NoopAgentAuditSink()
         self._id_factory = id_factory or _new_attempt_id
         self._clock = clock or _utc_now
         self._monotonic = monotonic or time.monotonic
@@ -124,7 +124,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
             )
             raise
         except Exception:
-            await self._append_required(
+            await self._append_best_effort(
                 self._finished_event(
                     run_id=run_id,
                     attempt_id=attempt_id,
@@ -159,7 +159,7 @@ class AuditedAgentRunner[OutputT: BaseModel]:
             )
             raise
         except Exception:
-            await self._append_required(
+            await self._append_best_effort(
                 self._finished_event(
                     run_id=run_id,
                     attempt_id=attempt_id,
@@ -261,11 +261,18 @@ class AuditedAgentRunner[OutputT: BaseModel]:
         except Exception:
             raise AgentAuditWriteError("agent audit logging failed") from None
 
-    async def _append_cancellation(self, event: AuditEvent) -> None:
+    async def _append_best_effort(
+        self,
+        event: AuditEvent,
+        sensitive: SensitiveAuditPayload | None = None,
+    ) -> None:
         try:  # noqa: SIM105
-            await self._sink.append(event)
+            await self._sink.append(event, sensitive)
         except Exception:
             pass
+
+    async def _append_cancellation(self, event: AuditEvent) -> None:
+        await self._append_best_effort(event)
 
 
 def _new_attempt_id() -> str:

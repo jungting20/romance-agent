@@ -76,6 +76,11 @@ class FailingSink(RecordingSink):
         await super().append(event, sensitive)
 
 
+class FalseyRecordingSink(RecordingSink):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _result() -> FakeResult:
     return FakeResult(
         output=FakeOutput(value="validated"),
@@ -228,6 +233,30 @@ def test_audited_runner_fails_closed_when_success_terminal_append_fails() -> Non
         _run(_audited_runner(sink=sink, result=_result()))
 
 
+def test_audited_runner_preserves_provider_failure_when_failure_terminal_append_fails() -> None:
+    provider_error = RuntimeError("private provider detail")
+    sink = FailingSink(fail_on_append=2)
+
+    with pytest.raises(RuntimeError, match="private provider detail") as captured:
+        _run(_audited_runner(sink=sink, result=provider_error))
+
+    assert captured.value.__cause__ is None
+    assert sink.append_calls == 2
+
+
+def test_audited_runner_preserves_validation_failure_when_failure_terminal_append_fails() -> None:
+    sink = FailingSink(fail_on_append=2)
+
+    with pytest.raises(ValueError, match="invalid output") as captured:
+        _run(
+            _audited_runner(sink=sink, result=_result()),
+            validate=lambda output: (_ for _ in ()).throw(ValueError("invalid output")),
+        )
+
+    assert captured.value.__cause__ is None
+    assert sink.append_calls == 2
+
+
 def test_audited_runner_does_not_mask_cancellation_when_terminal_append_fails() -> None:
     sink = FailingSink(fail_on_append=2)
 
@@ -235,6 +264,17 @@ def test_audited_runner_does_not_mask_cancellation_when_terminal_append_fails() 
         _run(_audited_runner(sink=sink, result=asyncio.CancelledError()))
 
     assert sink.append_calls == 2
+
+
+def test_audited_runner_uses_a_falsey_sink() -> None:
+    sink = FalseyRecordingSink()
+
+    _run(_audited_runner(sink=sink, result=_result()))
+
+    assert [type(record[0]) for record in sink.records] == [
+        AuditAttemptStarted,
+        AuditAttemptFinished,
+    ]
 
 
 def test_prompt_identity_hashes_exact_utf8_bytes() -> None:
