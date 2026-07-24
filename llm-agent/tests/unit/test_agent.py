@@ -7,6 +7,12 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai.exceptions import AgentRunError
 
+from llm_agent_audit import (
+    AuditAttemptFinished,
+    AuditAttemptStarted,
+    AuditEvent,
+    SensitiveAuditPayload,
+)
 from narrative_analysis_agent import (
     KnowledgeGraphOutput,
     NarrativeAnalysisAgent,
@@ -35,6 +41,20 @@ from narrative_analysis_agent.project_graph_reader import ProjectGraphReadError
 @dataclass
 class FakeResult:
     output: KnowledgeGraphOutput
+
+
+class RecordingSink:
+    capture_sensitive_content = False
+
+    def __init__(self) -> None:
+        self.records: list[tuple[AuditEvent, SensitiveAuditPayload | None]] = []
+
+    async def append(
+        self,
+        event: AuditEvent,
+        sensitive: SensitiveAuditPayload | None = None,
+    ) -> None:
+        self.records.append((event, sensitive))
 
 
 def _output(
@@ -288,6 +308,47 @@ def test_analyze_scene_preserves_chunk_order_and_structured_outputs() -> None:
         "chunk 1",
         "chunk 2",
     ]
+
+
+def test_analyze_scene_uses_one_audit_run_and_one_attempt_per_chunk() -> None:
+    sink = RecordingSink()
+    runner = GraphRunner()
+    agent = NarrativeAnalysisAgent(
+        "test-provider:test-model",
+        graph_reader=RecordingGraphReader(ProjectKnowledgeGraphSnapshot.empty("project-01")),
+        runner=runner,
+        audit_sink=sink,
+        audit_id_factory=iter(("run-fixed", "attempt-1", "attempt-2", "attempt-3")).__next__,
+    )
+
+    asyncio.run(agent.analyze_scene(_request()))
+
+    starts = [event for event, _ in sink.records if isinstance(event, AuditAttemptStarted)]
+    assert [event.run_id for event in starts] == ["run-fixed"] * 3
+    assert [event.attempt_id for event in starts] == ["attempt-1", "attempt-2", "attempt-3"]
+    assert {event.agent_name for event in starts} == {"narrative-analysis"}
+    assert {event.prompt.prompt_id for event in starts} == {"narrative-analysis.system"}
+
+
+def test_analyze_scene_audits_semantic_validation_failure() -> None:
+    sink = RecordingSink()
+    runner = GraphRunner((_output(chapter_id="other-scene"),))
+    agent = NarrativeAnalysisAgent(
+        "test-provider:test-model",
+        graph_reader=RecordingGraphReader(ProjectKnowledgeGraphSnapshot.empty("project-01")),
+        runner=runner,
+        audit_sink=sink,
+        audit_id_factory=lambda: "attempt-1",
+    )
+
+    with pytest.raises(NarrativeAnalysisError, match="scene analysis failed") as captured:
+        asyncio.run(agent.analyze_scene(_request("본문")))
+
+    terminal = next(event for event, _ in sink.records if isinstance(event, AuditAttemptFinished))
+    assert terminal.status == "failure"
+    assert terminal.error is not None
+    assert terminal.error.code == "output_validation_failed"
+    assert captured.value.__cause__ is None
 
 
 def test_analyze_scene_stops_at_first_agent_failure() -> None:
