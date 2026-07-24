@@ -69,7 +69,7 @@ export function ManuscriptConflictDialog({
       }}
     >
       <DialogContent
-        className="max-h-[calc(100svh-2rem)] max-w-5xl overflow-hidden p-0"
+        className="max-h-[calc(100svh-2rem)] max-w-5xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-0"
         showCloseButton={false}
         onEscapeKeyDown={(event) => {
           if (isResolving) {
@@ -92,7 +92,10 @@ export function ManuscriptConflictDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-48 overflow-auto px-5">
+        <div
+          className="min-h-0 overflow-y-auto overscroll-contain px-5"
+          data-testid="manuscript-conflict-diff-viewport"
+        >
           {kind === "scene-structure" &&
             (isComparing ? (
               <p role="status" className="grid min-h-48 place-items-center text-muted-foreground">
@@ -184,49 +187,56 @@ export function ManuscriptConflictDialog({
             ) : null)}
         </div>
 
-        <div className="grid gap-2 px-5 text-xs text-muted-foreground sm:grid-cols-2">
-          <p>내 편집본을 유지하면 서버의 다른 변경은 보존하고 이 장면만 현재 내용으로 저장해요.</p>
-          <p>서버 최신본을 적용하면 현재 로컬 편집 내용은 대체되고 서버의 전체 원고를 사용해요.</p>
+        <div className="grid gap-4">
+          <div className="grid gap-2 px-5 text-xs text-muted-foreground sm:grid-cols-2">
+            <p>
+              내 편집본을 유지하면 서버의 다른 변경은 보존하고 이 장면만 현재 내용으로 저장해요.
+            </p>
+            <p>
+              서버 최신본을 적용하면 현재 로컬 편집 내용은 대체되고 서버의 전체 원고를 사용해요.
+            </p>
+          </div>
+
+          {resolutionError && (
+            <p role="alert" className="px-5 text-sm text-destructive">
+              내 편집본을 서버에 저장하지 못했어요. 현재 편집본을 보관하고 있으니 다시 시도해
+              주세요.
+            </p>
+          )}
+
+          <DialogFooter className="mx-0 mb-0 px-5">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                isComparing ||
+                isResolving ||
+                compareError ||
+                (kind === "scene-content" && !comparison)
+              }
+              onClick={onApplyServer}
+              autoFocus
+            >
+              서버 최신본 적용
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                isComparing ||
+                isResolving ||
+                compareError ||
+                (kind === "scene-content" && !comparison)
+              }
+              onClick={resolutionError ? onRetryKeepLocal : onKeepLocal}
+            >
+              {resolutionError
+                ? "내 편집본 저장 다시 시도"
+                : kind === "scene-structure"
+                  ? "내 새 장면 유지"
+                  : "내 편집본 유지"}
+            </Button>
+          </DialogFooter>
         </div>
-
-        {resolutionError && (
-          <p role="alert" className="px-5 text-sm text-destructive">
-            내 편집본을 서버에 저장하지 못했어요. 현재 편집본을 보관하고 있으니 다시 시도해 주세요.
-          </p>
-        )}
-
-        <DialogFooter className="mx-0 mb-0 px-5">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={
-              isComparing ||
-              isResolving ||
-              compareError ||
-              (kind === "scene-content" && !comparison)
-            }
-            onClick={onApplyServer}
-            autoFocus
-          >
-            서버 최신본 적용
-          </Button>
-          <Button
-            type="button"
-            disabled={
-              isComparing ||
-              isResolving ||
-              compareError ||
-              (kind === "scene-content" && !comparison)
-            }
-            onClick={resolutionError ? onRetryKeepLocal : onKeepLocal}
-          >
-            {resolutionError
-              ? "내 편집본 저장 다시 시도"
-              : kind === "scene-structure"
-                ? "내 새 장면 유지"
-                : "내 편집본 유지"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

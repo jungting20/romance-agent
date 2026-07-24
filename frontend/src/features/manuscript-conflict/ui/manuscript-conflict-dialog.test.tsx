@@ -46,7 +46,66 @@ function getComparison(): CompareManuscriptSceneResponse {
   };
 }
 
+function getLongComparison(): CompareManuscriptSceneResponse {
+  const comparison = getComparison();
+
+  return {
+    ...comparison,
+    rows: Array.from({ length: 46 }, (_, index) =>
+      index % 2 === 0
+        ? {
+            kind: "local-only" as const,
+            localLineNumber: index / 2 + 1,
+            localText: `내 편집본 ${index / 2 + 1}행`,
+            serverLineNumber: null,
+            serverText: null,
+          }
+        : {
+            kind: "server-only" as const,
+            localLineNumber: null,
+            localText: null,
+            serverLineNumber: (index + 1) / 2,
+            serverText: `서버 최신본 ${(index + 1) / 2}행`,
+          },
+    ),
+  };
+}
+
 describe("ManuscriptConflictDialog", () => {
+  test("keeps a long diff in the scrollable middle row while resolution actions stay fixed", async () => {
+    const onKeepLocal = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ManuscriptConflictDialog
+        open
+        kind="scene-content"
+        comparison={getLongComparison()}
+        isComparing={false}
+        isResolving={false}
+        compareError={false}
+        onOpenChange={vi.fn()}
+        onKeepLocal={onKeepLocal}
+        onApplyServer={vi.fn()}
+        onRetryCompare={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "원고 저장 충돌 해결" });
+    const diffViewport = screen.getByTestId("manuscript-conflict-diff-viewport");
+    const columnHeader = screen.getByRole("columnheader", { name: "내 편집본" }).parentElement
+      ?.parentElement;
+
+    expect(dialog).toHaveClass("grid-rows-[auto_minmax(0,1fr)_auto]");
+    expect(diffViewport).toHaveClass("min-h-0", "overflow-y-auto");
+    expect(columnHeader).toHaveClass("sticky", "top-0");
+    expect(screen.getAllByRole("row")).toHaveLength(47);
+
+    const keepLocal = screen.getByRole("button", { name: "내 편집본 유지" });
+    keepLocal.focus();
+    await user.keyboard("{Enter}");
+    expect(onKeepLocal).toHaveBeenCalledOnce();
+  });
+
   test("labels aligned local and server rows with line numbers and textual change states", () => {
     render(
       <ManuscriptConflictDialog
