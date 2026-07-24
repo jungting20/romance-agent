@@ -1186,12 +1186,21 @@ describe("WritingWorkspacePage", () => {
     },
   );
 
-  test("opens and closes the AI tool as a sheet below the desktop breakpoint", async () => {
-    setViewportWidth(1024);
+  test("keeps the AI tool within its mobile sheet and supports both close paths", async () => {
+    setViewportWidth(375);
     const user = userEvent.setup();
     renderWorkspace();
 
     await user.click(await screen.findByRole("button", { name: "AI 도구 열기" }));
+    const dialog = screen.getByRole("dialog", { name: "AI 집필 도구" });
+    const panel = within(dialog).getByRole("heading", { name: "AI 집필 도구" }).closest("aside");
+    expect(panel).toHaveClass("w-full", "min-w-0", "max-w-full");
+    expect(panel).not.toHaveClass("w-[21rem]");
+
+    await user.click(within(dialog).getByRole("button", { name: "AI 도구 닫기" }));
+    expect(screen.queryByRole("dialog", { name: "AI 집필 도구" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "AI 도구 열기" }));
     expect(screen.getByRole("dialog", { name: "AI 집필 도구" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");

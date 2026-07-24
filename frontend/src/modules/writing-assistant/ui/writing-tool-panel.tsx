@@ -71,7 +71,7 @@ export function WritingToolPanel({
   }
 
   return (
-    <aside className="flex h-full w-[21rem] flex-col border-l border-border bg-card">
+    <aside className="flex h-full w-full min-w-0 max-w-full flex-col border-l border-border bg-card">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-2">
           <span className="grid size-8 place-items-center rounded-full bg-primary text-primary-foreground">
