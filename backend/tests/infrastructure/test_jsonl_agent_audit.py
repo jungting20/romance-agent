@@ -244,6 +244,38 @@ def test_metadata_serialization_excludes_provider_credentials(tmp_path: Path) ->
     assert payload["model"]["settings"] == [["temperature", 0.4]]
 
 
+def test_metadata_serialization_uses_only_the_allowed_model_settings(tmp_path: Path) -> None:
+    sink = JsonlAgentAuditSink(AgentAuditLogConfig(directory=tmp_path / "private"))
+
+    asyncio.run(
+        sink.append(
+            _started(
+                settings=(
+                    ("headers", "Authorization: Bearer headers-secret"),
+                    ("auth", "auth-secret"),
+                    ("base_url", "https://base-url-secret.example"),
+                    ("endpoint", "https://endpoint-secret.example"),
+                    ("temperature", 0.4),
+                    ("max_tokens", 80),
+                )
+            )
+        )
+    )
+    sink.close()
+
+    text = (tmp_path / "private" / "llm-audit-metadata.jsonl").read_text(encoding="utf-8")
+    payload = json.loads(text)
+    assert payload["model"]["settings"] == [["temperature", 0.4], ["max_tokens", 80]]
+    for secret in (
+        "Authorization",
+        "headers-secret",
+        "auth-secret",
+        "base-url-secret",
+        "endpoint-secret",
+    ):
+        assert secret not in text
+
+
 def test_config_requires_positive_retention_days(tmp_path: Path) -> None:
     with pytest.raises(AgentAuditConfigurationError):
         AgentAuditLogConfig(directory=tmp_path / "private", metadata_retention_days=0)

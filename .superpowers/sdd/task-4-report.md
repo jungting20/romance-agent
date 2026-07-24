@@ -39,6 +39,20 @@ git diff --check
   passed
 ```
 
+## T4-I1 credential allowlist fix
+
+- RED: added `test_metadata_serialization_uses_only_the_allowed_model_settings`.
+  It supplied `headers` with an Authorization bearer, `auth`, `base_url`, and
+  `endpoint` values alongside `temperature` and `max_tokens`; the prior
+  blacklist implementation failed by retaining the credential-bearing settings.
+- GREEN: metadata serialization now uses the exact Task 1 positive allowlist:
+  `temperature`, `max_tokens`, `top_p`, `seed`, and `timeout`. The regression
+  test proves only the two supplied allowed settings remain and every secret
+  string is absent.
+- Verification: focused audit suite `12 passed`; full backend suite `317
+  passed`; scoped and full Ruff checks/format checks passed; `git diff --check`
+  passed.
+
 ## Self-review
 
 - Metadata is one canonical JSON line with `allow_nan=False`; credential-like

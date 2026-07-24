@@ -156,7 +156,7 @@ def _event_data(event: AuditEvent) -> dict[str, object]:
             "settings": [
                 [name, value]
                 for name, value in event.model.settings
-                if not _is_credential_setting(name)
+                if _is_allowed_model_setting(name)
             ],
         },
         "prompt": {
@@ -222,8 +222,5 @@ def _datetime_text(value: datetime) -> str:
     return value.isoformat()
 
 
-def _is_credential_setting(name: str) -> bool:
-    return any(
-        marker in name.casefold()
-        for marker in ("authorization", "credential", "key", "password", "secret", "token")
-    )
+def _is_allowed_model_setting(name: str) -> bool:
+    return name in {"temperature", "max_tokens", "top_p", "seed", "timeout"}
