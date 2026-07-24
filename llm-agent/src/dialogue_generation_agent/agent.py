@@ -80,13 +80,17 @@ class DialogueGenerationAgent:
         try:
             return self.prompt_path.read_text(encoding="utf-8")
         except (OSError, UnicodeError):
-            raise DialogueGenerationError("unable to load dialogue generation prompt") from None
+            raise DialogueGenerationError(
+                "unable to load dialogue generation prompt"
+            ) from None
 
     def _create_generation_id(self) -> str:
         try:
             generation_id = self._generation_id_factory()
         except Exception:
-            raise DialogueGenerationError("unable to create dialogue generation ID") from None
+            raise DialogueGenerationError(
+                "unable to create dialogue generation ID"
+            ) from None
         if not generation_id or not generation_id.strip():
             raise DialogueGenerationError("unable to create dialogue generation ID")
         return generation_id
@@ -141,7 +145,8 @@ def _validate_output(
         raise ValueError("scene objective does not match the request")
 
     characters = {
-        character.character_id: character.name for character in request.system_context.characters
+        character.character_id: character.name
+        for character in request.system_context.characters
     }
     turn_ids = [turn.turn_id for turn in output.dialogue]
     if len(turn_ids) != len(set(turn_ids)):
@@ -186,7 +191,9 @@ def _validate_output(
         if item.character_id not in characters:
             raise ValueError("revealed information references an unknown character")
         if turns[item.turn_id].speaker.character_id != item.character_id:
-            raise ValueError("revealed information character does not match the turn speaker")
+            raise ValueError(
+                "revealed information character does not match the turn speaker"
+            )
         if item.information_id not in known_by_character[item.character_id]:
             raise ValueError("a character revealed information they do not know")
     if any(item.information_id not in information for item in withheld):
