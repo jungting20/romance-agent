@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WritingWorkspacePage 브라우저 버그 탐색 부분 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; } code { overflow-wrap:anywhere; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } li + li { margin-top:.45rem; }
+    :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <p>브라우저 버그 탐색 보고서</p>
+    <h1>WritingWorkspacePage 로딩·오류·정상 분기</h1>
+    <p>생성 시각: <time datetime="2026-07-24T14:08:57+09:00">2026년 7월 24일 14:08 (KST)</time></p>
+  </header>
+
+  <section class="panel">
+    <h2>탐색 범위</h2>
+    <p><code>WritingWorkspacePage</code>만 대상으로 최초 진입의 로딩 상태와 <code>silver-garden</code> 정상 workspace, 존재하지 않는 project ID의 not-found 상태, 일반 로드 실패와 재시도 UI를 확인할 예정이었다. 각 시나리오는 새 browser context에서 두 차례 실행하고, 접근 가능한 <code>status</code>/<code>alert</code>, 키보드·포커스, URL 안정성, 반응형 overflow, 콘솔과 네트워크를 지정된 세 뷰포트에서 점검하는 범위였다. 브라우저 계획 단계가 실패하여 실제 화면 탐색은 시작하지 못했다.</p>
+    <h3>제외 범위</h3>
+    <p>WritingWorkspacePage 밖의 화면, 프로젝트 생성, 원고 편집·자동 저장, 세계관·인물 편집, AI 도구, 인증, 실제 외부 네트워크, 제품 코드·테스트·도메인 계약·OpenAPI 수정, 기존 티켓 상태 변경은 제외했다. 공유 개발 서버를 재시작하거나 새 서버를 띄우지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>실행 환경</h2>
+    <dl>
+      <dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write</code></dd>
+      <dt>사용자 흐름</dt><dd>최초 진입 → 로딩 상태 → 정상 workspace 표시, 존재하지 않는 project ID의 not-found 화면, 일반 로드 실패의 재시도 UI</dd>
+      <dt>시작 상태</dt><dd>시나리오마다 새 browser context, 개발 MSW seed <code>silver-garden</code>, query string 없음, 인증 없음. 실제 context 생성 전 중단되었다.</dd>
+      <dt>뷰포트</dt><dd>375x800, 1280x800, 1440x900. 실제 적용 전 중단되었다.</dd>
+      <dt>실행 기준</dt><dd><code>7eff1ea85ea67fb4233b1797f65496dc30274797</code> (<code>main</code>)</dd>
+      <dt>브라우저 준비 결과</dt><dd><code>planner_setup_page({project: "chromium"})</code> 1회 호출이 <code>Project chromium not found</code>로 실패했다. 1회 호출 제한과 종속 단계 중단 정책에 따라 다른 브라우저 도구를 호출하지 않았다.</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>결과 요약</h2>
+    <div class="grid">
+      <div class="metric">확정<strong>0</strong></div>
+      <div class="metric">등록<strong>0</strong></div>
+      <div class="metric">중복<strong>0</strong></div>
+      <div class="metric">제외<strong>0</strong></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>등록한 버그</h2>
+    <p>이 중단된 실행에서 확정된 버그가 없습니다. 이는 WritingWorkspacePage가 요구사항을 통과했다는 뜻이 아니며, clean-state 2회 재현과 브라우저 증거가 없어 티켓 등록 자격을 충족한 관찰이 없다는 제한된 결과입니다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>중복된 관찰</h2>
+    <p>브라우저 관찰이 시작되지 않아 중복으로 판정한 항목은 없다. 준비 전에 조회한 <code>ticket-worker</code> 11건 중 WritingWorkspacePage의 로딩·not-found·일반 로드 실패 재시도 분기와 직접 같은 티켓은 확인되지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>제외한 관찰</h2>
+    <p>브라우저 관찰 자체가 없어 결함 후보를 제외하지 않았다. 소스와 문서에서 확인한 분기 구조는 런타임 결함 증거로 사용하거나 티켓으로 등록하지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>수행한 검사</h2>
+    <ul>
+      <li><code>git status --short --branch</code>: 시작 시 <code>main</code>, 기존 변경 없음.</li>
+      <li><code>zellij-agent ticket-worker list --json</code>: 큐가 초기화되어 있었고 기존 11건을 중복 비교 대상으로 확인했다.</li>
+      <li><code>codegraph explore</code>: <code>WritingWorkspacePage</code>가 pending에서 <code>role="status"</code> skeleton, not-found에서 작품 서재 링크, 일반 오류에서 retry button, 성공 시 loaded workspace를 렌더링하는 현재 소스와 route 연결을 확인했다. 이는 브라우저 동작 검증을 대신하지 않는다.</li>
+      <li>루트·frontend 지침, frontend 코딩 규칙, Projects·Manuscript 도메인 계약, Writing Workspace 레이아웃 및 URL 상태 요구사항을 읽고 판정 기준을 확인했다.</li>
+      <li><code>planner_setup_page({project: "chromium"})</code>: <code>Project chromium not found</code>로 실패. 이후 브라우저 setup, navigation, screenshot, console, network 호출은 수행하지 않았다.</li>
+      <li>정상 경로, not-found, 일반 실패·재시도, 키보드, 포커스, 반응형, overflow, URL, 콘솔, 네트워크 검사는 미실행이다.</li>
+      <li>clean-state 2회 재현은 0건이며 증거 이미지도 생성하지 않았다.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>제약 및 미확인 항목</h2>
+    <p>브라우저 프로젝트 <code>chromium</code>을 찾지 못해 지정 route에 접속하지 못했다. 따라서 로딩 상태의 실제 노출 시점과 live-region 발표, 정상 workspace 레이아웃, not-found의 접근 가능한 이름과 링크 포커스, 일반 오류 <code>alert</code>와 retry 회복, URL 유지, 세 뷰포트의 가로·세로 overflow, 키보드 순서, visible focus, 콘솔 오류, 요청·응답은 모두 미확인이다. 공유 서버 상태도 브라우저로 확인하지 않았다. 후속 실행에서는 유효한 Playwright project 설정을 먼저 확인한 뒤 새 clean context로 전체 지정 흐름을 다시 수행해야 한다.</p>
+  </section>
+</main>
+</body>
+</html>

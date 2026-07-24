@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WritingWorkspacePage 재시도 브라우저 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; } code { overflow-wrap:anywhere; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } li + li { margin-top:.45rem; }
+    :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <p>브라우저 버그 탐색 보고서</p>
+    <h1>WritingWorkspacePage 로딩·오류·재시도 재탐색</h1>
+    <p>생성 시각: <time datetime="2026-07-24T15:19:45+09:00">2026년 7월 24일 15:19 KST</time></p>
+  </header>
+
+  <section class="panel">
+    <h2>탐색 범위</h2>
+    <p><code>WritingWorkspacePage</code>에 한정해 <code>silver-garden</code> 정상 workspace, 존재하지 않는 project의 not-found, 일반 workspace GET 500 오류와 retry 회복, 정상·오류 상태의 URL normalization, <code>status</code>/<code>alert</code>, 키보드 포커스, 화면 overflow를 확인했다. 브라우저 request override는 현재 페이지의 실제 MSW worker에만 추가했다.</p>
+    <h3>제외 범위</h3>
+    <p>프로젝트 생성, 원고 편집·자동 저장, 인물·세계관·AI 도구, 인증, 실제 backend와 외부 네트워크, 제품 코드·테스트·설정·기존 문서 수정, 공유 서버 재시작, 애플리케이션 전체 감사는 제외했다. 기존 부분 보고서 <a href="2026-07-24-1408-writing-workspace-page.html">2026-07-24-1408-writing-workspace-page.html</a>은 수정하지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>실행 환경</h2>
+    <dl>
+      <dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write</code></dd>
+      <dt>시작 상태</dt><dd>MSW clean seed <code>silver-garden</code>, query 없음, 인증 없음. 각 반복은 직접 route navigation으로 새 문서를 로드해 seed와 client query 상태를 초기화했다.</dd>
+      <dt>요청 뷰포트</dt><dd><code>375x800</code>, <code>1280x800</code>, <code>1440x900</code></dd>
+      <dt>실제 브라우저 뷰포트</dt><dd>Playwright-test MCP 기본 <code>1280x720</code>. 허용 도구에 viewport 변경 기능이 없어 요청한 세 크기는 미확인이다.</dd>
+      <dt>브라우저·transport</dt><dd>Chromium 149, 로컬 Vite 페이지와 MSW service worker. 일반 오류는 같은 worker의 runtime handler가 GET 500을 두 번 반환하고 retry 시 기존 <code>silver-garden</code> seed GET 200을 반환하도록 구성했다.</dd>
+      <dt>실행 기준</dt><dd>시작 <code>8c3ef594b72eda9f0eeb1d29fb5588ddb209023b</code>, 종료 시 공유 branch <code>8eb2a2b4cc1292e57b00d1734e1e91be60eafd64</code></dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>결과 요약</h2>
+    <div class="grid">
+      <div class="metric">확정<strong>0</strong></div>
+      <div class="metric">등록<strong>0</strong></div>
+      <div class="metric">중복<strong>0</strong></div>
+      <div class="metric">제외<strong>2</strong></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>등록한 버그</h2>
+    <p>실제로 검증한 <code>WritingWorkspacePage</code> 정상·not-found·일반 오류·retry·URL normalization 범위에서 확정된 버그가 없습니다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>중복된 관찰</h2>
+    <p>탐색 전후 <code>ticket-worker</code> 큐의 티켓 <code>#1</code>~<code>#18</code>을 확인했으며, 이번에 실제 재현한 정상·not-found·일반 workspace GET 실패·retry 분기와 같은 기존 결함 티켓은 없었다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>제외한 관찰</h2>
+    <p>retry 성공 뒤 사라진 버튼 대신 <code>document.body</code>가 active element가 되는 동작은 승인 요구사항에 성공 후 포커스 복원 대상이 정해져 있지 않아 결함으로 등록하지 않았다. 또한 이미 로드된 페이지에서 테스트용 project ID로 SPA 전환하며 지연 GET을 적용했을 때 직전 query data가 보인 관찰은 지정된 최초 진입 흐름과 다른 합성 전환이고 clean initial-state 재현이 아니어서 제외했다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>수행한 검사</h2>
+    <ul>
+      <li>정상 2회: <code>/projects/silver-garden/write</code>에서 h1 「은빛 정원의 약속」, 선택된 「원고 보기」 탭, 「자동 저장됨」 status, 문서 가로·세로 overflow 부재를 확인했다.</li>
+      <li>not-found 2회: <code>/projects/no-such-project/write</code>가 h1 「프로젝트를 찾을 수 없어요」와 「작품 서재로 돌아가기」 링크를 제공했다. 오류용 <code>role=alert</code>는 사용하지 않았고 h1으로 화면 목적을 전달했다.</li>
+      <li>not-found 키보드: 첫 Tab이 작품 서재 복귀 링크로 이동했고 transition 완료 뒤 3px focus ring이 표시됐다.</li>
+      <li>일반 GET 실패 2회: MSW GET 500 자동 시도 2회 뒤 assertive alert 「작업 공간을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.」와 「작업 공간 다시 불러오기」 버튼이 나타났다.</li>
+      <li>retry 2회: 첫 실행은 Tab과 Enter, 두 번째는 포인터 click으로 retry했다. 각 실행의 세 번째 GET이 200을 반환한 뒤 정상 workspace가 나타나고 오류 alert가 제거됐다.</li>
+      <li>URL normalization: <code>tab=manuscript</code>, unsupported string, boolean <code>tab=true</code>가 모두 replacement로 제거됐고 unrelated <code>view=dense</code>는 정상·not-found·일반 오류·retry 이후에도 보존됐다.</li>
+      <li>layout: 실제 <code>1280x720</code>에서 정상 workspace, 중앙 not-found, 중앙 오류 alert 모두 문서 <code>scrollWidth=clientWidth</code>, <code>scrollHeight=clientHeight</code>였다.</li>
+      <li>네트워크: 2차 clean에서 not-found GET 404, 일반 오류 GET 500 두 번, retry GET 200, seed GET 200을 확인했다. 콘솔의 해당 404·500 resource 오류는 의도한 시나리오 응답과 일치했다.</li>
+      <li>중복 검사: 탐색 전후 <code>zellij-agent ticket-worker list --json</code>으로 큐를 다시 조회했다.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>제약 및 미확인 항목</h2>
+    <p>Playwright-test MCP의 navigation과 click 도구가 대상 요청 완료까지 대기하고 runtime MSW handler는 새 document reload를 건너 유지되지 않아, clean 최초 진입 중의 짧은 skeleton과 sr-only 「작업 공간을 불러오는 중이에요.」 status를 직접 캡처하지 못했다. 요청된 <code>375x800</code>, <code>1280x800</code>, <code>1440x900</code>도 viewport resize 도구 부재로 미확인이다. 탐색 중 다른 작업의 커밋으로 공유 branch HEAD가 변경됐으나 이 agent는 제품 파일을 수정하지 않았다. 이 0건 결과는 두 번 확인한 정상·not-found·일반 오류·retry와 실제 <code>1280x720</code>에만 한정되며 애플리케이션 전체 무결함을 의미하지 않는다.</p>
+  </section>
+</main>
+</body>
+</html>

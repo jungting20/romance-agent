@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WorldEditorSheet 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } code { overflow-wrap:anywhere; } :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero"><p>브라우저 버그 탐색 보고서</p><h1>WorldEditorSheet 한정 탐색</h1><p>생성 시각: <time datetime="2026-07-24T14:51:00+09:00">2026년 7월 24일 14:51 (KST)</time></p></header>
+  <section class="panel"><h2>탐색 범위</h2><p><code>WorldEditorSheet</code>에서 세계관 편집 열기, 기존 항목 수정, 새 항목 추가, client validation, 저장 loading·success·failure·conflict·unavailable·latest reload, clean/dirty close, keyboard focus, scroll 및 desktop 반응형 동작만 확인했다.</p><h3>제외 범위</h3><p>다른 route, 인물·원고·AI 도구의 제품 동작, 제품 코드·테스트·설정 변경, 실제 backend와 외부 네트워크, destructive data mutation은 제외했다. 브라우저 도구에 viewport resize가 없어 375×800 mobile과 정확한 1280×800 높이는 실행하지 못했다.</p></section>
+  <section class="panel"><h2>실행 환경</h2><dl><dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write?tab=world</code></dd><dt>시작 상태</dt><dd>clean MSW <code>silver-garden</code>, 인증 없음, 세계관 항목 1개, Story Bible revision 1. 각 clean 실행은 page navigation으로 seed를 재초기화했다.</dd><dt>뷰포트</dt><dd>지정: 375×800, 1280×800. 실제 Playwright page: 1280×720. 두 확정 결함은 폭 1280px와 keyboard focus에 의존하며 높이 차이와 무관하게 재현됐다.</dd><dt>실행 기준</dt><dd><code>db203c2</code></dd></dl></section>
+  <section class="panel"><h2>결과 요약</h2><div class="grid"><div class="metric">확정<strong>2</strong></div><div class="metric">등록<strong>2</strong></div><div class="metric">중복<strong>1</strong></div><div class="metric">제외<strong>2</strong></div></div></section>
+  <section class="panel"><h2>등록한 버그</h2>
+    <article class="bug-card" id="bug-001"><p><span class="severity severity-medium">심각도 Medium</span></p><h3>폐기 확인에서 계속 편집 후 포커스가 BODY로 이탈</h3>
+      <dl><dt>티켓</dt><dd><code>#15</code> · <code>ready</code></dd><dt>재현 절차</dt><dd><ol><li>clean route에서 <code>세계관 수정 및 추가</code>를 연다.</li><li>기존 항목 제목을 변경하고 <code>Escape</code>를 누른다.</li><li>폐기 확인의 기본 포커스 버튼 <code>계속 편집</code>을 <code>Enter</code>로 선택한다.</li><li><code>document.activeElement</code>와 draft 값을 확인한다.</li></ol></dd><dt>기대 결과</dt><dd>dialog가 닫힌 뒤 초안과 editor URL을 보존하고 WorldEditorSheet 내부의 visible, enabled control로 포커스가 복원된다.</dd><dt>실제 결과</dt><dd>draft와 <code>panel=world-editor</code>는 보존됐지만 active element가 두 clean 실행 모두 <code>BODY</code>였다. revision conflict의 latest-reload 확인을 취소해도 동일했다.</dd><dt>사용자 영향</dt><dd>키보드 사용자는 현재 편집 위치와 visible focus를 잃고 Sheet control을 다시 탐색해야 한다. <code>REQ-WORLD-006</code>과 <code>REQ-WORLD-010</code>을 위반한다.</dd><dt>관련 위치</dt><dd><code>frontend/src/features/edit-world-entries/ui/world-discard-dialog.tsx:13</code> · 원인 설명은 확인된 증거가 아니라 focus lifecycle 가설이다.</dd><dt>문서</dt><dd><a href="../superpowers/specs/2026-07-24-world-discard-continue-focus-design.md">설계</a> · <a href="../superpowers/plans/2026-07-24-world-discard-continue-focus.md">구현 계획</a></dd></dl>
+      <figure><img class="evidence" src="assets/2026-07-24-1439-world-editor-sheet/discard-focus-run2.png" alt="계속 편집을 선택한 뒤 세계관 편집기는 열려 있지만 어느 control에도 포커스 표시가 없는 화면"><figcaption>두 번째 clean 키보드 실행: draft는 남았지만 dialog 종료 뒤 active element가 BODY로 이탈했다.</figcaption></figure>
+    </article>
+    <article class="bug-card" id="bug-002"><p><span class="severity severity-medium">심각도 Medium</span></p><h3>데스크톱 세계관 편집기 폭이 384px로 축소</h3>
+      <dl><dt>티켓</dt><dd><code>#16</code> · <code>ready</code></dd><dt>재현 절차</dt><dd><ol><li>1280px 폭의 clean route를 연다.</li><li><code>세계관 수정 및 추가</code>를 연다.</li><li>dialog와 field의 bounding box 및 computed <code>max-width</code>를 측정한다.</li><li>page를 clean reload하고 같은 측정을 반복한다.</li></ol></dd><dt>기대 결과</dt><dd>desktop에서는 UI 계획의 약 40rem(<code>sm:max-w-2xl</code>) 편집 surface가 실제 적용된다.</dd><dt>실제 결과</dt><dd>두 clean 실행 모두 dialog <code>width: 384px</code>, <code>maxWidth: 384px</code>였고 입력 field 폭은 319px였다.</dd><dt>사용자 영향</dt><dd>긴 세계관 title과 description을 편집하는 핵심 surface가 승인 폭보다 크게 좁아져 읽기와 수정 효율이 떨어진다. <code>REQ-WORLD-010</code>의 desktop layout과 승인 UI 계획을 충족하지 못한다.</dd><dt>관련 위치</dt><dd><code>frontend/src/components/ui/sheet.tsx:42</code> · <code>frontend/src/features/edit-world-entries/ui/world-editor-sheet.tsx:63</code>. 공용 side-specific <code>sm:max-w-sm</code>과 소비자 <code>sm:max-w-2xl</code>이 함께 적용되는 것이 원인 가설이다.</dd><dt>문서</dt><dd><a href="../superpowers/specs/2026-07-24-world-editor-desktop-width-design.md">설계</a> · <a href="../superpowers/plans/2026-07-24-world-editor-desktop-width.md">구현 계획</a></dd></dl>
+      <figure><img class="evidence" src="assets/2026-07-24-1439-world-editor-sheet/desktop-width-run2.png" alt="1280px 폭 화면 오른쪽에 384px 폭으로 좁게 열린 세계관 수정 및 추가 Sheet"><figcaption>두 번째 clean 실행: 1280px 화면에서 WorldEditorSheet의 실제 폭과 max-width가 384px로 측정됐다.</figcaption></figure>
+    </article>
+  </section>
+  <section class="panel"><h2>중복된 관찰</h2><p>별도 InitializingSheet 탐색에서 확인된 384px 폭 관찰 1건은 동일한 공용 Sheet max-width 충돌과 수정 범위를 가지므로 신규 등록하지 않고 <code>#16</code>의 중복으로 전달했다.</p></section>
+  <section class="panel"><h2>제외한 관찰</h2><p><code>/favicon.ico</code> 404는 WorldEditorSheet 흐름과 무관한 application shell 정적 자원으로 제외했다. conflict 검증 중의 world-entries PUT 409 console 항목은 의도적으로 만든 <code>STORY_BIBLE_REVISION_CONFLICT</code> 응답으로 결함에서 제외했다.</p></section>
+  <section class="panel"><h2>수행한 검사</h2><ul><li><code>git status --short --branch</code>: 시작 시 기존 미추적 보고서·증거·문서를 기록하고 보존했다.</li><li><code>zellij-agent ticket-worker list --json</code>: 등록 전·후 중복 확인, <code>#15</code>와 <code>#16</code>의 모든 값 및 <code>ready</code> 상태를 fresh JSON으로 확인했다.</li><li>정상 흐름: 기존 수정, 새 항목 추가, blank title/description validation과 첫 invalid focus, authoritative save response·success announcement·Sheet close를 확인했다.</li><li>failure/recovery: world-entries PUT 일회성 network failure에서 draft 보존·alert·재시도 성공을 확인했다.</li><li>conflict/reload: MSW 선행 저장으로 revision 2를 만든 뒤 UI PUT 409, local draft 보존, latest reload 확인 및 server 값 채택을 확인했다.</li><li>unavailable: 계약상 <code>STORY_BIBLE_NOT_FOUND</code> 404에서 draft 보존, field/add/save disabled, read-mode recovery action을 확인했다.</li><li>close/focus/scroll: clean Escape close와 launch focus, dirty discard dialog, validation scroll와 fixed footer를 확인했다.</li><li>console/network: favicon 404 외 예상되지 않은 console error가 없었고, Story Bible GET/PUT 200·409·GET 200 순서를 확인했다.</li></ul></section>
+  <section class="panel"><h2>제약 및 미확인 항목</h2><p>Playwright-test MCP의 활성 도구에는 viewport resize가 없어 실제 page는 1280×720으로 고정됐다. 따라서 지정된 375×800 mobile layout, 정확한 1280×800 높이, mobile overlay/scroll/focus는 미확인이다. loading state는 요청 중 control freeze를 코드와 기존 응답 시간 사이에서 완전히 포착하지 못했으며, 실제 backend persistence는 제외된 MSW-only 범위라 확인하지 않았다. 제품 코드는 수정하지 않았다.</p></section>
+</main>
+</body>
+</html>

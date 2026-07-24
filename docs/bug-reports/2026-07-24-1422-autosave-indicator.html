@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutosaveIndicator 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme:light; font-family:system-ui,sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; } code { overflow-wrap:anywhere; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-medium { color:#855c00; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } li + li { margin-top:.4rem; }
+    :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero"><p>브라우저 버그 탐색 보고서</p><h1>AutosaveIndicator 저장 상태와 복구 포커스</h1><p>생성 시각: <time datetime="2026-07-24T14:22:11+09:00">2026년 7월 24일 14:22 (KST)</time></p></header>
+  <section class="panel"><h2>탐색 범위</h2><p><code>/projects/silver-garden/write</code>의 AutosaveIndicator만 대상으로 기본 saved/editing/saving 상태, 본문 자동 저장, PUT 500 실패와 재시도, PUT 409 revision conflict와 충돌 dialog 진입, status/alert·라벨·키보드·포커스·콘솔·네트워크를 확인했다.</p><h3>제외 범위</h3><p>제품·테스트·config·OpenAPI·domain·기존 문서 수정, 새 서버, 외부 네트워크, 다른 집필 컴포넌트 감사, 실제 backend 저장과 티켓 변경은 수행하지 않았다.</p></section>
+  <section class="panel"><h2>실행 환경</h2><dl><dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write</code></dd><dt>시작 상태</dt><dd>인증 없음, clean MSW <code>silver-garden</code> seed. 각 확정 재현 전 <code>localStorage</code>와 <code>sessionStorage</code>를 비우고 route를 다시 로드했다.</dd><dt>뷰포트</dt><dd>실제 세션 1280x720. 지정된 375x800과 1280x800은 허용된 Playwright 도구에 viewport 변경 기능이 없어 미확인.</dd><dt>실행 기준</dt><dd><code>7eff1ea85ea67fb4233b1797f65496dc30274797</code> (<code>main</code>)</dd></dl></section>
+  <section class="panel"><h2>결과 요약</h2><div class="grid"><div class="metric">신규 확정<strong>0</strong></div><div class="metric">등록<strong>0</strong></div><div class="metric">중복<strong>1</strong></div><div class="metric">제외<strong>1</strong></div></div></section>
+  <section class="panel"><h2>등록한 버그</h2><p>이 AutosaveIndicator 한정 범위에서 새로 등록할 비중복 확정 버그가 없습니다.</p></section>
+  <section class="panel"><h2>중복된 관찰</h2><p><strong>ticket-worker #12 · ready · 심각도 Medium:</strong> 자동 저장 실패 뒤 키보드로 <code>원고 저장 다시 시도</code>를 실행하면 PUT 200과 <code>자동 저장됨</code> 전환 뒤 포커스가 accessible name 없는 <code>BODY</code>로 이동했다. 1차 <code>AUTOSAVE-FOCUS-CLEAN-1</code>, 2차 <code>AUTOSAVE-FOCUS-CLEAN-2</code>의 독립 clean seed 실행에서 같은 결과를 확인했다. 먼저 등록된 <a href="2026-07-24-1419-manuscript-editor.html#bug-001">ManuscriptEditor 보고서의 bug-001</a>, <a href="../superpowers/specs/2026-07-24-manuscript-autosave-retry-focus-design.md">설계</a>, <a href="../superpowers/plans/2026-07-24-manuscript-autosave-retry-focus.md">구현 계획</a>과 동일한 결함이므로 별도 티켓을 등록하지 않았다.</p><figure><img class="evidence" src="evidence/2026-07-24-autosave-retry-focus-lost.png" alt="재시도 성공 후 자동 저장됨이 표시되지만 키보드 포커스가 사라진 집필 화면"><figcaption>2차 clean-state 실행의 재시도 성공 직후 화면. 별도 DOM 검사에서는 활성 요소가 <code>BODY</code>로 기록됐다.</figcaption></figure></section>
+  <section class="panel"><h2>제외한 관찰</h2><p><code>favicon.ico</code> 404는 AutosaveIndicator 흐름 밖의 정적 자원 문제라 제외했다. 정상 상태 전환, error alert/라벨/visible focus, conflict alert·버튼·dialog 포커스는 요구대로 동작해 등록하지 않았다.</p></section>
+  <section class="panel"><h2>수행한 검사</h2><ul><li><code>planner_setup_page</code>를 <code>project</code> 인자 없이 정확히 한 번 실행했다.</li><li>DOM 변경 기록에서 <code>편집 중 → 저장 중 → 자동 저장됨</code>과 원고 포커스 유지를 확인했다.</li><li>PUT 500에서 <code>role="alert"</code>, <code>저장 실패</code>, 이름 있는 재시도 버튼과 visible focus ring을 확인했다.</li><li>PUT 409에서 <code>저장 충돌</code>, <code>충돌 해결 열기</code>, 자동 dialog 진입, Escape 후 원고 포커스 복귀, 키보드 재진입을 확인했다.</li><li>API 네트워크에서 원고 PUT 200과 scene-diffs POST 200을 확인했다.</li><li>콘솔의 유일한 error는 제외한 <code>favicon.ico</code> 404였다.</li><li>clean seed 2회에서 재시도 성공 후 <code>BODY</code> 포커스를 확인했다.</li></ul></section>
+  <section class="panel"><h2>제약 및 미확인 항목</h2><p>허용된 playwright-test 도구에는 viewport resize가 없어 375x800과 1280x800을 확인하지 못했고, 실제 세션 1280x720만 검증했다. 실제 OS 스크린리더 음성 출력과 실제 backend는 미확인이다. 실패·충돌 응답은 현재 탭의 <code>fetch</code>만 가로챘고 MSW seed 외 영구 데이터는 변경하지 않았다.</p></section>
+</main>
+</body>
+</html>

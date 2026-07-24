@@ -386,6 +386,12 @@ function LoadedWritingWorkspace({
     worldLaunchRef.current = trigger;
     onCharacterEditorOpen(nextCharacterId);
   };
+  const handleAssistantClose = () => {
+    setAssistantOpen(false);
+    if (desktopIsResizable) {
+      document.querySelector<HTMLElement>('[aria-label="AI 도구 열기"]')?.focus();
+    }
+  };
   const restoreWorldEditorFocus = (resetLaunchOrigin = true) => {
     const focusTarget = openedFromLaunchRef.current ? worldLaunchRef.current : worldTabRef.current;
     focusTarget?.focus();
@@ -421,7 +427,7 @@ function LoadedWritingWorkspace({
       sceneContent={scene.content}
       selectedText={selectedText}
       characterNames={bible.characters.map(({ name }) => name)}
-      onClose={() => setAssistantOpen(false)}
+      onClose={handleAssistantClose}
       onApply={(suggestion) => {
         const updated = applyWritingSuggestion({
           manuscript: draft,

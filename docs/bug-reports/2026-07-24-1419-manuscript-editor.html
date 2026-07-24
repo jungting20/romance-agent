@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ManuscriptEditor 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    code { overflow-wrap:anywhere; } li + li { margin-top:.45rem; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr)); gap:1rem; margin-top:1rem; }
+    figure { margin:0; } figcaption { margin-top:.5rem; color:#5c5049; }
+    .evidence { width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <p>브라우저 버그 탐색 보고서 · 컴포넌트 5/17</p>
+    <h1><code>ManuscriptEditor</code> 본문 편집과 자동 저장 복구</h1>
+    <p>생성 시각: <time datetime="2026-07-24T14:24:18+09:00">2026년 7월 24일 14:24 (KST)</time></p>
+  </header>
+
+  <section class="panel">
+    <h2>탐색 범위</h2>
+    <p><code>http://127.0.0.1:4173/projects/silver-garden/write</code>의
+      <code>ManuscriptEditor</code> 본문 textbox에 한정해 입력, 키보드 선택 교체,
+      캐럿·본문 보존, 빈 장면과 장면 전환, 80개 문단의 긴 원고, 중앙 스크롤,
+      800ms 자동 저장, 일회성 실패와 재시도 복구, 접근 가능한 이름, 포커스,
+      콘솔과 원고 네트워크 요청을 검사했다.</p>
+    <h3>제외 범위</h3>
+    <p>다른 앱·라우트·컴포넌트 감사, 제목 편집 자체, 세계관·인물 편집, AI 도구,
+      인증, 실제 backend와 외부 네트워크, 제품 코드·테스트·설정·기존 문서 수정,
+      새 서버 실행은 제외했다. 데이터 변경은 개발 MSW 원고 상태에만 남겼다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>실행 환경</h2>
+    <dl>
+      <dt>대상 및 서버</dt><dd>공유 Vite/MSW 서버 <code>127.0.0.1:4173</code>, query 없음, 인증 없음</dd>
+      <dt>시작 데이터</dt><dd>clean <code>silver-garden</code> seed, 원고 <code>silver-garden-manuscript</code>, 활성 장면 <code>silver-garden-scene-1</code>, revision 1</dd>
+      <dt>요청 뷰포트</dt><dd><code>375x500</code>, <code>1024x600</code>, <code>1440x800</code></dd>
+      <dt>실제 브라우저 뷰포트</dt><dd><code>1280x720</code>. 전용 Playwright test MCP에 resize 도구가 없고 <code>window.resizeTo()</code>도 크기를 바꾸지 못해 요청 크기는 미검증</dd>
+      <dt>브라우저 준비</dt><dd><code>planner_setup_page</code>를 <code>project</code> 인자 없이 정확히 1회 호출해 성공</dd>
+      <dt>실행 기준</dt><dd><code>7eff1ea85ea67fb4233b1797f65496dc30274797</code> · <code>main</code></dd>
+      <dt>기존 변경</dt><dd>시작 시 다른 에이전트의 미추적 보고서와 기존 체크리스트를 확인했으며 수정·삭제·복원하지 않았다.</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>결과 요약</h2>
+    <div class="grid">
+      <div class="metric">확정<strong>1</strong></div>
+      <div class="metric">등록<strong>1</strong></div>
+      <div class="metric">중복<strong>0</strong></div>
+      <div class="metric">제외<strong>1</strong></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>등록한 버그</h2>
+    <article class="bug-card" id="bug-001">
+      <p><span class="severity severity-medium">심각도 Medium</span></p>
+      <h3>원고 저장 재시도 성공 뒤 편집기 포커스가 <code>body</code>로 이탈한다</h3>
+      <dl>
+        <dt>티켓</dt><dd><code>#12</code> · <code>ready</code></dd>
+        <dt>최소 재현 절차</dt>
+        <dd><ol>
+          <li>MSW seed 상태에서 <code>원고 본문</code> 끝에 고유 표식을 키보드로 입력한다.</li>
+          <li>다음 원고 PUT 한 번을 실패시켜 <code>저장 실패</code> alert와 <code>원고 저장 다시 시도</code> 버튼을 표시한다.</li>
+          <li>재시도 버튼을 클릭하거나 Tab으로 이동해 Enter로 실행한다.</li>
+          <li>PUT 성공과 <code>자동 저장됨</code>을 확인한 뒤 활성 요소, 본문 값과 선택 인덱스를 확인한다.</li>
+        </ol></dd>
+        <dt>기대 결과</dt><dd>재시도 버튼이 사라진 뒤 현재 <code>원고 본문</code> textarea가 포커스를 받고, 기존 본문과 캐럿 또는 선택 범위를 유지해 즉시 집필을 이어 갈 수 있어야 한다.</dd>
+        <dt>실제 결과</dt><dd>본문과 캐럿 인덱스 및 PUT 성공은 보존되지만 <code>document.activeElement === document.body</code>가 되어 보이는 키보드 포커스가 사라진다.</dd>
+        <dt>2회 clean-state 증거</dt><dd>1차는 MSW session 저장소를 seed로 초기화한 뒤 <code>[FAIL-B]</code>를 입력하고 마우스로 재시도했다. 2차는 다시 seed로 초기화한 뒤 <code>[FAIL-C]</code>를 입력하고 Tab/Enter로 재시도했다. 두 실행 모두 <code>자동 저장됨</code>, 선택 인덱스 <code>182..182</code>, 고유 표식 보존과 동시에 활성 요소 <code>BODY</code>를 기록했다.</dd>
+        <dt>사용자 영향</dt><dd>저장 실패에서 회복한 키보드 사용자가 집필 위치를 잃고 문서 처음부터 다시 탭 이동해야 한다. 데이터는 보존되지만 핵심 편집 복구 흐름의 키보드 연속성과 보이는 포커스가 끊긴다.</dd>
+        <dt>요구사항</dt><dd><code>frontend/docs/frontend-coding-rules.md</code>의 보이는 포커스·키보드 호환 요구와 원고 저장 실패 재시도 및 초안 보존 계약을 충족하지 못한다.</dd>
+        <dt>확인된 위치와 가설</dt><dd><code>frontend/src/pages/writing-workspace/writing-workspace-page.tsx</code>의 <code>AutosaveIndicator</code>는 오류 상태에서만 재시도 버튼을 렌더링하고 성공 시 제거한다. 호출부에는 <code>sceneNavigation.editorRef</code> 포커스 복원이 없다. 조건부 버튼 제거가 <code>body</code> 이탈을 만든다는 설명은 소스 기반 가설이며 구현 테스트로 확정해야 한다.</dd>
+        <dt>문서</dt><dd><a href="../superpowers/specs/2026-07-24-manuscript-autosave-retry-focus-design.md">설계</a> · <a href="../superpowers/plans/2026-07-24-manuscript-autosave-retry-focus.md">구현 계획</a></dd>
+      </dl>
+      <div class="evidence-grid">
+        <figure>
+          <img class="evidence" src="assets/2026-07-24-1419-manuscript-editor/focus-lost-after-retry-2.png" alt="키보드 재시도 성공 후 자동 저장됨이 표시되지만 어떤 컨트롤에도 포커스 윤곽이 없는 원고 편집 화면">
+          <figcaption>2차 clean-state에서 <code>[FAIL-C]</code>를 보존하고 자동 저장에 성공했지만, DOM 측정 결과 활성 요소는 편집기가 아닌 <code>BODY</code>였다.</figcaption>
+        </figure>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel">
+    <h2>중복된 관찰</h2>
+    <p>확정된 중복 관찰은 없다. fresh <code>ticket-worker list --json</code>의 #1–#11과 기존
+      버그 보고서·설계·계획에서 재시도 성공 후 편집기 포커스 이탈 항목을 찾지 못했다.
+      #1 스크롤 경계와 #2 reload 복원은 이번 정상 회귀 검사에서 통과한 별도 결함이다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>제외한 관찰</h2>
+    <p><code>/favicon.ico</code> 404 1건은 <code>ManuscriptEditor</code> 편집 흐름과 무관한
+      정적 자산 요청이며 사용자 흐름 영향이 없어 티켓에서 제외했다. 지정된 세 뷰포트는
+      도구 제한으로 재현 자체를 수행하지 못했으므로 결함으로 분류하지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>수행한 검사</h2>
+    <ul>
+      <li>정상 입력: 실제 키 입력 뒤 <code>편집 중</code>, 원고 PUT 200, <code>자동 저장됨</code>을 확인했다.</li>
+      <li>선택과 캐럿: 키보드로 15자를 선택해 <code>[SEL-A]</code>로 교체했고 기존 본문과 교체 뒤 캐럿을 확인했다.</li>
+      <li>빈 값과 장면 전환: 새 빈 장면은 값 <code>""</code>, 선택 <code>0..0</code>, editor focus로 열렸고, 두 장면의 본문은 전환 뒤 서로 섞이지 않았다.</li>
+      <li>긴 원고: 80개 문단, 3,749자에서 문서 높이 <code>720</code>, 중앙 main <code>scrollHeight=5982</code>/<code>clientHeight=656</code>, header top <code>0</code>을 기록했다.</li>
+      <li>reload 복원: 긴 본문과 추가 장면을 자동 저장한 뒤 같은 탭 reload에서 복원했다.</li>
+      <li>실패·회복: 일회성 PUT 실패에서 alert와 이름 있는 재시도 버튼, 최신 원고 보존, 재시도 PUT 성공을 확인했다.</li>
+      <li>접근성: textbox의 접근 가능한 이름 <code>원고 본문</code>, 장면 전환 포커스, 실패 alert, 키보드 재시도와 성공 후 활성 요소를 확인했다.</li>
+      <li>콘솔·네트워크: 제품 오류 없이 favicon 404만 기록했고 workspace GET 200과 원고 PUT 200을 확인했다.</li>
+      <li><code>zellij-agent ticket-worker list --json</code>: 등록 전 중복 검사와 등록 후 #12의 <code>ready</code> 및 모든 필드 일치를 확인했다.</li>
+      <li><code>.codex/agents/tests/validate-bug-hunter.sh</code>: 보고서와 구조 검증에 사용했다.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>제약 및 미확인 항목</h2>
+    <p>전용 브라우저 도구가 <code>1280x720</code>로 고정되어 요청된
+      <code>375x500</code>, <code>1024x600</code>, <code>1440x800</code> 반응형·모바일
+      소프트 키보드 레이아웃은 미확인이다. 새 browser context를 만들 수 없어 각 재현 전
+      <code>romance-agent:msw:manuscripts:v1</code> session 저장소를 지우고 route를 다시 열어
+      동일 seed 시작 상태를 만들었다. 실제 OS 소프트 키보드와 보조기술 음성 출력, backend
+      persistence, revision 충돌은 확인하지 않았다. 실패는 페이지의 다음 원고 PUT 한 번만
+      거부해 재현했고 외부 네트워크는 사용하지 않았다.</p>
+  </section>
+</main>
+</body>
+</html>
