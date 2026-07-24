@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "FastAPI backend for Romance Agent"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+  "cryptography>=45,<47",
   "fastapi>=0.116,<1",
   "narrative-analysis-agent",
   "uvicorn[standard]>=0.35,<1",
