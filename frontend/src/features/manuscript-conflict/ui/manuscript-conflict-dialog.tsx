@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import type {
   CompareManuscriptSceneResponse,
@@ -51,7 +51,20 @@ export function ManuscriptConflictDialog({
   onRetryKeepLocal = onKeepLocal,
 }: ManuscriptConflictDialogProps) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const retryKeepLocalRef = useRef<HTMLButtonElement | null>(null);
   const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (!open || !resolutionError || isResolving) {
+      return;
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      retryKeepLocalRef.current?.focus();
+    }, 0);
+
+    return () => window.clearTimeout(focusTimer);
+  }, [isResolving, open, resolutionError]);
 
   if (open && !wasOpenRef.current && typeof document !== "undefined") {
     returnFocusRef.current =
@@ -211,6 +224,7 @@ export function ManuscriptConflictDialog({
             서버 최신본 적용
           </Button>
           <Button
+            ref={retryKeepLocalRef}
             type="button"
             disabled={
               isComparing ||

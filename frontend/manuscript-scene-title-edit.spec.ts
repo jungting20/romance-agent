@@ -524,6 +524,61 @@ test.describe("저장 실패와 재시도", () => {
 });
 
 test.describe("409 충돌 해결", () => {
+  test("해결 저장 실패는 재시도에 focus하고 성공 뒤 본문 focus와 선택을 복원한다", async ({
+    harness: { page, server },
+  }) => {
+    const authoritative = serverLatest(server.workspace);
+    server.respondToPut = (_request, index) => {
+      if (index === 0) {
+        return { kind: "error", status: 409, code: "MANUSCRIPT_REVISION_CONFLICT" };
+      }
+      if (index === 1) {
+        return { kind: "error", status: 500, code: "INTERNAL_ERROR" };
+      }
+      return { kind: "success", revision: 8 };
+    };
+    server.respondToDiff = (request) => ({
+      sceneId: request.sceneId,
+      serverRevision: 7,
+      localContent: request.localContent,
+      serverContent: "서버 최신 본문",
+      serverManuscript: authoritative,
+      rows: [],
+    });
+    await openWorkspace(page);
+    const body = page.getByRole("textbox", { name: "원고 본문" });
+    const localDraft = `${OPENING_SCENE}\nfocus를 지킬 로컬 문장`;
+    await body.fill(localDraft);
+    await body.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(4, 10));
+    await server.waitForDiff(0);
+    const dialog = page.getByRole("dialog", { name: "원고 저장 충돌 해결" });
+
+    await dialog.getByRole("button", { name: "내 편집본 유지" }).click();
+    await server.waitForPut(1);
+    const retry = dialog.getByRole("button", { name: "내 편집본 저장 다시 시도" });
+    await expect(retry).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(dialog.getByRole("button", { name: "서버 최신본 적용" })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(retry).toBeFocused();
+
+    await retry.click();
+    const retryRequest = await server.waitForPut(2);
+    expect(server.puts[1]?.expectedRevision).toBe(7);
+    expect(retryRequest.expectedRevision).toBe(7);
+    await expect(dialog).toBeHidden();
+    await expect(body).toBeFocused();
+    await expect(body).toHaveValue(localDraft);
+    await expect
+      .poll(() =>
+        body.evaluate((element: HTMLTextAreaElement) => ({
+          start: element.selectionStart,
+          end: element.selectionEnd,
+        })),
+      )
+      .toEqual({ start: 4, end: 10 });
+  });
+
   test("내 편집본 유지는 로컬 제목을 서버 revision 위에 보존한다", async ({
     harness: { page, server },
   }) => {
