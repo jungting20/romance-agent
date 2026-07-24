@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SceneTree 브라우저 버그 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; } body { margin:0; } a { color:#7a3f2d; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.bug-card { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.bug-card { margin-top:1.25rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; } .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; }
+    .severity::before { content:"●"; } .severity-blocking,.severity-high { color:#9c241d; } .severity-medium { color:#855c00; } .severity-low { color:#256048; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    dt { margin-top:1rem; font-weight:800; } dd { margin:.35rem 0 0; } :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print { :root { background:white; } .page { width:100%; padding:0; } .hero,.panel,.bug-card { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <p>브라우저 버그 탐색 보고서</p>
+    <h1>SceneTree 브라우저 버그 탐색 보고서</h1>
+    <p>생성 시각: <time datetime="2026-07-24T14:33:24+09:00">2026년 7월 24일 14:33 KST</time></p>
+  </header>
+
+  <section class="panel">
+    <h2>탐색 범위</h2>
+    <p><code>SceneTree</code> 전용으로 원고 목차 장면 선택, 현재 장면의 <code>aria-current</code>, 새 장면 추가, 추가 뒤 목차·제목·본문 일치, 저장 충돌 중 추가 비활성, 키보드 탐색과 긴 목록 스크롤을 확인했다. 정상 경로 뒤 경계, 실패·복구, 포커스, 키보드, 콘솔과 네트워크를 같은 범위 안에서 점검했다.</p>
+    <h3>제외 범위</h3>
+    <p>제품 코드·테스트·설정·기존 문서 수정, 새 서버 실행, 외부 네트워크, 장면 제목 편집 세부 동작, 자동 저장 자체의 전면 감사와 다른 집필 컴포넌트는 제외했다. Manuscript 도메인 불변 조건상 유효하지 않은 빈 장면 목록은 인위적으로 만들지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>실행 환경</h2>
+    <dl>
+      <dt>대상 라우트</dt>
+      <dd><code>http://127.0.0.1:4173/projects/silver-garden/write</code></dd>
+      <dt>시작 상태</dt>
+      <dd>인증 없음, clean MSW <code>silver-garden</code> seed, <code>manuscriptRevision: 1</code>, 단일 활성 장면 <code>silver-garden-scene-1</code>. 두 번째 실행 전 <code>romance-agent:msw:manuscripts:v1</code>만 제거하고 같은 라우트를 다시 로드해 동일 seed를 확인했다.</dd>
+      <dt>뷰포트</dt>
+      <dd>할당값 <code>375×800</code>, <code>1280×800</code>. 브라우저 도구가 실제로 제공한 고정 뷰포트는 <code>1280×720</code>이었으며 변경 기능이 없어 할당 높이와 모바일 너비는 미확인으로 남겼다.</dd>
+      <dt>실행 기준</dt>
+      <dd><code>7eff1ea85ea67fb4233b1797f65496dc30274797</code></dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>결과 요약</h2>
+    <div class="grid">
+      <div class="metric">확정<strong>0</strong></div>
+      <div class="metric">등록<strong>0</strong></div>
+      <div class="metric">중복<strong>0</strong></div>
+      <div class="metric">제외<strong>2</strong></div>
+    </div>
+    <p>지정한 라우트와 SceneTree 흐름을 실제 제공 뷰포트에서 두 번 clean MSW 상태로 확인한 결과, 등록 기준을 충족하는 확정된 버그가 없습니다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>등록한 버그</h2>
+    <p>이 제한된 탐색 범위에서 확정된 버그가 없어 티켓, 버그별 설계 문서, 구현 계획과 스크린샷을 만들지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>중복된 관찰</h2>
+    <p>중복 결함 관찰은 없었다. 기존 ticket-worker <code>#3 원고 장면 추가와 전환</code>은 완료된 기능 티켓이며 신규 결함의 중복 티켓으로 분류하지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>제외한 관찰</h2>
+    <p><code>/favicon.ico</code> 404는 SceneTree 흐름 밖의 정적 자원 관찰이라 제외했다. 장면이 0개인 상태는 Manuscript 계약의 활성 장면 불변 조건과 clean <code>silver-garden</code> 시작 데이터에 어긋나므로 결함 후보를 만들기 위한 비정상 데이터로 변조하지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>수행한 검사</h2>
+    <ul>
+      <li>시작 전 <code>git status --short --branch</code>와 <code>zellij-agent ticket-worker list --json</code>을 실행하고 기존 티켓 <code>#1</code>–<code>#11</code>을 중복 기준으로 보존했다.</li>
+      <li>첫 번째 clean 실행: 1장 seed에서 추가 한 번으로 2장 하나만 생겼고, <code>aria-current="true"</code>, <code>Chapter 02</code>, <code>제목 없는 장면</code>, 빈 본문, <code>원고 본문</code> 포커스와 <code>2장 장면을 추가했어요</code> 알림이 일치했다.</li>
+      <li>두 번째 clean 실행: revision 1과 단일 장면을 다시 확인한 뒤 같은 추가 결과를 반복 확인했다.</li>
+      <li>두 실행 모두 1장과 2장을 선택했을 때 목차 current, 헤더, 편집기 제목·장 번호·본문이 함께 전환됐으며, Tab으로 다음 장면 버튼에 이동해 Enter로 선택한 뒤 본문 입력란으로 포커스가 이동했다.</li>
+      <li>두 실행 모두 MSW revision만 외부 변경처럼 한 단계 진행한 뒤 로컬 새 장면 저장에서 의도한 <code>409 MANUSCRIPT_REVISION_CONFLICT</code>를 만들었다. 충돌 dialog 동안 <code>새 장면 추가</code>가 disabled였고 <code>서버 최신본 적용</code> 뒤 다시 활성화됐다.</li>
+      <li>두 실행 모두 17개 장면에서 목차 스크롤 컨테이너가 <code>clientHeight 656</code>, <code>scrollHeight 1049</code>, 최대 <code>scrollTop 393</code>을 가졌고, 마지막 17장 버튼이 스크롤 뒤 화면 안에 들어왔다. 첫 실행에서는 첫 장면부터 16회 Tab으로 17장까지 포커스가 이동하며 스크롤이 따라오는 것도 확인했다.</li>
+      <li>네트워크는 workspace/story-bible GET 200, 정상 원고 PUT 200, 의도한 충돌 PUT 409와 복구 GET 200을 확인했다. 콘솔 오류는 범위 밖 favicon 404와 의도한 409뿐이었다.</li>
+      <li>새 보고서의 미치환 토큰, UTF-8·한국어 HTML 기본 구조, 필수 섹션, 스크립트 금지와 zero-result 문구에 대한 집중 검사는 통과했다. <code>git diff --check --no-index</code>는 새 파일 차이 때문에 종료 코드 1을 반환했지만 공백 오류 진단은 출력하지 않았다.</li>
+      <li>공식 <code>bash .codex/agents/tests/validate-bug-hunter.sh</code>는 새 보고서를 검사하기 전 기존 <code>.codex/agents/bug-hunter.toml</code>에 <code>zellij-agent ticket-worker list --json</code> 문자열이 없다는 assertion으로 종료 코드 1을 반환했다.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>제약 및 미확인 항목</h2>
+    <p>브라우저 도구에 뷰포트 변경 기능이 없어 할당된 <code>375×800</code> 모바일 분기와 정확한 <code>1280×800</code> 높이를 확인하지 못했다. 실제 검증은 <code>1280×720</code>에 한정된다. 정상적인 Manuscript가 요구하는 최소 1개 장면 때문에 빈 목록 표현은 미확인이다. 공식 validator는 기존 agent 설정 assertion에서 선행 실패해 새 보고서에 대한 공식 통과 판정을 제공하지 못했다. 원인을 추정할 신규 결함이 없으므로 제품 소스에 대한 결함 원인 가설도 없다.</p>
+  </section>
+</main>
+</body>
+</html>
