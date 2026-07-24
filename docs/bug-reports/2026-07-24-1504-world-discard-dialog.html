@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WorldDiscardDialog 브라우저 탐색 보고서</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f1eb; color:#2f2925; }
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    a { color:#7a3f2d; }
+    code { overflow-wrap:anywhere; }
+    .page { width:min(1120px,calc(100% - 2rem)); margin:auto; padding:2rem 0 4rem; }
+    .hero,.panel,.observation { padding:clamp(1.25rem,3vw,2.5rem); border:1px solid #d9cec2; border-radius:1rem; background:#fffdf9; box-shadow:0 18px 50px -38px #503b31; }
+    .panel,.observation { margin-top:1.25rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); gap:1rem; }
+    .metric { padding:1rem; border-radius:.75rem; background:#f6eee7; }
+    .metric strong { display:block; font-size:1.75rem; }
+    .severity { display:inline-flex; gap:.4rem; padding:.3rem .65rem; border:1px solid; border-radius:999px; font-weight:800; color:#855c00; }
+    .severity::before { content:"●"; }
+    .evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(17rem,1fr)); gap:1rem; }
+    figure { margin:1rem 0 0; }
+    .evidence { max-width:100%; height:auto; border:1px solid #d9cec2; border-radius:.75rem; }
+    figcaption { margin-top:.5rem; color:#5d514a; }
+    dt { margin-top:1rem; font-weight:800; }
+    dd { margin:.35rem 0 0; }
+    li + li { margin-top:.45rem; }
+    :focus-visible { outline:3px solid #2d63d7; outline-offset:3px; }
+    @media print {
+      :root { background:white; }
+      .page { width:100%; padding:0; }
+      .hero,.panel,.observation { box-shadow:none; break-inside:avoid; }
+    }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <p>브라우저 버그 탐색 보고서</p>
+    <h1>WorldDiscardDialog</h1>
+    <p>생성 시각: <time datetime="2026-07-24T15:04:00+09:00">2026년 7월 24일 15:04 KST</time></p>
+  </header>
+
+  <section class="panel">
+    <h2>탐색 범위</h2>
+    <p><code>WorldDiscardDialog</code>에 한정해 dirty 세계관 편집기의 명시적 닫기, <code>Escape</code>, 브라우저 <code>Back</code>, revision conflict의 <code>reload-latest</code>, <code>계속 편집</code>과 폐기·reload 확정, dialog 초기 포커스와 focus trap, desktop/mobile 배치, 저장 중 frozen state를 확인했다. 정상 확정 경로를 먼저 확인하고 결함 후보는 clean MSW 시작 상태에서 반복했다.</p>
+    <h3>제외 범위</h3>
+    <p>제품 코드·테스트·설정·기존 문서 수정, 새 서버 실행, 외부 네트워크, 실제 backend 데이터 변경, WorldEditorSheet 자체 레이아웃 수정, 인물·원고 dialog와 애플리케이션 전체 감사는 제외했다. 데이터 변경은 브라우저 MSW 메모리 안의 revision conflict와 저장 검증에만 한정했다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>실행 환경</h2>
+    <dl>
+      <dt>대상 라우트</dt><dd><code>http://127.0.0.1:4173/projects/silver-garden/write?tab=world</code></dd>
+      <dt>시작 상태</dt><dd>개발 MSW <code>silver-garden</code> seed, Story Bible revision <code>1</code>, 세계관 제목 <code>비가 그친 온실</code>, 인증 없음. 각 clean 재현은 직접 route navigation과 로컬 draft 폐기 또는 mock session 초기화로 seed 상태를 확인한 뒤 시작했다.</dd>
+      <dt>뷰포트</dt><dd><code>375x800</code>, <code>1280x800</code>. 테스트 MCP에 resize 도구가 없어 동일 출처의 독립 iframe browsing context를 정확한 크기로 설정했고, 각 frame의 <code>innerWidth</code>/<code>innerHeight</code>로 확인했다. 초기 두 clean 재현은 top-level <code>1280x720</code>에서도 수행했다.</dd>
+      <dt>실행 기준</dt><dd><code>8c3ef59</code> (<code>main</code>)</dd>
+      <dt>브라우저</dt><dd><code>playwright-test</code> MCP의 기본 Chromium, <code>planner_setup_page({})</code> 1회, project 지정 없음.</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>결과 요약</h2>
+    <div class="grid">
+      <div class="metric">신규 확정<strong>0</strong></div>
+      <div class="metric">등록<strong>0</strong></div>
+      <div class="metric">중복<strong>1</strong></div>
+      <div class="metric">범위 제외<strong>1</strong></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>등록한 버그</h2>
+    <p>이 bounded 실행에서 새로 등록할 수 있는 비중복 결함은 없었다. 확인된 포커스 이탈은 이미 등록된 티켓 <code>#15</code>와 동일하며, 새 티켓·새 설계 문서·새 구현 계획은 만들지 않았다.</p>
+  </section>
+
+  <section class="observation" id="duplicate-001">
+    <p><span class="severity">중복 · 심각도 Medium</span></p>
+    <h2>계속 편집 뒤 포커스가 WorldEditorSheet로 돌아오지 않는다</h2>
+    <dl>
+      <dt>기존 티켓</dt><dd><code>#15</code> · <code>세계관 변경사항 폐기 취소 후 편집기 포커스 이탈</code></dd>
+      <dt>문서</dt><dd><a href="../superpowers/specs/2026-07-24-world-discard-continue-focus-design.md">설계</a> · <a href="../superpowers/plans/2026-07-24-world-discard-continue-focus.md">구현 계획</a></dd>
+      <dt>기대 결과</dt><dd><code>REQ-WORLD-006</code>과 <code>REQ-WORLD-010</code>에 따라 dialog만 닫히고 exact draft와 editor URL을 보존한 채 유효한 WorldEditorSheet control로 포커스가 돌아가야 한다.</dd>
+      <dt>실제 결과</dt><dd><code>Escape</code> 뒤 <code>Enter</code>, 명시적 닫기 뒤 마우스 클릭, dirty <code>Back</code> 취소, <code>reload-latest</code> 취소에서 draft와 <code>panel=world-editor</code>는 유지됐지만 <code>document.activeElement</code>가 <code>BODY</code>였고 Sheet 안에 있지 않았다.</dd>
+      <dt>두 번의 clean 재현</dt><dd><ol><li>직접 route navigation → editor 열기 → 제목을 dirty 상태로 변경 → <code>Escape</code> → 초기 포커스의 <code>계속 편집</code>을 <code>Enter</code>로 선택. draft 유지, URL 유지, active element <code>BODY</code>.</li><li>새 route navigation → editor 열기 → 다른 제목으로 변경 → 명시적 닫기 → <code>계속 편집</code>을 마우스로 선택. draft 유지, URL 유지, active element <code>BODY</code>.</li></ol></dd>
+      <dt>중복 판정</dt><dd>티켓 <code>#15</code>의 제목·요약·설계·계획이 close, keyboard/mouse cancel, dirty navigation, revision conflict의 latest reload 취소와 동일한 사용자 영향 및 수리 범위를 이미 포함한다. fresh JSON에서 시작 시 <code>ready</code>, 탐색 종료 시 <code>in_progress</code>, 최종 handoff 시 <code>done</code>임을 확인해 추가 등록하지 않았다.</dd>
+    </dl>
+    <div class="evidence-grid">
+      <figure><img class="evidence" src="assets/2026-07-24-1504-world-discard-dialog/2026-07-24-1452-world-discard-dialog-desktop-dialog-1280x800.png" alt="1280x800 세계관 변경사항 폐기 확인 dialog와 계속 편집 및 변경사항 버리기 버튼"><figcaption>정확한 <code>1280x800</code>에서 dialog가 중앙에 표시되고 <code>계속 편집</code>이 초기 포커스를 가진다.</figcaption></figure>
+      <figure><img class="evidence" src="assets/2026-07-24-1504-world-discard-dialog/2026-07-24-1452-world-discard-dialog-mobile-dialog-375x800.png" alt="375x800 모바일 세계관 변경사항 폐기 확인 dialog와 세로로 배치된 두 버튼"><figcaption>정확한 <code>375x800</code>에서 제목·설명·두 action이 viewport 안에 보이고 keyboard focus trap이 유지된다.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>범위에서 제외한 관찰</h2>
+    <p>중첩 확인 과정에서 WorldEditorSheet가 <code>1280x800</code>에서 384px, <code>375x800</code>에서 281px로 표시되는 것을 보았지만 이는 <code>WorldDiscardDialog</code> 자체가 아니라 WorldEditorSheet 폭 범위이고 기존 티켓 <code>#16</code>이 이미 담당하므로 이 보고서의 결함 수에 포함하지 않았다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>수행한 검사</h2>
+    <ul>
+      <li><code>curl</code> 대상 route: HTTP <code>200</code>.</li>
+      <li>dirty close/<code>Escape</code>: 폐기 확인이 한 번 열리고 초기 포커스는 <code>계속 편집</code>이었다.</li>
+      <li>키보드: <code>Shift+Tab</code>은 <code>변경사항 버리기</code>, 다음 <code>Tab</code>은 <code>계속 편집</code>으로 순환해 dialog 밖으로 벗어나지 않았다.</li>
+      <li>폐기 확정: desktop에서는 editor와 dialog가 닫히고 seed 세계관·canonical URL·<code>세계관 수정 및 추가</code> focus가 복원됐다. mobile에서는 아래 Context Sheet를 유지한 채 같은 launch focus가 복원됐다.</li>
+      <li>dirty navigation: <code>Back</code> 취소는 exact draft와 editor URL을 복원했고, 확정은 한 번 이동해 추가 dialog를 남기지 않았다.</li>
+      <li>revision conflict: MSW 안에서 revision을 <code>1→2</code>로 증가시킨 뒤 stale save가 <code>409 STORY_BIBLE_REVISION_CONFLICT</code>를 반환했다. <code>reload-latest</code> 취소는 local draft를 유지했고, 확정은 <code>서버 최신 온실</code> snapshot을 반영했다.</li>
+      <li>frozen state: 지연된 MSW PUT 중 모든 field·추가·닫기·취소·저장 control이 disabled였고 <code>Escape</code>가 Sheet를 닫거나 discard dialog를 열지 않았다. 성공 뒤 authoritative 값과 launch focus가 표시됐다.</li>
+      <li>반응형: <code>375x800</code>과 <code>1280x800</code> frame viewport를 직접 측정했다. WorldDiscardDialog의 제목·설명·두 action은 양쪽에서 viewport 안에 있었고 focus trap 및 확정 focus가 동등했다.</li>
+      <li>network: clean load의 <code>GET /api/projects/silver-garden/workspace</code>와 <code>GET /api/projects/silver-garden/story-bible</code>는 <code>200</code>. conflict 검증의 PUT은 의도한 <code>409</code>, latest refetch와 정상 저장은 <code>200</code>이었다.</li>
+      <li>console: 제품 런타임 예외나 MSW unhandled request는 없었다. 개발 favicon <code>404</code>와 의도적으로 만든 conflict PUT <code>409</code> resource error만 기록됐다.</li>
+      <li><code>zellij-agent ticket-worker list --json</code>: 시작과 종료에 fresh 조회했다. 티켓 <code>#15</code>와 <code>#16</code>의 중복 범위 및 상태를 확인했다.</li>
+      <li><code>git status --short --branch</code>: 시작과 종료에 확인하고 기존 수정·삭제·다른 에이전트의 미추적 문서를 보존했다.</li>
+      <li><code>bash .codex/agents/tests/validate-bug-hunter.sh</code>: 보고서 검사 전에 기존 수정 상태인 <code>.codex/agents/bug-hunter.toml</code>에서 필수 문자열 <code>zellij-agent ticket-worker list --json</code>을 찾지 못해 종료 코드 <code>1</code>로 중단됐다. 타인 소유 변경을 보존하기 위해 agent 설정은 수정하지 않았다.</li>
+      <li>보고서 자체 검사: 미치환 template token, <code>script</code>/CDN, 줄 끝 공백이 없고 네 PNG가 각각 <code>1280x800</code>, <code>1280x720</code>, <code>375x800</code>, <code>375x800</code>으로 확인됐다.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>제약 및 미확인 항목</h2>
+    <p>테스트 MCP에 top-level viewport resize 도구가 없어 정확한 지정 크기는 동일 출처 iframe browsing context로 검증했다. 외부 backend, 인증, 실제 영구 데이터는 확인하지 않았다. 탐색 종료 조회에서 티켓 <code>#15</code>가 <code>in_progress</code>로 바뀐 것을 확인한 즉시 추가 브라우저 탐색을 중단했다. 최종 handoff 조회에서는 <code>done</code>이었지만 구현 이후 동작은 재검증하지 않았다. 저장 실패의 별도 <code>500</code> retry 분기는 WorldDiscardDialog가 나타나지 않고 WorldEditorFeedback이 소유하므로 이 bounded 보고서에서는 별도로 가로채지 않았다. 공식 validator는 기존 agent 설정 assertion에서 멈춰 보고서 단계까지 도달하지 못했다. 확인된 원인 설명은 없으며 소스상 lifecycle 차이는 원인으로 단정하지 않았다.</p>
+  </section>
+</main>
+</body>
+</html>
