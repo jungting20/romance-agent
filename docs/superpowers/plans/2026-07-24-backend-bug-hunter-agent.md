@@ -147,6 +147,8 @@ class BackendReportInspector(HTMLParser):
         self.bug_anchors = []
         self.run_numbers = []
         self.isolation_marker = False
+        self.css_chunks = []
+        self._in_style = False
 
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
@@ -161,6 +163,8 @@ class BackendReportInspector(HTMLParser):
             )
         elif tag == "script":
             self.script = True
+        elif tag == "style":
+            self._in_style = True
         elif tag == "h2":
             self._heading = []
         elif tag == "article" and "bug-card" in values.get("class", "").split():
@@ -168,6 +172,8 @@ class BackendReportInspector(HTMLParser):
         elif tag == "section" and "run-evidence" in values.get("class", "").split():
             self.run_numbers.append(values.get("data-run"))
         for name, value in values.items():
+            if name == "style" and value:
+                self.css_chunks.append(value)
             if name not in url_attributes or not value:
                 continue
             candidates = value.split(",") if name == "srcset" else [value]
@@ -181,10 +187,14 @@ class BackendReportInspector(HTMLParser):
         if tag == "h2" and self._heading is not None:
             self.headings.append("".join(self._heading).strip())
             self._heading = None
+        elif tag == "style":
+            self._in_style = False
 
     def handle_data(self, data):
         if self._heading is not None:
             self._heading.append(data)
+        if self._in_style:
+            self.css_chunks.append(data)
 
 
 def validate_report(html: str, *, source: str, generated: bool) -> None:
@@ -196,6 +206,8 @@ def validate_report(html: str, *, source: str, generated: bool) -> None:
     assert inspector.isolation_marker, f"{source}: missing run-specific isolation marker"
     assert not inspector.script, f"{source}: script is forbidden"
     assert not inspector.external, f"{source}: external resources are forbidden: {inspector.external}"
+    css = "\n".join(inspector.css_chunks)
+    assert not re.search(r"@import|(?:https?:)?//", css, re.IGNORECASE), f"{source}: external CSS resource"
     assert not (required_headings - set(inspector.headings)), f"{source}: missing required headings"
     for pattern in secret_patterns:
         assert not pattern.search(html), f"{source}: raw sensitive value matched {pattern.pattern}"
@@ -266,6 +278,11 @@ rejected("missing-run-two", valid_fixture.replace('data-run="2"', 'data-run="1"'
 rejected("unstable-anchor", valid_fixture.replace('id="bug-001"', 'id="backend-problem"'), "")
 rejected("external-resource", valid_fixture.replace("</head>", '<script src="https://example.com/x.js"></script></head>'), "script is forbidden")
 rejected(
+    "external-css",
+    valid_fixture.replace("</head>", '<style>@import url("https://example.com/report.css");</style></head>'),
+    "external CSS resource",
+)
+rejected(
     "shared-db",
     valid_fixture.replace('content="run-specific"', 'content="shared"'),
     "missing run-specific isolation marker",
@@ -289,7 +306,7 @@ for phrase in [
 for report_path in sorted((root / "docs/bug-reports").glob("*-backend-*.html")):
     validate_report(report_path.read_text(encoding="utf-8"), source=str(report_path), generated=True)
 
-print("backend report fixtures passed: 3 positive, 8 negative")
+print("backend report fixtures passed: 3 positive, 9 negative")
 print("backend-bug-hunter configuration, policy, isolation, redaction, and report contract are valid")
 PY
 ```
@@ -606,7 +623,7 @@ mise exec -- bash .codex/agents/tests/validate-backend-bug-hunter.sh
 Expected:
 
 ```text
-backend report fixtures passed: 3 positive, 8 negative
+backend report fixtures passed: 3 positive, 9 negative
 backend-bug-hunter configuration, policy, isolation, redaction, and report contract are valid
 ```
 
@@ -671,7 +688,7 @@ mise exec -- bash .codex/agents/tests/validate-backend-bug-hunter.sh
 git diff --check 333f417..HEAD
 ```
 
-Expected: validator의 `3 positive, 8 negative`와 최종 PASS가 출력되고 whitespace error가 없다.
+Expected: validator의 `3 positive, 9 negative`와 최종 PASS가 출력되고 whitespace error가 없다.
 
 - [ ] **Step 3: 기존 browser validator의 선행 상태를 재확인한다**
 
