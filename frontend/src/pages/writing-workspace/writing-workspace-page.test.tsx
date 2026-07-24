@@ -138,6 +138,43 @@ describe("WritingWorkspacePage", () => {
     expect(router.state.location.search).toEqual({});
   });
 
+  test("uses vertical tab semantics for keyboard selection, URL updates, and wrapping", async () => {
+    setViewportWidth(1024);
+    const user = userEvent.setup();
+    const { router } = renderWorkspace();
+
+    const tablist = await screen.findByRole("tablist", { name: "집필 도메인" });
+    const manuscriptTab = screen.getByRole("tab", { name: "원고 보기" });
+    const charactersTab = screen.getByRole("tab", { name: "인물 보기" });
+    const worldTab = screen.getByRole("tab", { name: "세계관 보기" });
+
+    expect(tablist).toHaveAttribute("aria-orientation", "vertical");
+    manuscriptTab.focus();
+
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "characters" }));
+    expect(charactersTab).toHaveFocus();
+    expect(charactersTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "등장인물" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "원고 목차" })).not.toBeInTheDocument();
+
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+    expect(worldTab).toHaveFocus();
+    expect(worldTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "세계관" })).toBeInTheDocument();
+
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(manuscriptTab).toHaveFocus();
+    expect(manuscriptTab).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{ArrowUp}");
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "world" }));
+    expect(worldTab).toHaveFocus();
+    expect(worldTab).toHaveAttribute("aria-selected", "true");
+  });
+
   test("reconstructs initial protagonist editing from the URL with immutable ID and all fields", async () => {
     setViewportWidth(1024);
     const { router } = renderWorkspace(
