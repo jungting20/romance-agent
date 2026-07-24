@@ -61,6 +61,7 @@ export function WorldEditorSheet(props: WorldEditorSheetProps) {
       }}
     >
       <SheetContent
+        data-world-editor=""
         side="right"
         showCloseButton={false}
         className="z-[60] w-full gap-0 p-0 sm:max-w-2xl"
